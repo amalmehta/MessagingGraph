@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>messaging graph</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div class="brand">messaging graph<small id="src">loading</small></div>
+    <nav>
+      <button data-view="now" class="on">Now <span class="c" id="c-now"></span></button>
+      <button data-view="graph">Plan graph <span class="c" id="c-graph"></span></button>
+      <button data-view="people">People <span class="c" id="c-people"></span></button>
+      <button data-view="privacy">Privacy <span class="c" id="c-priv"></span></button>
+    </nav>
+    <div class="sidefoot">
+      <span class="dot"></span><span id="foot-mode">local only</span><br>
+      <span id="foot-span"></span>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="drawer" id="drawer"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
