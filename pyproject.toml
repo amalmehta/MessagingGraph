@@ -16,6 +16,12 @@ dependencies = [
 dev = [
     "httpx2",
 ]
+# Only needed to build the Mac app: `uv sync --group app`, then `./mg build-app`.
+app = [
+    "pyinstaller>=6.10",
+    "pyobjc-framework-Cocoa>=10",
+    "pyobjc-framework-WebKit>=10",
+]
 
 [tool.uv]
 package = false

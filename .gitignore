@@ -12,3 +12,7 @@ data/
 # local machine files
 .DS_Store
 .claude/
+
+# Mac app build output
+build/
+dist/

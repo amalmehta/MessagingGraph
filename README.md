@@ -61,6 +61,24 @@ your own messages.
 Run `./mg import` again whenever you want fresher data. Your names, locations and other
 corrections are kept.
 
+## Mac app
+
+Prefer an app to Terminal? Build and install it once:
+
+```bash
+uv sync --group app
+./mg build-app
+```
+
+This puts **Messaging Graph** in your Applications folder and starts it at login (add
+`--no-login` to skip that). It opens in its own window; closing the window keeps it in the
+menu bar, where you can reopen it, reload your data, run an import or privacy check in
+Terminal, turn start-at-login on or off, and quit.
+
+The first time it opens, macOS asks whether it can use the "messaging-graph" Keychain item.
+Choose **Always Allow**: that's the key that decrypts your data. The app itself never needs
+Full Disk Access; importing still happens in Terminal. Rebuild after pulling new changes.
+
 ## Other commands
 
 | Command | What it does |
