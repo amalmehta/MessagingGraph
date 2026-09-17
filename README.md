@@ -15,6 +15,8 @@ never sent anywhere.
   discussed, and worth reviving. Click one to see the messages it came from.
 - **Messages worth sending**: drafts in the way you usually text each person, for replying,
   following up, reconnecting or reviving a plan. You copy them; nothing sends itself.
+- **Say thanks**: thank-you notes tied to something that actually happened, like a favour you
+  thanked someone for, a year of texting, or something you did together.
 - **Who's connected**: shared group chats, people who come up in other chats, shared
   interests, where people live, and who might get along.
 - **Clean data**: marketing and automated threads are set aside, and you can name unknown

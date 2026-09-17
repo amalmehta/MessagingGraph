@@ -306,6 +306,10 @@ function viewNow() {
     <div class="sub tight">Drafted from your history, written the way you usually text each person.
       Copy one into Messages, ask for another version, or skip it. Nothing sends from here.</div>
     <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
+    <h2>Say thanks</h2>
+    <div class="sub tight">Thank-you notes tied to something that actually happened: a favour you thanked
+      someone for, a year of texting, something you did together. Copy one, or write your own.</div>
+    <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
     <h2>Plans</h2>
     <div id="plans-panel"><div class="empty">Loading plans…</div></div>
     <h2>Who's connected</h2>
@@ -337,6 +341,7 @@ function viewNow() {
   document.querySelectorAll('.ranges .chip').forEach(c =>
     c.onclick = () => { S.weeks = +c.dataset.w; viewNow(); });
   drawDrafts();
+  drawThanks();
   drawPlans();
   drawCircles();
   drawOverall();
@@ -346,6 +351,7 @@ function viewNow() {
 const DRAFT_KIND = {
   reply: 'waiting on you', follow_up: 'follow up', revive_plan: 'plan',
   group_plan: 'group plan', reconnect: 'reconnect', check_in: 'check in',
+  thanked: 'thank you', anniversary: 'anniversary', together: 'thank you', appreciation: 'appreciation',
 };
 const HIDE_KEY = 'mg-drafts-hidden';
 const HIDE_DAYS = { skip: 7, copied: 3 };
@@ -365,7 +371,7 @@ async function drawDrafts() {
   const box = $('#drafts');
   if (!box) return;
   const all = await api('/api/messages');
-  S.drafts = Object.fromEntries(all.map(d => [d.id, d]));
+  S.drafts = { ...(S.drafts || {}), ...Object.fromEntries(all.map(d => [d.id, d])) };
   S.draftSeeds = S.draftSeeds || {};
   const shown = all.filter(d => !isHidden(d.id));
   if (!shown.length) {
@@ -373,14 +379,30 @@ async function drawDrafts() {
       : 'Nothing pressing. The people you talk to regularly have heard from you recently.'}</div>`;
     return;
   }
-  box.innerHTML = shown.map(draftCard).join('');
+  box.innerHTML = shown.map(d => draftCard(d)).join('');
   box.querySelectorAll('.draft').forEach(wireDraft);
 }
 
-function draftCard(d) {
-  const quoted = d.kind === 'reply' || d.kind === 'follow_up';
+async function drawThanks() {
+  const box = $('#thanks');
+  if (!box) return;
+  const all = await api('/api/gratitude');
+  S.drafts = { ...(S.drafts || {}), ...Object.fromEntries(all.map(d => [d.id, d])) };
+  S.draftSeeds = S.draftSeeds || {};
+  const shown = all.filter(d => !isHidden(d.id));
+  if (!shown.length) {
+    box.innerHTML = `<div class="empty">${all.length ? "You've been through today's thank-yous."
+      : "Nothing to point to yet. Thank-yous show up here once there's a real moment to mention."}</div>`;
+    return;
+  }
+  box.innerHTML = shown.map(d => draftCard(d, '/api/gratitude')).join('');
+  box.querySelectorAll('.draft').forEach(wireDraft);
+}
+
+function draftCard(d, src = '/api/messages') {
+  const quoted = ['reply', 'follow_up', 'thanked'].includes(d.kind);
   const person = d.kind !== 'group_plan';
-  return `<div class="draft" data-id="${esc(d.id)}">
+  return `<div class="draft" data-id="${esc(d.id)}" data-src="${esc(src)}">
     <div class="dtop"><span class="who ${person ? 'link' : ''}" ${person ? `data-person="${esc(d.target_ids[0])}"` : ''}>${esc(d.who)}</span>
       <span class="kind">${DRAFT_KIND[d.kind] || esc(d.kind)}</span></div>
     <div class="why">${esc(d.why)}</div>
@@ -415,20 +437,21 @@ function wireDraft(card) {
     const d = S.drafts[id];
     S.draftSeeds[id] = ((S.draftSeeds[id] || 0) + 1) % d.options;
     another.disabled = true;
-    const list = await api(`/api/messages?redraft=${encodeURIComponent(id)}&seed=${S.draftSeeds[id]}`);
+    const list = await api(`${card.dataset.src}?redraft=${encodeURIComponent(id)}&seed=${S.draftSeeds[id]}`);
     const fresh = list.find(x => x.id === id);
     another.disabled = false;
     if (!fresh) return;
     S.drafts[id] = fresh;
     const next = document.createElement('div');
-    next.innerHTML = draftCard(fresh);
+    next.innerHTML = draftCard(fresh, card.dataset.src);
     card.replaceWith(next.firstElementChild);
     wireDraft($(`.draft[data-id="${CSS.escape(id)}"]`));
   };
   card.querySelector('.skip').onclick = () => {
     hideDraft(id, 'skip');
+    const host = card.parentElement;
     card.remove();
-    if (!$('#drafts .draft')) $('#drafts').innerHTML = `<div class="empty">You've been through today's drafts.</div>`;
+    if (host && !host.querySelector('.draft')) host.innerHTML = `<div class="empty">You've been through these for now.</div>`;
   };
 }
 
@@ -535,6 +558,35 @@ async function drawFiltered() {
     await refreshData();
     drawFiltered();
   });
+}
+
+// ---------------------------------------------------------------- a thank-you for one person
+function wireThanks(cid, seed) {
+  const btn = $('#thank-btn');
+  if (!btn) return;
+  btn.onclick = async () => {
+    btn.disabled = true;
+    const res = await api(`/api/people/${encodeURIComponent(cid)}/gratitude?seed=${seed}`);
+    const box = $('#thankbox');
+    if (!res.draft) { box.innerHTML = `<div class="pdef">${esc(res.reason)}</div>`; return; }
+    const d = res.draft;
+    box.innerHTML = `<div class="draft">
+      <div class="dtop"><span class="who">A thank-you for ${esc(shortName(d.who))}</span>
+        <span class="kind">${DRAFT_KIND[d.kind] || ''}</span></div>
+      <div class="why">${esc(d.why)}</div>
+      <textarea class="dtext" id="thank-text" aria-label="Thank-you draft">${esc(d.draft)}</textarea>
+      <div class="dact"><button class="btn primary" id="thank-copy">Copy</button>
+        ${d.options > 1 ? '<button class="btn" id="thank-next">Another version</button>' : ''}
+        <span class="dnote" id="thank-note" role="status"></span></div></div>`;
+    fitText($('#thank-text'));
+    $('#thank-copy').onclick = () => copyInto($('#thank-text'), $('#thank-note'));
+    const next = $('#thank-next');
+    if (next) next.onclick = async () => {
+      box.innerHTML = '<button class="btn ghost" id="thank-btn">Draft a thank-you</button>';
+      wireThanks(cid, (seed + 1) % d.options);
+      $('#thank-btn').click();
+    };
+  };
 }
 
 // ---------------------------------------------------------------- locations
@@ -876,6 +928,7 @@ async function openPerson(id) {
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
     ${p.vibe ? vibeCard(p.vibe) : ''}
+    <div class="thankbox" id="thankbox"><button class="btn ghost" id="thank-btn">Draft a thank-you</button></div>
     <div class="metrics">
       <div class="metric"><div class="n">${p.msgs_per_week_recent.toFixed(1)}</div><div class="l">msgs / week now</div></div>
       <div class="metric"><div class="n">${p.warmth.toFixed(0)}</div><div class="l">warmth</div></div>
@@ -919,6 +972,7 @@ async function openPerson(id) {
   $('#drawer').querySelectorAll('.mchip[data-person]').forEach(el =>
     el.onclick = () => openPerson(el.dataset.person));
   renderLocation(id, d.location, d.location_unknown);
+  wireThanks(id, 0);
   $('#drawer').querySelectorAll('.prow[data-plan]').forEach(el => {
     el.onclick = () => openPlan(el.dataset.plan);
     el.onkeydown = e => { if (e.key === 'Enter') openPlan(el.dataset.plan); };
