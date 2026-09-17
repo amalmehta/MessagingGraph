@@ -12,6 +12,7 @@ trust any of the numbers the UI displays.
 from __future__ import annotations
 
 import math
+import re
 import shutil
 import sqlite3
 import sys
@@ -286,12 +287,15 @@ def main() -> int:
     check("a one-on-one proposal only revives plans from that one-on-one thread",
           solo_p.basis != "revive" or solo_p.activity in dm_acts, solo_p.activity)
     pair_p = propose(st.corpus, st.plans, ["p_priya", "p_rafa"], None, 0, st.now)
-    check("drafts greet one person, two people and a group correctly",
-          solo_p.draft.startswith("Hey Rafa") and pair_p.draft.startswith("Hey you two")
-          and props[0].draft.startswith("Hey all"))
+    from app.analysis.voice import style_for as _style_for
+    rafa_style, group_voice = _style_for(st.corpus, st.now, "p_rafa"), _style_for(st.corpus, st.now)
+    greets_ok = ((not rafa_style.greeting or "rafa" in re.split(r"[,.!?\n]", solo_p.draft.lower())[0])
+                 and (not group_voice.greeting or ("you two" in pair_p.draft.lower()
+                                                   and f"{group_voice.greeting} all" in props[0].draft.lower())))
+    check("drafts greet one person, two people and a group correctly", greets_ok, props[0].draft.split("\n")[0][:40])
 
     print("\nmessages worth sending:")
-    from app.analysis.messages import Voice, build_messages, restyle
+    from app.analysis.messages import build_messages
     from app.models import Contact as _Contact, Corpus as _Corpus, Message as _Message
     from app.models import RelationshipProfile as _RP, SELF_ID as _SELF, Thread as _Thread
     drafts = build_messages(st.corpus, st.profiles, st.plans, st.now)
@@ -306,9 +310,55 @@ def main() -> int:
     again = next(d for d in build_messages(st.corpus, st.profiles, st.plans, st.now, {top.id: 1})
                  if d.id == top.id)
     check("'another version' changes the wording", again.draft != top.draft)
-    check("drafts follow how you text that person",
-          restyle("Hey Priya! How's your week going?", Voice("yo", True, False, ""))
-          == "yo priya, how's your week going?")
+    from app.analysis.voice import plan_parts as _plan_parts, style_for as _vstyle, write as _vwrite
+    vnow = datetime(2026, 9, 16, 12)
+
+    def _vcorpus(lines, burst=False, old=()):
+        vc = {"p_x": _Contact("p_x", "muds", "")}
+        vt = {"t_x": _Thread("t_x", "muds", ("p_x",), False)}
+        vm, t0v = [], vnow - timedelta(days=9)
+        for i, text in enumerate(lines):
+            vm.append(_Message(f"r{i}", "t_x", _SELF, t0v + timedelta(hours=7 * i), text, True))
+            if burst and i % 2 == 0:
+                vm.append(_Message(f"b{i}", "t_x", _SELF, t0v + timedelta(hours=7 * i, seconds=40), "like actually", True))
+            vm.append(_Message(f"s{i}", "t_x", "p_x", t0v + timedelta(hours=7 * i, minutes=3), "ok", False))
+        vm += [_Message(f"o{i}", "t_x", _SELF, vnow - timedelta(days=60, hours=i), text, True) for i, text in enumerate(old)]
+        vm.sort(key=lambda m: m.ts)
+        return _Corpus(vc, vt, vm, "t")
+
+    casual = ["yo wanna grab food sat", "im down", "u free tmrw", "lol thats wild", "dont worry about it", "yo u around",
+              "wanna hit the gym at 7", "lmk", "u good", "haha yes", "cant tonight", "sat works", "yo whats up", "lol",
+              "wanna do sat at 7", "u coming", "idk yet lol", "im so tired", "whats the plan", "yo", "sounds good",
+              "down", "u around sat", "lmk when u free", "yo wanna get dinner at 8"]
+    careful = ["Hey! Hope your week is going well.", "Would you want to get dinner on Saturday at 7pm?",
+               "That sounds great.", "I'm running a bit late, sorry.", "Hi, are you free tomorrow?", "Let's do Friday.",
+               "Thanks so much, that's really kind.", "Hey, what time works for you?", "I can't make it tonight.",
+               "Happy to help.", "Hey! Did you see the news?", "Want to go for a walk on Sunday?", "That's perfect.",
+               "Hi there, how was the trip?", "I'll bring snacks.", "Hey, you around this weekend?", "Sounds good to me.",
+               "Let's catch up soon.", "I'm free after 6pm.", "Hey! Congrats on the new job.", "What's the address?",
+               "Thank you for dinner.", "Hey, let me know when you land.", "I'll call you later.", "Hope you're well."]
+    cs = _vstyle(_vcorpus(casual, burst=True), vnow, "p_x")
+    ks = _vstyle(_vcorpus(careful, old=["GOOD MORNING!!"] * 60), vnow, "p_x")
+    sat = vnow + timedelta(days=3)
+    c0, c1 = (_vwrite(_plan_parts(cs, "dinner", sat, vnow, 19, "muds", False, True, s), cs) for s in (0, 1))
+    k0, k1 = (_vwrite(_plan_parts(ks, "dinner", sat, vnow, 19, "muds", False, True, s), ks) for s in (0, 1))
+    check("a casual texter's drafts sound casual",
+          c1 == c1.lower() and "wanna" in c1 and "sat" in c1 and "?" not in c1, repr(c1))
+    check("a careful texter's drafts sound careful",
+          k1.startswith("Hey muds") and "Saturday" in k1 and "7pm" in k1, repr(k1))
+    check("style comes from your last 10 days, not old habits",
+          ks.window_days == 10 and not ks.lowercase and "GOOD" not in k0)
+    check("separate short lines only for people who text in bursts", "\n" in c0 and "\n" not in k0)
+    check("a greeting never runs into a capitalised sentence", not re.search(r", (?!I\b)[A-Z]", k0 + k1), repr(k0))
+    check("an activity isn't named twice in one draft", c0.count("dinner") == 1 and k0.count("dinner") == 1)
+    from app.analysis.voice import Style as _VStyle, reconnect_parts as _reconnect_parts
+    plain = _VStyle(10, 30, lowercase=True, greeting=None, periods=False, question_marks=False, bursts=False,
+                    emoji="😂", warm_emoji=None)
+    sincere = _vwrite(_reconnect_parts(plain, "muds", 0), plain, warm=True)
+    check("sincere drafts never get a laughing emoji", "😂" not in sincere, repr(sincere))
+    check("unpunctuated sentences aren't run together", "\n" in sincere, repr(sincere))
+    trip_c = _vwrite(_plan_parts(cs, "trip", sat, vnow, 19, "bruds", False, True, 0), cs)
+    check("trips get planned, not booked for 7pm", "plan" in trip_c and "7" not in trip_c, repr(trip_c))
 
     def tiny(extra, name="Sam Lee"):
         t_now = datetime(2026, 9, 1, 18, 0)
@@ -343,7 +393,7 @@ def main() -> int:
     numbered = tiny([(20, "my job interview is next tuesday, so nervous", False),
                      (12, "anyway gotta run", False)], name="(408) 555-0111")
     check("drafts never greet someone by their phone number",
-          bool(numbered) and numbered[0].draft.lower().split()[0] in ("hey,", "hey!")
+          bool(numbered) and numbered[0].draft.lower().startswith("hey")
           and "(408" not in numbered[0].draft and "0111" not in numbered[0].draft,
           numbered[0].draft if numbered else "no draft")
 
@@ -762,7 +812,8 @@ def main() -> int:
           f"{len(demo_thanks)} thank-yous")
     check("one thank-you per person", len({d.who for d in demo_thanks}) == len(demo_thanks))
     wording = _Counter(d.draft.split(" ", 2)[2] if d.draft.count(" ") > 2 else d.draft for d in demo_thanks)
-    openers = _Counter(" ".join(d.draft.lower().split()[2:4]) for d in demo_thanks)
+    openers = _Counter(" ".join(re.sub(r"^(?:hey+|hi+|hiya|yo|hello|ayy|ayo|sup)\s+\S+?[,!\n]\s*", "",
+                                        d.draft.lower()).split()[:2]) for d in demo_thanks)
     check("a list of thank-yous doesn't repeat one template", max(openers.values()) <= 2, str(dict(openers)))
     first_t = demo_thanks[0]
     again_t = next(d for d in build_gratitude(app_state.corpus, app_state.profiles, app_state.plans,

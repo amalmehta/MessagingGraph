@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from ..models import Corpus, Plan
 from ..names import greeting_name, group_label, short_name
 from .circles import REVIVE_WINDOW, activity_of
+from .voice import plan_parts, style_for, write
 
 LANDED = {"done", "confirmed", "scheduled"}
 DAYTIME = {"brunch": 11, "breakfast": 9, "coffee": 10, "lunch": 12, "hike": 9, "hiking": 9,
@@ -132,20 +133,11 @@ def propose(corpus: Corpus, plans: list[Plan], member_ids: list[str],
     names = [corpus.contacts[c].name for c in members]
     firsts = [short_name(n) for n in names]
     day, time = _day_phrase(when, now), _time_label(hour)
-    phrase = PHRASE.get(activity, activity)
-    Day = day[0].upper() + day[1:]
-    hello = ((f"Hey {greeting_name(names[0])}" if greeting_name(names[0]) else "Hey") if len(members) == 1
-             else "Hey you two" if len(members) == 2 else "Hey all")
-    ask = "You in?" if len(members) == 1 else "Who's in?"
-    variants = {
-        "revive": [f"{hello}! We never did get {phrase} on the calendar. How about {day} around {time}? {ask}",
-                   f"{hello}, still up for {phrase}? I'm thinking {day}, {time}. Happy to move it if that doesn't work."],
-        "repeat": [f"{hello}! Overdue for {phrase} again. {Day} around {time}? {ask}",
-                   f"{hello}, {phrase} {day} around {time}? Feels like it's been a minute."],
-        "fresh": [f"{hello}! It's been a while. {phrase[0].upper() + phrase[1:]} {day} around {time}? Totally flexible on the day.",
-                  f"{hello}, want to get {phrase} {day}? Around {time} works for me, open to other times."],
-    }[basis]
-    draft = variants[(seed // len(candidates)) % len(variants)]
+    solo = len(members) == 1
+    style = style_for(corpus, now, members[0] if solo else None)
+    who = greeting_name(names[0]) if solo else ("you two" if len(members) == 2 else None)
+    draft = write(plan_parts(style, activity, when, now, hour, who, not solo, basis == "revive",
+                             seed // len(candidates)), style)
 
     reasons = [reason, day_reason]
     if thread and thread.is_group:
@@ -158,5 +150,5 @@ def propose(corpus: Corpus, plans: list[Plan], member_ids: list[str],
         when=when, when_label=f"{WEEKDAYS[when.weekday()]}, {when.strftime('%b')} {when.day} · {time}",
         reasons=reasons, draft=draft,
         alternatives=[c[0] for c in candidates if c[0] != activity][:3],
-        seed=seed, options=len(candidates) * 2,
+        seed=seed, options=len(candidates) * 3,
     )

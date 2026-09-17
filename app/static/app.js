@@ -303,8 +303,9 @@ function viewNow() {
       <button class="btn ghost review-filtered">Review</button></div>` : ''}
     ${locationNotice(o)}
     <h2>Messages worth sending</h2>
-    <div class="sub tight">Drafted from your history, written the way you usually text each person.
+    <div class="sub tight">Drafted from your history and written the way you've been texting lately.
       Copy one into Messages, ask for another version, or skip it. Nothing sends from here.</div>
+    <div class="voicenote" id="voice-note"></div>
     <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
     <h2>Say thanks</h2>
     <div class="sub tight">Thank-you notes tied to something that actually happened: a favour you thanked
@@ -370,6 +371,12 @@ function isHidden(id) {
 async function drawDrafts() {
   const box = $('#drafts');
   if (!box) return;
+  api('/api/voice').then(v => {
+    const note = $('#voice-note');
+    if (!note || !v.traits) return;
+    const span = v.window_days ? `your last ${v.window_days} days of messages` : 'all your messages';
+    note.textContent = `Your style, from ${span}: ${v.traits.join(' · ')}`;
+  }).catch(() => {});
   const all = await api('/api/messages');
   S.drafts = { ...(S.drafts || {}), ...Object.fromEntries(all.map(d => [d.id, d])) };
   S.draftSeeds = S.draftSeeds || {};

@@ -25,6 +25,7 @@ from .analysis.plans import OPEN_STATES
 from .analysis.proposals import propose
 from .analysis.series import contact_series, overall_series, sparkline_points
 from .analysis.suggestions import build as build_suggestions
+from .analysis.voice import style_for
 from .graph import build_graph
 from .overrides import clean_name, clean_place, is_unnamed
 from .security import Guard
@@ -290,6 +291,13 @@ def messages_worth_sending(redraft: str | None = None, seed: int = 0):
     version of one draft; nothing is stored and nothing is sent."""
     seeds = {redraft: max(0, seed)} if redraft else None
     return enc(build_messages(state.corpus, state.profiles, state.plans, state.now, seeds))
+
+
+@app.get("/api/voice")
+def voice():
+    """How drafts are written: traits learned from your own recent messages, nothing else."""
+    style = style_for(state.corpus, state.now)
+    return {"window_days": style.window_days, "messages": style.messages, "traits": style.describe()}
 
 
 @app.get("/api/gratitude")
