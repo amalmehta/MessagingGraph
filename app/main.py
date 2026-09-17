@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .analysis.circles import activity_of, connections, plans_overview
+from .analysis.gratitude import build_gratitude
 from .analysis.messages import build_messages
 from .analysis.network import enrich
 from .analysis.plans import OPEN_STATES
@@ -289,6 +290,28 @@ def messages_worth_sending(redraft: str | None = None, seed: int = 0):
     version of one draft; nothing is stored and nothing is sent."""
     seeds = {redraft: max(0, seed)} if redraft else None
     return enc(build_messages(state.corpus, state.profiles, state.plans, state.now, seeds))
+
+
+@app.get("/api/gratitude")
+def gratitude(redraft: str | None = None, seed: int = 0):
+    """Thank-you drafts tied to something that actually happened. Nothing is stored or sent."""
+    seeds = {redraft: max(0, seed)} if redraft else None
+    return enc(build_gratitude(state.corpus, state.profiles, state.plans, state.now, seeds))
+
+
+@app.get("/api/people/{cid}/gratitude")
+def person_gratitude(cid: str, seed: int = 0):
+    """The best thank-you for one person, or why there isn't one yet."""
+    prof = state.profiles_by_id.get(cid)
+    if prof is None:
+        raise HTTPException(404, "No such contact.")
+    drafts = build_gratitude(state.corpus, [prof], state.plans, state.now, limit=1)
+    if drafts and seed:
+        drafts = build_gratitude(state.corpus, [prof], state.plans, state.now, {drafts[0].id: seed}, limit=1)
+    return enc({"draft": drafts[0] if drafts else None,
+                "reason": None if drafts else
+                "Nothing specific to thank them for yet, and there isn't a long enough history "
+                "for a general thank-you. Anything you write yourself will mean more anyway."})
 
 
 @app.get("/api/graph")

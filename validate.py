@@ -717,6 +717,62 @@ def main() -> int:
     check("the plans overview still resolves alongside plan detail",
           client.get("/api/plans/overview").status_code == 200 and "counts" in client.get("/api/plans/overview").json())
 
+    print("\nsaying thanks:")
+    from collections import Counter as _Counter
+    from app.analysis.gratitude import ELIGIBLE, build_gratitude
+    gnow = datetime(2026, 9, 16, 12)
+
+    def _gprof(cid, name):
+        return _RP(contact_id=cid, name=name, msgs_per_week=5, msgs_per_week_recent=5, trend="steady",
+                   warmth=70, importance=70, reciprocity=.5, initiation_balance=.5, my_median_reply_s=600,
+                   their_median_reply_s=600, self_editing=33, depth=40, balance=40, state="close")
+
+    def _gbase(cid, back, n=24):
+        return [_Message(f"{cid}b{i}", f"t_{cid}", _SELF if i % 2 else cid,
+                         gnow - timedelta(days=back - i * (back // n)),
+                         "Hey how's it going!" if i % 2 else "good, you?", bool(i % 2)) for i in range(n)]
+
+    gc = {"p_old": _Contact("p_old", "Olive Park", ""), "p_sam": _Contact("p_sam", "Sam Lee", ""),
+          "p_ann": _Contact("p_ann", "Ana Ruiz", ""), "p_cut": _Contact("p_cut", "Cal Wu", "")}
+    gt = {f"t_{k}": _Thread(f"t_{k}", v.name, (k,), False) for k, v in gc.items()}
+    gm = _gbase("p_old", 500) + _gbase("p_sam", 200) + _gbase("p_ann", 367) + _gbase("p_cut", 498)
+    gm += [_Message("s1", "t_p_sam", _SELF, gnow - timedelta(days=62),
+                    "thank you so much for helping me move!! couldn't have done it without you", True),
+           _Message("s2", "t_p_sam", _SELF, gnow - timedelta(days=30), "thanks for the info", True),
+           _Message("s3", "t_p_sam", _SELF, gnow - timedelta(days=25), "thanks for covering rent this month", True),
+           _Message("s4", "t_p_sam", "p_sam", gnow - timedelta(days=40), "thanks for the ride to the airport", False)]
+    gm.sort(key=lambda m: m.ts)
+    gd = {d.who: d for d in build_gratitude(_Corpus(gc, gt, gm, "t"),
+                                            [_gprof(k, v.name) for k, v in gc.items()], [], gnow)}
+    sam_d = gd.get("Sam Lee")
+    check("a favour you thanked someone for becomes a thank-you",
+          sam_d is not None and sam_d.kind == "thanked" and "helping me move" in sam_d.draft,
+          sam_d.draft if sam_d else "none")
+    check("small thanks, money, and their thanks to you are never used",
+          sam_d is not None and not any(w in sam_d.draft.lower() for w in ("info", "rent", "airport")))
+    check("the app describes the favour to you in your terms",
+          sam_d is not None and "helping you move" in sam_d.why, sam_d.why if sam_d else "")
+    check("a real texting anniversary is noticed", gd.get("Ana Ruiz") and gd["Ana Ruiz"].kind == "anniversary")
+    check("the start of your imported history isn't mistaken for an anniversary",
+          gd.get("Cal Wu") is None or gd["Cal Wu"].kind != "anniversary")
+    demo_thanks = build_gratitude(app_state.corpus, app_state.profiles, app_state.plans, app_state.now)
+    states = {p.contact_id: p.state for p in app_state.profiles}
+    check("thank-yous only go to people you actually have a thread with",
+          demo_thanks and all(states[d.target_ids[0]] in ELIGIBLE for d in demo_thanks),
+          f"{len(demo_thanks)} thank-yous")
+    check("one thank-you per person", len({d.who for d in demo_thanks}) == len(demo_thanks))
+    wording = _Counter(d.draft.split(" ", 2)[2] if d.draft.count(" ") > 2 else d.draft for d in demo_thanks)
+    openers = _Counter(" ".join(d.draft.lower().split()[2:4]) for d in demo_thanks)
+    check("a list of thank-yous doesn't repeat one template", max(openers.values()) <= 2, str(dict(openers)))
+    first_t = demo_thanks[0]
+    again_t = next(d for d in build_gratitude(app_state.corpus, app_state.profiles, app_state.plans,
+                                              app_state.now, {first_t.id: 1}) if d.id == first_t.id)
+    check("'another version' changes a thank-you", again_t.draft != first_t.draft)
+    one = client.get("/api/people/p_priya/gratitude").json()
+    check("a single person's thank-you comes back, or a reason why not",
+          (one["draft"] is not None) != (one["reason"] is not None)
+          and client.get("/api/people/p_nobody/gratitude").status_code == 404)
+
     print("\nprivacy enforcement:")
     from app.privacy import ConsentError, NetworkGate, PrivacySettings, apply_settings, redact
     s = PrivacySettings()

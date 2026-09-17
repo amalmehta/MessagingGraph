@@ -391,3 +391,7 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
 .card:hover,.draft:hover,.circle:hover,.interest:hover,.intro:hover,.pcol:hover,.nameme:hover,.filt:hover,
 button.stat:hover{border-color:rgba(236,196,160,.24)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* a thank-you for one person */
+.thankbox{margin:12px 0 4px}
+.thankbox .draft{margin-top:2px}
