@@ -824,6 +824,82 @@ def main() -> int:
           (one["draft"] is not None) != (one["reason"] is not None)
           and client.get("/api/people/p_nobody/gratitude").status_code == 404)
 
+    print("\ngetting a crew together:")
+    from app.analysis.crews import build_crew, crew_size, interests_for, suggest_activities
+    net = client.get("/api/connections").json()
+    def crew_for(activity, **kw):
+        return build_crew(app_state.corpus, app_state.profiles, app_state.plans, net,
+                          app_state.locations, activity, app_state.now, **kw)
+
+    check("a league asks for more people than a dinner",
+          crew_size("volo kickball league") > crew_size("dinner"),
+          f"{crew_size('volo kickball league')} vs {crew_size('dinner')}")
+    check("an explicit size wins, within reason",
+          crew_size("dinner", 7) == 7 and crew_size("dinner", 99) == 8)
+    check("an activity finds the interests it leans on",
+          "climbing" in interests_for("bouldering on saturday")
+          and "travel" in interests_for("a ski trip"))
+
+    games, food = crew_for("board game night"), crew_for("dinner")
+    check("the crew is the size the activity needs",
+          len(games.members) == games.size == crew_size("board game night"), str(games.size))
+    check("different activities pick different people",
+          {m.id for m in games.members} != {m.id for m in food.members},
+          f"games {[m.name.split()[0] for m in games.members]} vs food {[m.name.split()[0] for m in food.members]}")
+    check("game night goes to people you've actually played games with",
+          any("games" in r or "board game" in r or "trivia" in r
+              for m in games.members for r in m.reasons))
+    check("everyone picked says why they're there", all(m.reasons for m in games.members))
+    check("nobody is picked twice, and alternates aren't already in the crew",
+          len({m.id for m in games.members}) == len(games.members)
+          and not ({m.id for m in games.alternates} & {m.id for m in games.members}))
+    states = {p.contact_id: p.state for p in app_state.profiles}
+    check("people you only know through a group chat aren't put on a crew",
+          all(states[m.id] not in {"new", "group"} for m in games.members + games.alternates))
+    check("the crew holds together: someone already knows someone else",
+          any("already knows" in r for m in games.members for r in m.reasons))
+
+    sporty = crew_for("volo soccer league")
+    check("when nothing says who's into it, the suggestion says so",
+          "Nothing in your messages says who's into" in sporty.note, sporty.note[-90:])
+    check("when the thread does say, it doesn't claim otherwise",
+          "Nothing in your messages" not in games.note, games.note[-70:])
+
+    check("a sign-up reads like signing up",
+          any(w in sporty.draft.lower() for w in ("signing up", "up for", "putting together")),
+          repr(sporty.draft))
+    trip = crew_for("a ski trip")
+    check("a trip doesn't get pinned to a random weeknight",
+          trip.when_label is None and "ski trip" in trip.draft.lower(), repr(trip.draft))
+    check("an invitation names the thing it's for",
+          "board game night" in games.draft.lower(), repr(games.draft))
+    check("the suggested day is a weekend, and far enough out to answer",
+          "saturday" in (games.when_label or "").lower(), games.when_label)
+    check("'another version' writes a different invitation",
+          crew_for("board game night", seed=1).draft != games.draft)
+    check("an invitation carries no names or message text from the thread",
+          not any(m.name.split()[0].lower() in games.draft.lower() for m in games.members),
+          repr(games.draft))
+
+    ideas = suggest_activities(app_state.corpus, app_state.plans, app_state.profiles)
+    check("suggested activities come from what people actually talk about",
+          len(ideas) >= 3 and all(i["activity"] and i["why"] for i in ideas),
+          ", ".join(i["activity"] for i in ideas[:4]))
+    check("the classics are there even when nothing matches",
+          any("league" in i["activity"] or "trip" in i["activity"] for i in ideas))
+
+    check("the crew endpoint answers", client.get("/api/crew?activity=climbing").status_code == 200)
+    check("an empty plan is refused, not guessed at",
+          client.get("/api/crew?activity=%20").status_code == 400)
+    check("an absurd crew size is refused",
+          client.get("/api/crew?activity=dinner&size=99").status_code == 400
+          and client.get("/api/crew?activity=dinner&size=0").status_code == 400)
+    check("markup typed into the activity stays text",
+          client.get("/api/crew?activity=%3Cscript%3Ex%3C/script%3E+league")
+          .json()["activity"] == "<script>x</script> league")
+    check("control characters are stripped from the activity",
+          "\n" not in client.get("/api/crew?activity=a%0Ab").json()["activity"])
+
     print("\nprivacy enforcement:")
     from app.privacy import ConsentError, NetworkGate, PrivacySettings, apply_settings, redact
     s = PrivacySettings()

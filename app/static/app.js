@@ -311,6 +311,11 @@ function viewNow() {
     <div class="sub tight">Thank-you notes tied to something that actually happened: a favour you thanked
       someone for, a year of texting, something you did together. Copy one, or write your own.</div>
     <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
+    <h2>Get a crew together</h2>
+    <div class="sub tight">For something that needs more than one person — a league, a trip, a
+      standing game night. Say what it is and this picks who to ask, based on who talks about it,
+      who's actually done it with you, and who already knows each other.</div>
+    <div id="crew-panel"><div class="empty">Loading…</div></div>
     <h2>Plans</h2>
     <div id="plans-panel"><div class="empty">Loading plans…</div></div>
     <h2>Who's connected</h2>
@@ -343,6 +348,7 @@ function viewNow() {
     c.onclick = () => { S.weeks = +c.dataset.w; viewNow(); });
   drawDrafts();
   drawThanks();
+  drawCrew();
   drawPlans();
   drawCircles();
   drawOverall();
@@ -459,6 +465,102 @@ function wireDraft(card) {
     const host = card.parentElement;
     card.remove();
     if (host && !host.querySelector('.draft')) host.innerHTML = `<div class="empty">You've been through these for now.</div>`;
+  };
+}
+
+// ---------------------------------------------------------------- crews
+// One thing, the handful of people to ask, and why each of them. Sizes come from
+// the activity (a league needs six, a trip four) but you can change it.
+async function drawCrew() {
+  const box = $('#crew-panel');
+  if (!box) return;
+  S.crew = S.crew || { activity: '', size: '', nearby: true, seed: 0 };
+  let ideas = [];
+  try { ideas = (await api('/api/crew/activities')).activities || []; } catch { /* offline */ }
+  box.innerHTML = `
+    <div class="crewform">
+      <input id="crew-what" class="search" type="text" maxlength="60" placeholder="a volo league, a ski trip, board game night…"
+        aria-label="What's the plan?" value="${esc(S.crew.activity)}">
+      <label class="mini">how many
+        <select id="crew-size" aria-label="Crew size">
+          <option value="">fits the plan</option>
+          ${[2, 3, 4, 5, 6, 7, 8].map(n => `<option value="${n}" ${String(S.crew.size) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
+        </select></label>
+      <label class="mini"><input id="crew-near" type="checkbox" ${S.crew.nearby ? 'checked' : ''}> keep it local</label>
+      <button class="btn primary crew-go">Who should I ask?</button>
+    </div>
+    ${ideas.length ? `<div class="crewideas"><span class="mini">or try:</span>
+      ${ideas.map(i => `<button type="button" class="chip sm crew-idea" data-a="${esc(i.activity)}" title="${esc(i.why)}">${esc(i.activity)}</button>`).join('')}</div>` : ''}
+    <div id="crew-out"></div>`;
+  const run = () => {
+    S.crew.activity = $('#crew-what').value;
+    S.crew.size = $('#crew-size').value;
+    S.crew.nearby = $('#crew-near').checked;
+    S.crew.seed = 0;
+    loadCrew();
+  };
+  $('.crew-go').onclick = run;
+  $('#crew-what').onkeydown = e => { if (e.key === 'Enter') run(); };
+  box.querySelectorAll('.crew-idea').forEach(c => c.onclick = () => {
+    $('#crew-what').value = c.dataset.a;
+    run();
+  });
+  if (S.crew.activity) loadCrew();
+}
+
+async function loadCrew() {
+  const out = $('#crew-out');
+  if (!out) return;
+  const c = S.crew;
+  if (!c.activity.trim()) {
+    out.innerHTML = `<div class="empty">Say what the plan is and this will suggest who to ask.</div>`;
+    return;
+  }
+  out.innerHTML = `<div class="empty">Working out who'd be up for it…</div>`;
+  let crew;
+  try {
+    crew = await api(`/api/crew?activity=${encodeURIComponent(c.activity)}`
+      + (c.size ? `&size=${encodeURIComponent(c.size)}` : '')
+      + `&nearby=${c.nearby}&seed=${c.seed}`);
+  } catch {
+    out.innerHTML = `<div class="empty">Couldn't work that one out. Try saying it a different way.</div>`;
+    return;
+  }
+  if (!crew.members || !crew.members.length) {
+    out.innerHTML = `<div class="empty">${esc(crew.note || 'No one to suggest for that yet.')}</div>`;
+    return;
+  }
+  out.innerHTML = `<div class="crew">
+    <div class="crewnote">${esc(crew.note)}</div>
+    <div class="members">${crew.members.map(m => `
+      <div class="member"><div class="mname link" data-id="${esc(m.id)}">${esc(m.name)}</div>
+        <ul class="why">${m.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>`).join('')}</div>
+    ${crew.alternates.length ? `<div class="alts mini">If someone can't make it:
+      ${crew.alternates.map(m => `<span class="link alt" data-id="${esc(m.id)}">${esc(m.name)}</span>`).join(', ')}</div>` : ''}
+    <div class="draft plain">
+      <div class="dtop"><span class="who">The ask</span>${crew.when_label
+        ? `<span class="kind">${esc(crew.when_label)}</span>` : ''}</div>
+      <textarea class="dtext" rows="2" aria-label="Invitation to send">${esc(crew.draft)}</textarea>
+      <div class="dact">
+        <button class="btn primary crew-copy">Copy</button>
+        <button class="btn another crew-again">Another version</button>
+        <span class="dnote" role="status"></span>
+      </div></div></div>`;
+  fitText(out.querySelector('.dtext'));
+  out.querySelectorAll('.link[data-id]').forEach(el => el.onclick = () => openPerson(el.dataset.id));
+  out.querySelector('.crew-copy').onclick = async () => {
+    const ta = out.querySelector('.dtext'), note = out.querySelector('.dnote');
+    try {
+      await navigator.clipboard.writeText(ta.value);
+      note.textContent = 'Copied. Start a group in Messages and paste it.';
+    } catch {
+      ta.select();
+      note.textContent = 'Selected. Press ⌘C to copy.';
+    }
+  };
+  out.querySelector('.crew-again').onclick = () => {
+    S.crew.seed = (S.crew.seed + 1) % (crew.options || 3);
+    loadCrew();
   };
 }
 
