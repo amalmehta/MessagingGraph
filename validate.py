@@ -357,6 +357,12 @@ def main() -> int:
     sincere = _vwrite(_reconnect_parts(plain, "muds", 0), plain, warm=True)
     check("sincere drafts never get a laughing emoji", "😂" not in sincere, repr(sincere))
     check("unpunctuated sentences aren't run together", "\n" in sincere, repr(sincere))
+    from app.analysis.voice import thanks_parts as _thanks_parts
+    ushort = _VStyle(10, 30, shortforms={"u", "ur"}, apostrophes=True)
+    keeps, shortens = (_vwrite(_thanks_parts(ushort, "muds", "appreciation", s), ushort) for s in (0, 1))
+    check('"u" shortens "you" but never a contraction',           # "u're" would be a substring of "you're"
+          "you're" in keeps and not re.search(r"\bu['\u2019]", keeps), repr(keeps))
+    check('"u" still replaces a plain "you"', shortens.endswith(" u"), repr(shortens))
     trip_c = _vwrite(_plan_parts(cs, "trip", sat, vnow, 19, "bruds", False, True, 0), cs)
     check("trips get planned, not booked for 7pm", "plan" in trip_c and "7" not in trip_c, repr(trip_c))
 
