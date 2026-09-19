@@ -247,6 +247,32 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
 .btn.ghost{background:transparent;color:var(--dim)}
 .dnote{color:var(--adds);font-size:12px}
 
+/* crews */
+.crewform{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.crewform .search{min-width:230px}
+.mini{color:var(--faint);font-size:12px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.mini select{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--ink);
+  font:12.5px system-ui,sans-serif;padding:5px 7px}
+.mini input[type=checkbox]{accent-color:var(--accent)}
+.crewideas{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+button.chip{font:inherit;font-size:11.5px;font-family:var(--mono)}
+button.chip:hover{border-color:#3f454d;color:var(--ink)}
+button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.crew{display:flex;flex-direction:column;gap:12px}
+.crewnote{color:var(--dim);font-size:13px;line-height:1.55}
+.members{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:9px}
+.member{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 13px;
+  display:flex;flex-direction:column;gap:6px;transition:border-color .15s ease}
+.member:hover{border-color:#3f454d}
+.mname{font-weight:600;font-size:13.5px}
+.mname.link{cursor:pointer}
+.mname.link:hover{color:var(--accent)}
+.member .why{margin:0;padding-left:15px;color:var(--dim);font-size:12px;line-height:1.55}
+.member .why li{margin-bottom:2px}
+.alts .link{color:var(--accent);cursor:pointer}
+.alts .link:hover{text-decoration:underline}
+.draft.plain{max-width:520px}
+
 /* plans panel */
 .pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 @media (max-width:980px){.pgrid{grid-template-columns:1fr}}

@@ -210,8 +210,9 @@ def time_words(hour: int, style: Style) -> str:
 
 def _finish(line: str, kind: str, style: Style) -> str:
     """kind: greet | say | ask"""
-    for short in style.shortforms:
-        line = re.sub(r"\b" + LONG[short] + r"\b", short, line)
+    for short in sorted(style.shortforms):
+        # Not before an apostrophe: "you're" is a contraction, not a spelled-out "u".
+        line = re.sub(r"\b" + LONG[short] + r"\b(?!['\u2019])", short, line)
     if not style.apostrophes:
         line = re.sub(r"\bhow've (u|you) been\b", r"how \1 been", line)    # nobody types "howve"
         for c in CONTRACTIONS:

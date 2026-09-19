@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .analysis.circles import activity_of, connections, plans_overview
+from .analysis.crews import build_crew, suggest_activities
 from .analysis.gratitude import build_gratitude
 from .analysis.messages import build_messages
 from .analysis.network import enrich
@@ -283,6 +284,30 @@ def proposal(members: str, thread_id: str | None = None, seed: int = 0):
     if thread_id and thread_id not in state.corpus.threads:
         raise HTTPException(404, "No such group.")
     return enc(propose(state.corpus, state.plans, ids, thread_id, max(0, seed), state.now))
+
+
+@app.get("/api/crew/activities")
+def crew_activities():
+    """Things worth getting people together for, drawn from what they actually talk about."""
+    return enc({"activities": suggest_activities(state.corpus, state.plans, state.profiles)})
+
+
+@app.get("/api/crew")
+def crew(activity: str, size: int | None = None, nearby: bool = True, seed: int = 0):
+    """Who to ask for one specific thing, and an invitation in your own voice.
+
+    A GET: it works out a suggestion and changes nothing. You send it yourself.
+    """
+    # Free text, so keep it as typed but strip anything that isn't a plan: control
+    # characters out, whitespace collapsed, length capped. It is only ever rendered
+    # as text, never as markup.
+    activity = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", activity or "")).strip()[:60]
+    if not activity:
+        raise HTTPException(400, "Say what the plan is.")
+    if size is not None and not 1 <= size <= 8:
+        raise HTTPException(400, "A crew is between 1 and 8 people.")
+    return enc(build_crew(state.corpus, state.profiles, state.plans, network(), state.locations,
+                          activity, state.now, size, nearby, max(0, seed)))
 
 
 @app.get("/api/messages")

@@ -184,6 +184,7 @@ class Controller(NSObject):
         else:
             self.status.button().setTitle_("MG")
         menu = NSMenu.alloc().init()
+        menu.setAutoenablesItems_(False)               # otherwise AppKit overrides setEnabled_ below
         self._item(menu, "Open " + APP_NAME, "show:", target=self)
         self._item(menu, "Reload data", "reloadData:", target=self)
         menu.addItem_(NSMenuItem.separatorItem())
@@ -226,9 +227,7 @@ class Controller(NSObject):
             self.launch_url = server.guard.launch_url
             AppHelper.callAfter(self._loaded)
         except Exception as e:                          # show the reason in the window, not a silent crash
-            message = html.escape(str(e) or type(e).__name__)
-            AppHelper.callAfter(lambda: self.webview.loadHTMLString_baseURL_(
-                PAGE.format(title="Messaging Graph couldn't open your data", body=message), None))
+            self._show_error("Messaging Graph couldn't open your data", str(e) or type(e).__name__)
 
     @objc.python_method
     def _start_child(self, project: Path) -> None:
@@ -260,6 +259,7 @@ class Controller(NSObject):
                 return
             except OSError:
                 time.sleep(0.05)
+        raise RuntimeError("The data server printed its link but never answered.")
 
     @objc.python_method
     def _stop_child(self) -> None:
@@ -270,6 +270,12 @@ class Controller(NSObject):
             except subprocess.TimeoutExpired:
                 self.child.kill()
         self.child = None
+
+    @objc.python_method
+    def _show_error(self, title: str, message: str) -> None:
+        body = html.escape(message)
+        AppHelper.callAfter(lambda: self.webview.loadHTMLString_baseURL_(
+            PAGE.format(title=title, body=body), None))
 
     @objc.python_method
     def _loaded(self) -> None:
@@ -297,14 +303,18 @@ class Controller(NSObject):
 
     def reloadData_(self, sender):
         def work():
-            if self.child is not None or project_dir() is not None:
+            project = project_dir()                        # once: it can move while the app is open
+            if project is not None:
                 try:
-                    self._start_child(project_dir())       # a fresh server reads the latest import
+                    self._start_child(project)             # a fresh server reads the latest import
                     AppHelper.callAfter(self._loaded)
                 except Exception as e:
-                    message = html.escape(str(e))
-                    AppHelper.callAfter(lambda: self.webview.loadHTMLString_baseURL_(
-                        PAGE.format(title="Couldn't reload your data", body=message), None))
+                    self._show_error("Couldn't reload your data", str(e) or type(e).__name__)
+                return
+            if self.child is not None:
+                self._show_error("Couldn't reload your data",
+                                 "The project folder has moved, so the data server can't be restarted. "
+                                 "Quit Messaging Graph and open it again.")
                 return
             if self.server is None:
                 return
