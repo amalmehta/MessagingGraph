@@ -25,7 +25,8 @@ from datetime import datetime, timedelta
 from ..models import Corpus, Plan, RelationshipProfile
 from ..names import greeting_name, short_name
 from .circles import activity_of
-from .messages import Draft, restyle, voice_of
+from .messages import Draft
+from .voice import style_for, thanks_parts, write
 
 THANKS = re.compile(r"\b(?:thank you|thanks|thank u|thx|ty)(?:\s+(?:so much|again|a ton|a lot|so so much))?,?"
                     r"\s+for\s+(?P<what>[^.!?\n]{3,90})", re.I)
@@ -82,9 +83,8 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
         dm = corpus.messages_in(thread.id) if thread else []
         if not dm:
             continue
-        v = voice_of([m for m in dm if m.is_from_me])
-        g = greeting_name(p.name)
-        hey = f"Hey {g}" if g else "Hey"
+        style = style_for(corpus, now, p.contact_id)
+        name = greeting_name(p.name)
         first = short_name(p.name)
         options: list[Draft] = []
 
@@ -92,14 +92,15 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
         # doesn't read as one template. "Another version" steps on from there.
         offset = sum(map(ord, p.contact_id))
 
-        def add(kind: str, why: str, texts: list[str], value: float, detail: str = "") -> None:
+        def add(kind: str, why: str, variants: int, value: float, detail: str = "", **parts) -> None:
             did = f"thanks:{kind}:{p.contact_id}"
-            start = min(range(len(texts)), key=lambda i: (used[(kind, i)], (i - offset) % len(texts)))
-            idx = (start + seeds.get(did, 0)) % len(texts)
+            start = min(range(variants), key=lambda i: (used[(kind, i)], (i - offset) % variants))
+            idx = (start + seeds.get(did, 0)) % variants
             chosen[did] = (kind, idx)
-            options.append(Draft(did, kind, p.name, [p.contact_id], thread.id, why,
-                                 restyle(texts[idx], v), round(value, 1), detail,
-                                 seeds.get(did, 0), len(texts), v.__dict__))
+            text = write(thanks_parts(style, name, kind, idx, **parts), style, warm=True)
+            options.append(Draft(did, kind, p.name, [p.contact_id], thread.id, why, text, round(value, 1),
+                                 detail, seeds.get(did, 0), variants,
+                                 {"window_days": style.window_days, "traits": style.describe()}))
 
         # 1. Something you thanked them for, at least three weeks ago.
         for m in reversed(dm):
@@ -111,13 +112,9 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
             if not what:
                 continue
             when = _when(m.ts, now)
-            gerund = what.split()[0].lower().endswith("ing")
             yours = " ".join(YOURS.get(w.lower(), w) for w in what.split())   # "helping me move" -> "helping you move"
-            add("thanked", f"You thanked {first} for {yours} {when}.",
-                [f"{hey}! Still really grateful to you for {what} {when}.",
-                 (f"{hey}! Randomly thought about you {what} {when}. Still grateful." if gerund else
-                  f"{hey}! Randomly thought about {what} {when}. Still grateful for that.")],
-                72 + 0.3 * p.importance, detail=m.text[:140])
+            add("thanked", f"You thanked {first} for {yours} {when}.", 2, 72 + 0.3 * p.importance,
+                detail=m.text[:140], what=what, when=when)
             break
 
         # 2. A real texting anniversary, within a week either side.
@@ -127,10 +124,8 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
             nearest = started.replace(year=started.year + years)
             if abs((now - nearest).days) <= 7:
                 span = "a year" if years == 1 else f"{years} years"
-                add("anniversary", f"You and {first} started texting {span} ago this week.",
-                    [f"{hey}! Just realised it's been {span} since we started texting. Glad it's you.",
-                     f"{hey}! {span.capitalize()} of texting this week. Grateful for you."],
-                    66 + 0.2 * p.importance)
+                add("anniversary", f"You and {first} started texting {span} ago this week.", 2,
+                    66 + 0.2 * p.importance, span=span)
 
         # 3. Something you actually did together, a couple of weeks back or more.
         done = sorted((pl for pl in plans if pl.thread_id == thread.id and pl.state == "done"
@@ -140,17 +135,12 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
             act = activity_of(done[0]).lower()
             phrase = LOOKING_BACK.get(act, f"that {act}")
             when = _when(done[0].last_activity, now)
-            add("together", f"Something you did with {first} {when}: {act}.",
-                [f"{hey}! Still smiling about {phrase} {when}. Grateful for you.",
-                 f"{hey}! Thanks again for {phrase} {when}. Always good times with you.",
-                 f"{hey}! Kept thinking about {phrase} {when}. Thanks for always being up for things."],
-                56 + 0.3 * p.importance)
+            add("together", f"Something you did with {first} {when}: {act}.", 3, 56 + 0.3 * p.importance,
+                when=when, phrase=phrase)
 
         # 4. Plain appreciation for a close thread that's lasted.
         if p.state in ("close", "steady") and (now - started).days >= 150:
-            add("appreciation", f"{first} has been a steady, warm presence in your messages for months.",
-                [f"{hey}! No reason, just grateful you're in my life.",
-                 f"{hey}! Random, but I really appreciate you."],
+            add("appreciation", f"{first} has been a steady, warm presence in your messages for months.", 2,
                 36 + 0.25 * p.importance)
 
         if options:

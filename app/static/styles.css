@@ -395,3 +395,6 @@ button.stat:hover{border-color:rgba(236,196,160,.24)}
 /* a thank-you for one person */
 .thankbox{margin:12px 0 4px}
 .thankbox .draft{margin-top:2px}
+
+/* what the drafts learned about how you text */
+.voicenote{color:var(--faint);font-size:11.5px;margin:-6px 0 12px;line-height:1.5}

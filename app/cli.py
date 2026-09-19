@@ -212,6 +212,11 @@ def cmd_wipe(a) -> int:
     return 0
 
 
+def cmd_build_app(a) -> int:
+    from macapp.build import main as build
+    return build(login=not a.no_login)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="mg", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -231,6 +236,9 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_serve)
 
     sub.add_parser("doctor", help="check for anything left open").set_defaults(fn=cmd_doctor)
+    b = sub.add_parser("build-app", help="build and install the Mac app (needs: uv sync --group app)")
+    b.add_argument("--no-login", action="store_true", help="don't start it at login")
+    b.set_defaults(fn=cmd_build_app)
     w = sub.add_parser("wipe", help="delete the vault and its key")
     w.add_argument("--yes", action="store_true")
     w.set_defaults(fn=cmd_wipe)
