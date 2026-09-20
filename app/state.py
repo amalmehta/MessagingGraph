@@ -10,12 +10,15 @@ from datetime import datetime
 from .analysis.plans import extract_plans, follow_through, open_plan_counts
 from .analysis.places import infer_locations
 from .analysis.relationships import profile_all
+from .analysis.social import (enrich_profiles, propose_links, silent_ties,
+                              ties_by_contact)
 from .analysis.vibes import attach_vibes
 from .analysis.spam import classify
 from .ingest.base import load_source
 from .models import Corpus
 from .overrides import OverrideStore, apply_names
 from .privacy import NetworkGate, PrivacySettings, apply_settings
+from .social import SocialStore
 
 
 class AppState:
@@ -37,8 +40,15 @@ class AppState:
         if self.source_name == "vault":
             from .vault import Vault
             self.overrides = OverrideStore(Vault())
+            self.social_store = SocialStore(Vault())
         else:
             self.overrides = OverrideStore()
+            # The demo ships with a social graph so the feature is visible without
+            # asking anyone to hand over a real export.
+            self.social_store = SocialStore()
+            if self.source_name == "synthetic":
+                from .ingest.synthetic import synthetic_social
+                self.social_store.save(synthetic_social())
         self.recompute()
 
     def recompute(self) -> None:
@@ -79,5 +89,21 @@ class AppState:
                 # "Don't know" is an answer about the guess too: you've seen it and declined it.
                 self.locations[cid] = {**inferred[cid], "source": "messages"}
         self.location_unknown = set(o.location_unknown)
+        # An imported social graph, and only the links you confirmed yourself. A
+        # handle is a guess at a person until you say otherwise, so nothing here is
+        # linked without your say-so, and none of it feeds a score.
+        self.social_graph = self.social_store.load()
+        known = set(self.corpus.contacts)
+        self.social_links = {h: c for h, c in o.social_links.items() if c in known}
+        self.social_skip = set(o.social_skip)
+        if self.social_graph is not None:
+            self.social = ties_by_contact(self.social_graph, self.social_links)
+            self.social_asks = propose_links(self.social_graph, self.corpus,
+                                             self.social_links, self.social_skip)
+            self.social_silent = silent_ties(self.social_graph, self.social_links,
+                                             self.corpus, self.profiles, now)
+            enrich_profiles(self.profiles, self.social)
+        else:
+            self.social, self.social_asks, self.social_silent = {}, [], []
         self.profiles_by_id = {p.contact_id: p for p in self.profiles}
         self.version = getattr(self, "version", 0) + 1     # lets derived views cache safely

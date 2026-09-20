@@ -34,6 +34,35 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         FAILS.append(name)
 
 
+def _raises(exc, fn) -> bool:
+    """True when `fn` fails the way it is supposed to."""
+    try:
+        fn()
+    except exc:
+        return True
+    except Exception:
+        return False
+    return False
+
+
+def _profile_scores_ignore_social(st) -> bool:
+    """Linking an account must not move a single relationship number.
+
+    The social tie is descriptive. If it ever reached `state`, `balance` or
+    `importance`, the app would be scoring people on whether they follow back.
+    """
+    from app.analysis.social import enrich_profiles
+    before = [(p.contact_id, p.state, p.balance, p.importance, p.warmth) for p in st.profiles]
+    enrich_profiles(st.profiles, {p.contact_id: {"network": "instagram", "handle": "x",
+                                                 "display": "x", "tie": "mutual",
+                                                 "close_friend": True, "since": None}
+                                  for p in st.profiles})
+    after = [(p.contact_id, p.state, p.balance, p.importance, p.warmth) for p in st.profiles]
+    for p in st.profiles:                      # leave the state as it was found
+        p.social = None
+    return before == after
+
+
 def corr(name: str, xs: list[float], ys: list[float], floor: float) -> None:
     r = correlation(xs, ys)
     check(f"{name} correlates with ground truth (r >= {floor})", r >= floor, f"r = {r:.2f}")
@@ -905,6 +934,140 @@ def main() -> int:
           .json()["activity"] == "<script>x</script> league")
     check("control characters are stripped from the activity",
           "\n" not in client.get("/api/crew?activity=a%0Ab").json()["activity"])
+
+    print("\nsocials:")
+    import json as _json
+    import zipfile as _zip
+    from app.analysis.social import propose_links, silent_ties, ties_by_contact
+    from app.ingest.base import SourceUnavailable
+    from app.ingest.instagram import load_export, summarize
+    from app.ingest.synthetic import synthetic_social
+
+    # A hand-built export in the shapes Instagram actually ships: followers as a
+    # bare list split over numbered files, everything else wrapped in an object
+    # under a key that differs per file.
+    def _row(u, title="", ts=1699999999):
+        return {"title": title, "media_list_data": [],
+                "string_list_data": [{"href": f"https://www.instagram.com/{u}",
+                                      "value": u, "timestamp": ts}]}
+    ig = Path(tempfile.mkdtemp()) / "ig"
+    conn = ig / "connections" / "followers_and_following"
+    conn.mkdir(parents=True)
+    (conn / "followers_1.json").write_text(_json.dumps([_row("priya.r"), _row("marcuswebb", "Marcus Webb")]))
+    (conn / "followers_2.json").write_text(_json.dumps([_row("iris.solomon", "Iris Solomon")]))
+    (conn / "following.json").write_text(_json.dumps({"relationships_following": [
+        _row("priya.r"), _row("marcuswebb", "Marcus Webb"), _row("theo_blackwood", "Theo B"),
+        _row("tartine", "Tartine")]}))
+    (conn / "close_friends.json").write_text(_json.dumps({"relationships_close_friends": [_row("priya.r")]}))
+    (conn / "blocked_profiles.json").write_text(_json.dumps(
+        {"relationships_blocked_users": [_row("ex.roommate.2019")]}))
+    (ig / "personal_information.json").write_text(_json.dumps({"anything": 1}))
+    dm = ig / "your_instagram_activity" / "messages" / "inbox" / "someone_123"
+    dm.mkdir(parents=True)
+    (dm / "message_1.json").write_text(_json.dumps({"messages": [{"content": "hi"}]}))
+
+    folder = load_export(ig)
+    check("an export reads whichever shape each file arrived in",
+          summarize(folder) == {"network": "instagram", "accounts": 6, "followers": 3,
+                                "following": 4, "mutuals": 2, "close_friends": 1, "blocked": 1},
+          str(summarize(folder)))
+    check("a follower list split across numbered files is read whole",
+          "iris.solomon" in folder.accounts)
+    check("the tie is read from both directions",
+          folder.accounts["marcuswebb"].tie == "mutual"
+          and folder.accounts["theo_blackwood"].tie == "you follow them"
+          and folder.accounts["iris.solomon"].tie == "they follow you",
+          folder.accounts["theo_blackwood"].tie)
+    check("a blank display name falls back to the handle, not to nothing",
+          folder.accounts["priya.r"].name == "priya.r")
+
+    zpath = ig.parent / "export.zip"
+    with _zip.ZipFile(zpath, "w") as z:
+        for f in ig.rglob("*"):
+            if f.is_file():
+                z.write(f, f.relative_to(ig.parent))
+    check("a zip and an unpacked folder read identically",
+          summarize(load_export(zpath)) == summarize(folder))
+    check("DMs and the rest of the export are left alone",
+          all("message" not in h for h in folder.accounts))
+    check("a path that isn't an export says so rather than importing nothing",
+          _raises(SourceUnavailable, lambda: load_export(ig / "personal_information.json"))
+          and _raises(SourceUnavailable, lambda: load_export(ig / "nope")))
+
+    # Matching proposes; it never links on its own.
+    graph = synthetic_social()
+    asks = propose_links(graph, app_state.corpus, {}, set())
+    byh = {a["handle"]: a for a in asks}
+    check("a handle that reads as someone's name is proposed",
+          byh["sofia.marino"]["contact_name"] == "Sofia Marino"
+          and byh["hanakobayashi"]["contact_name"] == "Hana Kobayashi")
+    check("a handle that looks like nobody is left alone",
+          "bay.area.ceramics" not in byh, ", ".join(sorted(byh)))
+    check("a weaker match is offered as likely, not as certain",
+          byh["priya.r"]["confidence"] == "likely"
+          and byh["sofia.marino"]["confidence"] == "strong",
+          f"priya.r {byh['priya.r']['confidence']}, sofia.marino {byh['sofia.marino']['confidence']}")
+    check("every proposal says why it thinks so", all(a["why"] for a in asks))
+    check("nothing is linked until you confirm it",
+          ties_by_contact(graph, {}) == {} and not silent_ties(graph, {}, app_state.corpus,
+                                                               app_state.profiles, app_state.now))
+    check("a handle you set aside stops being proposed",
+          "leotran" not in {a["handle"] for a in propose_links(graph, app_state.corpus, {}, {"leotran"})})
+    check("a contact already linked isn't offered to a second handle",
+          all(a["contact_id"] != "p_sofia"
+              for a in propose_links(graph, app_state.corpus, {"sofia.marino": "p_sofia"}, set())))
+
+    links = {a["handle"]: a["contact_id"] for a in asks}
+    ties = ties_by_contact(graph, links)
+    check("a confirmed link carries the tie both ways",
+          ties["p_theo"]["tie"] == "you follow them"
+          and ties["p_iris"]["tie"] == "they follow you"
+          and ties["p_priya"]["close_friend"] is True)
+    check("a link to a handle a re-import dropped is ignored, not crashed on",
+          ties_by_contact(graph, {"gone.from.export": "p_priya"}) == {})
+
+    quiet = silent_ties(graph, links, app_state.corpus, app_state.profiles, app_state.now)
+    check("a close friend you've stopped texting is surfaced",
+          any(x["name"] == "Hana Kobayashi" and x["close_friend"] for x in quiet),
+          ", ".join(f"{x['name']} ({x['days_idle']}d)" for x in quiet))
+    check("someone you texted this week isn't called quiet",
+          all(x["days_idle"] >= 45 for x in quiet))
+    check("the social tie never reaches a score",
+          all(p.social is None or isinstance(p.social, dict) for p in app_state.profiles)
+          and _profile_scores_ignore_social(app_state))
+
+    # The endpoints, and the confirm-first contract they enforce.
+    csrf = {"origin": "http://127.0.0.1:8077"}
+    before = client.get("/api/social").json()
+    check("the socials endpoint answers with both layers",
+          before["imported"] and before["only_messages"] >= 0 and before["pending"] > 0,
+          f"{before['pending']} pending, {before['only_social']} only-social")
+    check("an export describes your own edges only, so nothing claims a link between two contacts",
+          "by_contact" not in before and "pairs" not in before)
+    first = client.get("/api/social/ask").json()["asks"][0]
+    check("linking an unknown handle is refused",
+          client.post("/api/social/nope.not.here/link",
+                      json={"contact_id": "p_priya"}, headers=csrf).status_code == 404)
+    check("linking to an unknown contact is refused",
+          client.post(f"/api/social/{first['handle']}/link",
+                      json={"contact_id": "p_nobody"}, headers=csrf).status_code == 404)
+    check("confirming a match links it",
+          client.post(f"/api/social/{first['handle']}/link",
+                      json={"contact_id": first["contact_id"]}, headers=csrf).status_code == 200
+          and client.get("/api/social").json()["linked"] == 1)
+    check("a second handle can't claim a contact that's already linked",
+          client.post("/api/social/bay.area.ceramics/link",
+                      json={"contact_id": first["contact_id"]}, headers=csrf).status_code == 409)
+    check("the person page shows the tie in words",
+          "@" in client.get(f"/api/people/{first['contact_id']}").json()["social_line"])
+    check("undoing a link puts it back in the queue",
+          client.post(f"/api/social/{first['handle']}/link",
+                      json={}, headers=csrf).status_code == 200
+          and client.get("/api/social").json()["linked"] == 0)
+    check("a cross-origin link attempt is refused",
+          client.post(f"/api/social/{first['handle']}/link",
+                      json={"contact_id": first["contact_id"]},
+                      headers={"origin": "http://attacker.example"}).status_code == 403)
 
     print("\nprivacy enforcement:")
     from app.privacy import ConsentError, NetworkGate, PrivacySettings, apply_settings, redact

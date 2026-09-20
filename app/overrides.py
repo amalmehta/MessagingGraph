@@ -25,15 +25,19 @@ class Overrides:
     automated: set[str] = field(default_factory=set)          # thread ids you hid
     locations: dict[str, str] = field(default_factory=dict)   # contact id -> place you gave
     location_unknown: set[str] = field(default_factory=set)   # contact ids you said you don't know
+    social_links: dict[str, str] = field(default_factory=dict)  # social handle -> contact id you confirmed
+    social_skip: set[str] = field(default_factory=set)          # handles you said aren't anyone you text
 
     def to_dict(self) -> dict:
         return {"names": self.names, "real": sorted(self.real), "automated": sorted(self.automated),
-                "locations": self.locations, "location_unknown": sorted(self.location_unknown)}
+                "locations": self.locations, "location_unknown": sorted(self.location_unknown),
+                "social_links": self.social_links, "social_skip": sorted(self.social_skip)}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Overrides":
         return cls(dict(d.get("names", {})), set(d.get("real", [])), set(d.get("automated", [])),
-                   dict(d.get("locations", {})), set(d.get("location_unknown", [])))
+                   dict(d.get("locations", {})), set(d.get("location_unknown", [])),
+                   dict(d.get("social_links", {})), set(d.get("social_skip", [])))
 
 
 class OverrideStore:

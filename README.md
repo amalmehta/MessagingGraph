@@ -22,6 +22,10 @@ never sent anywhere.
   you, who shows up, and who already knows each other. It drafts the group invitation too.
 - **Who's connected**: shared group chats, people who come up in other chats, shared
   interests, where people live, and who might get along.
+- **Socials**: bring in an Instagram data export to see your two layers side by side — who you
+  text, and who you follow. It surfaces the people the layers disagree about: someone on your
+  close friends list you haven't texted since spring. Handles are linked to people only when
+  you confirm each one.
 - **Clean data**: marketing and automated threads are set aside, and you can name unknown
   numbers and add locations.
 
@@ -64,6 +68,31 @@ your own messages.
 Run `./mg import` again whenever you want fresher data. Your names, locations and other
 corrections are kept.
 
+## Add Instagram (optional)
+
+Instagram has no API for this. The Basic Display API — the only one that ever served personal
+accounts — was retired in December 2024, and the Graph API is for business accounts and won't
+hand out a follower list as people. So this reads the export you request yourself:
+
+1. In Instagram: **Settings → Accounts Centre → Your information and permissions → Download your
+   information**. Choose **JSON** (not HTML), and include *Followers and following*.
+2. Meta emails you a link within a day or so. Download the zip.
+3. Point the app at it:
+   ```bash
+   ./mg import-social ~/Downloads/instagram-yourname.zip
+   ```
+4. Open the app and confirm the matches under **Socials**.
+
+The zip is read once, on your Mac, and sealed into the same encrypted vault as your messages.
+Only the follower and following lists are read — the export also contains your DMs, photos and
+activity history, and none of that is touched.
+
+**What it can and cannot tell you.** A personal export describes *your own* edges: who follows
+you, who you follow, who is on your close friends list. It says nothing about how two of your
+contacts are connected to each other, so nothing in the app claims that. A handle is also not a
+person, so nothing is linked to a contact until you confirm it, and a link never changes any
+score — how someone follows you back is not a measure of the friendship.
+
 ## Mac app
 
 Prefer an app to Terminal? Build and install it once:
@@ -86,6 +115,7 @@ Full Disk Access; importing still happens in Terminal. Rebuild after pulling new
 
 | Command | What it does |
 |---|---|
+| `./mg import-social <zip>` | Reads an Instagram data export into the vault |
 | `./mg doctor` | Checks for anything left open, like Full Disk Access still being on |
 | `./mg wipe` | Deletes your imported data and its encryption key |
 
@@ -107,3 +137,8 @@ More detail in [docs/how-it-works.md](docs/how-it-works.md).
 ## Limitations
 
 Version 1. macOS only, and the language analysis understands English only.
+
+The Instagram importer is written against the export format Meta documents and has been tested
+against a constructed export in that shape, not against every real one — Meta has changed the
+layout before. If a file has moved, the import says what it could not find rather than importing
+a silent half.
