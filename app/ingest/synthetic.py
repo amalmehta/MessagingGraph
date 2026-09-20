@@ -381,3 +381,80 @@ class SyntheticSource:
         messages.sort(key=lambda m: m.ts)
         return Corpus(contacts=contacts, threads=threads, messages=messages,
                       source_name="synthetic")
+
+
+# ---------------------------------------------------------------------------
+# A synthetic Instagram export, so the demo and the tests exercise the social
+# layer without anyone having to hand over a real one.
+#
+# Handles are deliberately written in the several styles people actually use --
+# full name, first name plus an initial, first name alone, and one that looks
+# nothing like the name on the thread -- so matching is tested against the messy
+# case and not just the easy one.
+# ---------------------------------------------------------------------------
+SOCIAL_HANDLES: dict[str, tuple[str, str]] = {
+    "p_priya": ("priya.r", ""),                       # first name + initial, no display name
+    "p_marcus": ("marcuswebb", "Marcus Webb"),        # full name, no separator
+    "p_sofia": ("sofia.marino", ""),                  # no display name in the export
+    "p_theo": ("theo_blackwood", "Theo B"),
+    "p_nadia": ("nadiaosei", "Nadia Osei"),
+    "p_leo": ("leotran", "Leo Tran"),
+    "p_amara": ("amara.ellis", "Amara Ellis"),
+    "p_hana": ("hanakobayashi", "Hana Kobayashi"),
+    "p_rafa": ("rafa.duarte", "Rafa Duarte"),
+    "p_iris": ("iris.solomon", "Iris Solomon"),
+    "p_jordan": ("feldwork", "Jordan Feld"),          # matches on display name only
+    "p_dani": ("bay.area.ceramics", ""),              # matches nothing: a handle is not a person
+}
+# (follows_me, i_follow, close_friend)
+SOCIAL_TIES: dict[str, tuple[bool, bool, bool]] = {
+    "p_priya": (True, True, True),
+    "p_marcus": (True, True, False),
+    "p_sofia": (True, True, True),
+    "p_theo": (False, True, False),      # you follow, no follow back
+    "p_nadia": (True, True, False),
+    "p_leo": (True, True, False),
+    "p_amara": (True, True, True),
+    "p_hana": (True, True, True),        # close friend, and silent for months
+    "p_rafa": (True, True, False),
+    "p_iris": (True, False, False),      # follows you, you don't follow back
+    "p_jordan": (True, True, False),
+    "p_dani": (False, True, False),
+}
+# Accounts that are only ever on Instagram: nobody here has a thread with you.
+SOCIAL_ONLY = [
+    ("mission.bouldering", "Mission Bouldering", True, True), ("sfrecordstore", "Grooves SF", False, True),
+    ("tartine", "Tartine Bakery", False, True), ("ferrybldgmarket", "Ferry Building", False, True),
+    ("kj.travels", "Kenji Watanabe", True, True), ("m.delacruz", "Mira de la Cruz", True, True),
+    ("orla.byrne", "Orla Byrne", True, True), ("sam.oyelaran", "Sam Oyelaran", True, False),
+    ("thelocalclimber", "The Local Climber", False, True), ("noe.valley.books", "Noe Valley Books", False, True),
+    ("t.eriksen", "Tove Eriksen", True, True), ("dev.null.sf", "dev/null", True, False),
+    ("anya.kaur", "Anya Kaur", True, True), ("pottery.by.jules", "Jules", False, True),
+    ("harbourrunners", "Harbour Runners", False, True), ("liam.ofarrell", "Liam O'Farrell", True, True),
+    ("suki.tanaka", "Suki Tanaka", True, True), ("coldwater.swim", "Cold Water Swim Club", False, True),
+]
+
+
+def synthetic_social(network: str = "instagram") -> "SocialGraph":
+    """The social graph that goes with the synthetic corpus."""
+    from datetime import timedelta
+
+    from ..models import SocialAccount, SocialGraph
+    rng = random.Random(SEED + 7)
+    base = datetime.now() - timedelta(days=900)
+    accounts: dict[str, SocialAccount] = {}
+
+    def add(handle: str, name: str, follows_me: bool, i_follow: bool,
+            close_friend: bool = False, blocked: bool = False) -> None:
+        accounts[handle] = SocialAccount(
+            handle=handle, name=name or handle, follows_me=follows_me, i_follow=i_follow,
+            close_friend=close_friend, blocked=blocked,
+            since=base + timedelta(days=rng.randrange(0, 850)))
+
+    for pid, (handle, display) in SOCIAL_HANDLES.items():
+        follows_me, i_follow, close = SOCIAL_TIES[pid]
+        add(handle, display, follows_me, i_follow, close)
+    for handle, display, follows_me, i_follow in SOCIAL_ONLY:
+        add(handle, display, follows_me, i_follow)
+    add("ex.roommate.2019", "", False, False, blocked=True)
+    return SocialGraph(network=network, accounts=accounts, exported_at=datetime.now())

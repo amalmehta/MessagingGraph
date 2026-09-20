@@ -424,3 +424,18 @@ button.stat:hover{border-color:rgba(236,196,160,.24)}
 
 /* what the drafts learned about how you text */
 .voicenote{color:var(--faint);font-size:11.5px;margin:-6px 0 12px;line-height:1.5}
+
+/* socials */
+.socialstats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.sstat{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:8px 14px;min-width:92px}
+.sstat b{display:block;font-size:19px;line-height:1.2}
+.sstat span{color:var(--dim);font-size:12px}
+.sociallayers{color:var(--dim);font-size:13px;line-height:1.7;margin-bottom:10px}
+.sociallayers b{color:var(--ink)}
+h3.subhead{margin:16px 0 2px;font-size:14px}
+.silentties{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.silent{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:10px 12px;min-width:220px;max-width:300px}
+.silent .mname{font-weight:600;margin-bottom:2px}
+.silent .mini{color:var(--dim);font-size:12px;line-height:1.5}

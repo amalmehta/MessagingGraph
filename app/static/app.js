@@ -322,6 +322,11 @@ function viewNow() {
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>
+    <h2>Socials</h2>
+    <div class="sub tight">An Instagram export, read on this Mac. It describes your own follows and
+      close friends — not how two of your contacts know each other, which no personal export can see.
+      Handles are linked to people only when you confirm them.</div>
+    <div id="social-panel"><div class="empty">Loading…</div></div>
     <h2>Messaging rate</h2>
     <div class="chartbox"><div class="chead">
       <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
@@ -349,6 +354,7 @@ function viewNow() {
   drawDrafts();
   drawThanks();
   drawCrew();
+  drawSocial();
   drawPlans();
   drawCircles();
   drawOverall();
@@ -562,6 +568,96 @@ async function loadCrew() {
     S.crew.seed = (S.crew.seed + 1) % (crew.options || 3);
     loadCrew();
   };
+}
+
+// ---------------------------------------------------------------- socials
+// Two layers over the same people: who you text, and who you follow. The useful
+// part is where they disagree -- a close friend on one and silence on the other.
+async function drawSocial() {
+  const box = $('#social-panel');
+  if (!box) return;
+  let s;
+  try { s = await api('/api/social'); } catch { box.innerHTML = ''; return; }
+  if (!s.imported) {
+    box.innerHTML = `<div class="notice quiet"><div>No social export yet. Ask Instagram for your
+      information as <b>JSON</b>, then run <code>./mg import-social &lt;the zip&gt;</code>. It is read
+      here and never sent anywhere.</div></div>`;
+    return;
+  }
+  const silent = s.silent || [];
+  box.innerHTML = `
+    <div class="socialstats">
+      ${[['following', s.following], ['followers', s.followers], ['mutuals', s.mutuals],
+         ['close friends', s.close_friends]].map(([label, n]) =>
+        `<div class="sstat"><b>${n}</b><span>${label}</span></div>`).join('')}
+    </div>
+    <div class="sociallayers">
+      <div><b>${s.linked}</b> linked to someone you text</div>
+      <div><b>${s.only_messages}</b> you text but haven't linked to an account</div>
+      <div><b>${s.only_social}</b> only on ${esc(s.network)}${s.only_social_names.length
+        ? ` — ${s.only_social_names.map(esc).join(', ')}${s.only_social > s.only_social_names.length ? '…' : ''}` : ''}</div>
+    </div>
+    ${s.pending ? `<div class="notice"><div>${s.pending}
+      ${s.pending === 1 ? 'handle looks' : 'handles look'} like someone you text. Nothing is linked
+      until you say so.</div><button class="btn primary social-review">Review matches</button></div>` : ''}
+    ${silent.length ? `<h3 class="subhead">Close there, quiet here</h3>
+      <div class="sub tight">People you're connected to on ${esc(s.network)} who haven't come up in
+        your messages for a while. A prompt, not a verdict.</div>
+      <div class="silentties">${silent.map(x => `
+        <div class="silent"><div class="mname link" data-id="${esc(x.id)}">${esc(x.name)}</div>
+          <div class="mini">${esc(x.why)}</div></div>`).join('')}</div>` : ''}`;
+  const review = box.querySelector('.social-review');
+  if (review) review.onclick = openSocialMatches;
+  box.querySelectorAll('.link[data-id]').forEach(el => el.onclick = () => openPerson(el.dataset.id));
+}
+
+async function openSocialMatches() {
+  const { asks } = await api('/api/social/ask');
+  $('#drawer').innerHTML = `
+    <span class="close">&times;</span>
+    <h3>Is this them?</h3>
+    <div class="headline">A handle is a guess at a person, so nothing is linked until you confirm it.
+      Linking lets the app show how you follow each other; it never changes any score. Saved on this
+      Mac, encrypted with your data.</div>
+    ${asks.length ? asks.map(a => `
+      <div class="nameme" data-handle="${esc(a.handle)}">
+        <div class="ctop"><b>@${esc(a.handle)}</b><span class="tag">${esc(a.confidence)}</span></div>
+        <div class="pdef">${esc(a.why)} · ${esc(a.tie)}${a.close_friend ? ' · close friend' : ''}</div>
+        <form class="nm-form">
+          <button class="btn primary" type="button" data-act="yes">Yes, ${esc(a.contact_name)}</button>
+          <button class="btn ghost" type="button" data-act="no">Not anyone I text</button>
+          <span class="dnote" role="status"></span>
+        </form>
+      </div>`).join('') : '<div class="empty">Nothing left to confirm.</div>'}`;
+  $('#drawer .close').onclick = () => { closeDrawer(); go(S.view); };
+  $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  $('#drawer').scrollTop = 0;
+  $('#drawer').querySelectorAll('.nameme').forEach(card => {
+    const a = asks.find(x => x.handle === card.dataset.handle);
+    const form = card.querySelector('form'), note = card.querySelector('.dnote');
+    const save = async (body, said) => {
+      // Linking makes the server recompute every profile, which takes a beat.
+      // Say so straight away rather than leaving the click looking ignored.
+      const buttons = [...form.querySelectorAll('button')];
+      buttons.forEach(el => { el.disabled = true; });
+      note.className = 'dnote';
+      note.textContent = 'Saving…';
+      const res = await postJSON(`/api/social/${encodeURIComponent(a.handle)}/link`, body);
+      if (!res.ok) {
+        note.className = 'dnote err';
+        note.textContent = res.error;
+        buttons.forEach(el => { el.disabled = false; });
+        return;
+      }
+      note.textContent = said;
+      card.classList.add('named');
+      await refreshData();
+    };
+    form.querySelector('[data-act="yes"]').onclick = () =>
+      save({ contact_id: a.contact_id }, `Linked to ${a.contact_name}.`);
+    form.querySelector('[data-act="no"]').onclick = () =>
+      save({ skip: true }, "Set aside. It won't ask again.");
+  });
 }
 
 // ---------------------------------------------------------------- connections + proposals

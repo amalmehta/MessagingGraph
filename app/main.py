@@ -25,6 +25,7 @@ from .analysis.network import enrich
 from .analysis.plans import OPEN_STATES
 from .analysis.proposals import propose
 from .analysis.series import contact_series, overall_series, sparkline_points
+from .analysis.social import line_for, overview as social_overview, unmatched
 from .analysis.suggestions import build as build_suggestions
 from .analysis.voice import style_for
 from .graph import build_graph
@@ -198,6 +199,8 @@ def person(cid: str):
         "thread_id": (t.id if (t := state.corpus.direct_thread(cid)) else None),
         "location": state.locations.get(cid),
         "location_unknown": cid in state.location_unknown,
+        "social": state.social.get(cid),
+        "social_line": line_for(state.social.get(cid)),
     })
 
 
@@ -373,6 +376,62 @@ class NamePatch(BaseModel):
 class LocationPatch(BaseModel):
     place: str | None = None
     unknown: bool = False
+
+
+class SocialLink(BaseModel):
+    contact_id: str | None = None      # confirm this handle is that person
+    skip: bool = False                 # "not anyone I text" -- stop asking
+
+
+@app.get("/api/social")
+def social():
+    """The two layers side by side, and the people only one of them knows about.
+
+    An imported export only ever describes your own edges, so nothing here says
+    how two of your contacts are connected to each other.
+    """
+    graph = state.social_graph
+    return enc({
+        **social_overview(graph, state.social_links, state.corpus),
+        "silent": state.social_silent,
+        "unlinked": [{"handle": a.handle, "display": a.name, "tie": a.tie,
+                      "close_friend": a.close_friend}
+                     for a in unmatched(graph, state.social_links)[:40]] if graph else [],
+        "pending": len(state.social_asks),
+    })
+
+
+@app.get("/api/social/ask")
+def ask_social():
+    """Handles that look like someone you text. Proposals only, never applied."""
+    return enc({"asks": state.social_asks})
+
+
+@app.post("/api/social/{handle}/link")
+def link_social(handle: str, patch: SocialLink):
+    """Confirm a handle is someone you text, set it aside, or undo either."""
+    if state.social_graph is None or handle not in state.social_graph.accounts:
+        raise HTTPException(404, "No such account in the imported export.")
+    o = state.overrides.load()
+    if patch.skip:
+        o.social_links.pop(handle, None)
+        o.social_skip.add(handle)
+    elif patch.contact_id is None:
+        o.social_links.pop(handle, None)          # undo: ask about it again
+        o.social_skip.discard(handle)
+    else:
+        if patch.contact_id not in state.raw.contacts:
+            raise HTTPException(404, "No such contact.")
+        taken = {h for h, c in o.social_links.items()
+                 if c == patch.contact_id and h != handle}
+        if taken:
+            raise HTTPException(409, f"@{taken.pop()} is already linked to them.")
+        o.social_links[handle] = patch.contact_id
+        o.social_skip.discard(handle)
+    state.overrides.save(o)
+    state.recompute()
+    return enc({"ok": True, "linked": len(state.social_links),
+                "pending": len(state.social_asks)})
 
 
 # Ask about the people who matter most first, and never about someone you've already
