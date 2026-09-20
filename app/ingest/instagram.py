@@ -25,6 +25,7 @@ gone missing is a missing signal rather than a failed import.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -33,7 +34,9 @@ from ..models import SocialAccount, SocialGraph
 from .base import SourceUnavailable
 
 # Each file is matched on the stem, because exports number them (followers_1,
-# followers_2, ...) once a list is long enough to split.
+# followers_2, ...) once a list is long enough to split. Only a numeric suffix is
+# a continuation: `following_hashtags.json` sits in the same folder and is a list
+# of topics, not of people.
 WANTED = {
     "followers": "follows_me",
     "following": "i_follow",
@@ -48,29 +51,49 @@ MAX_BYTES = 64 * 1024 * 1024        # one list file; a guard against a zip bomb
 
 
 def _kind(stem: str) -> str | None:
-    """Which signal a file carries, ignoring the `_1`, `_2` suffixes."""
+    """Which signal a file carries, ignoring the `_1`, `_2` page suffixes.
+
+    The suffix has to be digits. Meta ships `following_hashtags.json` beside
+    `following.json`, and a looser prefix match reads every hashtag you follow as
+    a person you follow.
+    """
     stem = stem.lower()
     for name, field in WANTED.items():
-        if stem == name or stem.startswith(name + "_"):
+        if stem == name or re.fullmatch(re.escape(name) + r"_\d+", stem):
             return field
     return None
 
 
-def _entries(blob: bytes) -> list[dict]:
-    """The rows in one export file, whichever shape it arrived in."""
+def _entries(blob: bytes, filename: str = "that file") -> list[dict]:
+    """The rows in one export file, whichever shape it arrived in.
+
+    A file that is *absent* is a missing signal and fine. A file that is present,
+    that we picked out by name, and that holds no list we can find is something
+    else: the layout has moved under us. That stops the import and says which file
+    it was, because reading it as an empty list would silently report that you
+    follow nobody and drop every tie on the next recompute.
+    """
     try:
         data = json.loads(blob)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise SourceUnavailable(f"That file isn't the JSON export: {e}") from e
+        raise SourceUnavailable(f"{filename} isn't the JSON export: {e}") from e
+    if isinstance(data, list):
+        return data
     if isinstance(data, dict):
         for key in LIST_KEYS:
             if isinstance(data.get(key), list):
                 return data[key]
         # An export key we have not seen: take the only list in the object rather
-        # than guessing at its name.
+        # than guessing at its name. Two lists and we can't tell which is which.
         lists = [v for v in data.values() if isinstance(v, list)]
-        return lists[0] if len(lists) == 1 else []
-    return data if isinstance(data, list) else []
+        if len(lists) == 1:
+            return lists[0]
+        raise SourceUnavailable(
+            f"{filename} holds no list of accounts under any name this reads "
+            f"({len(lists)} lists found). Instagram has changed the export layout; "
+            "nothing was imported.")
+    raise SourceUnavailable(
+        f"{filename} isn't shaped like an export file. Nothing was imported.")
 
 
 def _account(entry: dict) -> tuple[str, str, datetime | None] | None:
@@ -95,11 +118,11 @@ def _account(entry: dict) -> tuple[str, str, datetime | None] | None:
 
 
 def _files(path: Path):
-    """(stem, bytes) for every JSON file in the export, zipped or unpacked."""
+    """(stem, filename, bytes) for every JSON file in the export, zipped or unpacked."""
     if path.is_dir():
         for p in sorted(path.rglob("*.json")):
             if _kind(p.stem) and p.stat().st_size <= MAX_BYTES:
-                yield p.stem, p.read_bytes()
+                yield p.stem, p.name, p.read_bytes()
         return
     if not zipfile.is_zipfile(path):
         raise SourceUnavailable(
@@ -110,7 +133,7 @@ def _files(path: Path):
             stem = Path(info.filename).stem
             if (not info.is_dir() and info.filename.lower().endswith(".json")
                     and _kind(stem) and info.file_size <= MAX_BYTES):
-                yield stem, z.read(info)
+                yield stem, Path(info.filename).name, z.read(info)
 
 
 def load_export(path: str | Path, network: str = "instagram") -> SocialGraph:
@@ -126,10 +149,10 @@ def load_export(path: str | Path, network: str = "instagram") -> SocialGraph:
 
     found: dict[str, dict] = {}
     seen_files = 0
-    for stem, blob in _files(path):
+    for stem, filename, blob in _files(path):
         field = _kind(stem)
         seen_files += 1
-        for entry in _entries(blob):
+        for entry in _entries(blob, filename):
             parsed = _account(entry) if isinstance(entry, dict) else None
             if parsed is None:
                 continue
