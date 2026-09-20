@@ -97,9 +97,17 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-PAGE = """<!doctype html><meta charset="utf-8"><body style="margin:0;height:100vh;display:grid;place-items:center;
-background:#101113;color:#91979e;font:15px -apple-system,system-ui,sans-serif"><div style="text-align:center;max-width:460px;
-padding:0 24px"><div style="color:#eaecee;font-size:19px;font-weight:600;margin-bottom:8px">{title}</div>{body}</div></body>"""
+# Shown before the real UI loads, so it follows the system the way the app does.
+# It cannot use styles.css -- the server it would come from is what we're waiting
+# for -- so the two neutrals are repeated here and nowhere else.
+PAGE = """<!doctype html><meta charset="utf-8"><style>
+:root{color-scheme:light dark;--page:#f6f5f2;--text:#4a4f55;--head:#1c1e21}
+@media (prefers-color-scheme:dark){:root{--page:#191b1f;--text:#b3bac2;--head:#edeff2}}
+body{margin:0;height:100vh;display:grid;place-items:center;background:var(--page);
+color:var(--text);font:15px -apple-system,system-ui,sans-serif}
+.t{color:var(--head);font-size:19px;font-weight:600;margin-bottom:8px}
+</style><body><div style="text-align:center;max-width:460px;padding:0 24px">
+<div class="t">{title}</div>{body}</div></body>"""
 
 
 class Controller(NSObject):
