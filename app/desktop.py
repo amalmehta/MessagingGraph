@@ -223,6 +223,8 @@ class Controller(NSObject):
                     break
                 except OSError:
                     time.sleep(0.05)
+            else:
+                raise RuntimeError("The data server never answered.")
             self.server = server
             self.launch_url = server.guard.launch_url
             AppHelper.callAfter(self._loaded)

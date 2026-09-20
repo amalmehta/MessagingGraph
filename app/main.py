@@ -293,7 +293,8 @@ def crew_activities():
 
 
 @app.get("/api/crew")
-def crew(activity: str, size: int | None = None, nearby: bool = True, seed: int = 0):
+def crew(activity: str, size: int | None = None, nearby: bool = True, seed: int = 0,
+         crew_seed: int = 0):
     """Who to ask for one specific thing, and an invitation in your own voice.
 
     A GET: it works out a suggestion and changes nothing. You send it yourself.
@@ -307,7 +308,7 @@ def crew(activity: str, size: int | None = None, nearby: bool = True, seed: int 
     if size is not None and not 1 <= size <= 8:
         raise HTTPException(400, "A crew is between 1 and 8 people.")
     return enc(build_crew(state.corpus, state.profiles, state.plans, network(), state.locations,
-                          activity, state.now, size, nearby, max(0, seed)))
+                          activity, state.now, size, nearby, max(0, seed), max(0, crew_seed)))
 
 
 @app.get("/api/messages")

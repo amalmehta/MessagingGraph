@@ -881,8 +881,65 @@ def main() -> int:
           "board game night" in games.draft.lower(), repr(games.draft))
     check("the suggested day is a weekend, and far enough out to answer",
           "saturday" in (games.when_label or "").lower(), games.when_label)
-    check("'another version' writes a different invitation",
-          crew_for("board game night", seed=1).draft != games.draft)
+    # The two knobs are separate: one rewords the ask, the other changes who gets it.
+    check("every 'another version' really is another version",
+          len({crew_for("board game night", seed=s).draft for s in range(games.options)}) == games.options
+          and len({crew_for("volo soccer league", seed=s).draft for s in range(sporty.options)}) == sporty.options,
+          f"{games.options} wordings for game night, {sporty.options} for a league")
+    check("rewording the ask doesn't quietly swap the people out",
+          [m.id for m in crew_for("board game night", seed=1).members] == [m.id for m in games.members])
+    others = crew_for("board game night", crew_seed=1)
+    check("asking for different people keeps the wording you settled on",
+          others.draft == games.draft)
+    check("asking for different people actually changes them",
+          {m.id for m in others.members} != {m.id for m in games.members},
+          str([m.name.split()[0] for m in others.members]))
+    check("whoever was set aside is the first to fall back on",
+          bool(others.alternates) and others.alternates[0].id == games.members[0].id)
+
+    from app.analysis.crews import _mentions
+    check("a run is not history for brunch",
+          _mentions("a bike ride", "bike ride") and not _mentions("brunch", "run")
+          and not _mentions("a walkthrough", "walk"))
+
+    from app.analysis.network import interests as _interests
+    imap_c = _interests(app_state.corpus, app_state.plans)
+    mixed_labels = interests_for("brunch then a bike ride")
+    def _reason_matches(m):
+        their = imap_c.get(m.id, {})
+        shared = [l for l in mixed_labels if l in their]
+        said = [r for r in m.reasons if "comes up in your thread" in r]
+        return not (shared and said) or said[0].startswith(min(shared, key=lambda l: (-their[l], l)))
+    mixed = crew_for("brunch then a bike ride")
+    check("the reason names the interest that earned the pick, not the first alphabetically",
+          all(_reason_matches(m) for m in mixed.members),
+          "; ".join(r for m in mixed.members for r in m.reasons if "comes up" in r))
+
+    # A share of 0.0 means their plans never land. Too few plans to judge means
+    # nothing at all, and must not cost them their seat.
+    import copy
+    thin = [copy.copy(p) for p in app_state.profiles]
+    edge = thin[3]
+    def _score_in(crew, cid):
+        return next((m.score for m in crew.members + crew.alternates if m.id == cid), None)
+    def _dinner(profs):
+        return build_crew(app_state.corpus, profs, app_state.plans, net,
+                          app_state.locations, "dinner", app_state.now, size=8)
+    edge.follow_through = None
+    neutral = _score_in(_dinner(thin), edge.contact_id)
+    edge.follow_through = 0.0
+    never = _score_in(_dinner(thin), edge.contact_id)
+    check("too few plans to judge isn't scored as plans that never happen",
+          neutral > never, f"unknown {neutral} vs never-lands {never}")
+
+    hidden = [copy.copy(p) for p in app_state.profiles]
+    for p in hidden:
+        if "games" in imap_c.get(p.contact_id, {}):
+            p.state = "group"                      # only ever reachable through a group chat
+    quiet = build_crew(app_state.corpus, hidden, app_state.plans, net,
+                       app_state.locations, "board game night", app_state.now)
+    check("someone you can't ask doesn't vouch for the crew",
+          "Nothing in your messages says who's into" in quiet.note, quiet.note[-80:])
     check("an invitation carries no names or message text from the thread",
           not any(m.name.split()[0].lower() in games.draft.lower() for m in games.members),
           repr(games.draft))

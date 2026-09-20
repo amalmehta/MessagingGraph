@@ -154,7 +154,9 @@ class RelationshipProfile:
     total_messages: int = 0
     open_plans: int = 0
     confidence: float = 1.0         # 0..1, how much data this read rests on
-    follow_through: float = 0.0     # share of shared plans that actually landed
+    # None when there were too few plans to judge -- which is not the same as
+    # a share of 0.0, and must not be scored as though it were.
+    follow_through: float | None = None
     vibe: Vibe | None = None
 
 

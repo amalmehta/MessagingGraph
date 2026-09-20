@@ -375,7 +375,8 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
                            per_week, recent),
         first_contact=first_ts, last_contact=last_ts,
         total_messages=total, open_plans=open_plans,
-        confidence=confidence, follow_through=round(follow_through or 0.0, 3),
+        confidence=confidence,
+        follow_through=None if follow_through is None else round(follow_through, 3),
     )
 
 
