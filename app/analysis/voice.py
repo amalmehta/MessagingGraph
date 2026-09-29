@@ -137,12 +137,26 @@ def _learn(mine: list[Message], openers: list[Message], window: int | None, doub
 
 
 _CACHE: dict = {}
+_BASELINE: dict = {}
 
 
-def style_for(corpus: Corpus, now: datetime, contact_id: str | None = None) -> Style:
-    key = (id(corpus), len(corpus.messages), now, contact_id)
-    if key in _CACHE:
-        return _CACHE[key]
+@dataclass
+class _Baseline:
+    """The half of your voice that doesn't depend on who you're writing to."""
+    style: Style
+    days: int | None
+    mine: dict[str, list[Message]]         # your recent messages, per thread
+    openers: dict[str, list[Message]]      # the ones that opened a conversation, per thread
+    doubles: Counter
+
+
+def _baseline(corpus: Corpus, now: datetime) -> _Baseline:
+    # Every line here reads the whole corpus, and none of it depends on the contact, so it
+    # runs once per corpus instead of once per person. A page of drafts asks for one style
+    # per contact; doing this inside that loop made the first load quadratic.
+    key = (id(corpus), len(corpus.messages), now)
+    if key in _BASELINE:
+        return _BASELINE[key]
     mine_all = [m for m in corpus.messages if m.is_from_me and m.text]
     days, recent = None, mine_all
     for days in WINDOWS:
@@ -164,12 +178,33 @@ def style_for(corpus: Corpus, now: datetime, contact_id: str | None = None) -> S
         last[m.thread_id] = m
 
     style = _learn(recent, openers, days, sum(doubles.values()) / max(1, len(recent)))
-    thread = corpus.direct_thread(contact_id) if contact_id else None
+    # Bucketed by thread so refining for one person costs that thread, not the whole history.
+    by_thread: dict[str, list[Message]] = {}
+    for m in recent:
+        by_thread.setdefault(m.thread_id, []).append(m)
+    opens_by_thread: dict[str, list[Message]] = {}
+    for m in openers:
+        opens_by_thread.setdefault(m.thread_id, []).append(m)
+
+    base = _Baseline(style, days, by_thread, opens_by_thread, doubles)
+    _BASELINE[key] = base
+    return base
+
+
+def style_for(corpus: Corpus, now: datetime, contact_id: str | None = None) -> Style:
+    base = _baseline(corpus, now)
+    if contact_id is None:
+        return base.style
+    key = (id(corpus), len(corpus.messages), now, contact_id)
+    if key in _CACHE:
+        return _CACHE[key]
+    style = base.style
+    thread = corpus.direct_thread(contact_id)
     if thread:
-        mine = [m for m in recent if m.thread_id == thread.id]
+        mine = base.mine.get(thread.id, [])
         if len(mine) >= MIN_PERSON:
-            person = _learn(mine, [m for m in openers if m.thread_id == thread.id], days,
-                            doubles[thread.id] / len(mine), base=style)
+            person = _learn(mine, base.openers.get(thread.id, []), base.days,
+                            base.doubles[thread.id] / len(mine), base=style)
             style = Style(**{**style.__dict__, **{a: getattr(person, a) for a in
                                                   ("greeting", "lowercase", "emoji", "warm_emoji", "exclaim", "laugh", "bursts")}})
     _CACHE[key] = style
