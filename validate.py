@@ -339,6 +339,18 @@ def main() -> int:
     again = next(d for d in build_messages(st.corpus, st.profiles, st.plans, st.now, {top.id: 1})
                  if d.id == top.id)
     check("'another version' changes the wording", again.draft != top.draft)
+    # A plan draft's seed picks the activity and the date, not only the phrasing, so
+    # cycling it has to offer a different thing to do -- not reword the same dinner.
+    plan_draft = next((d for d in drafts if d.kind in ("revive_plan", "group_plan")), None)
+    check("a plan draft is among the suggestions", plan_draft is not None)
+    if plan_draft:
+        versions = [v for s in range(plan_draft.options)
+                    for v in build_messages(st.corpus, st.profiles, st.plans, st.now,
+                                            {plan_draft.id: s}) if v.id == plan_draft.id]
+        texts, dates = {v.draft for v in versions}, {v.detail for v in versions}
+        check("'another version' on a plan offers another thing to do, not just new wording",
+              len(texts) > 3 and len(dates) > 1,
+              f"{len(texts)} drafts and {len(dates)} dates across {plan_draft.options} options")
     from app.analysis.voice import plan_parts as _plan_parts, style_for as _vstyle, write as _vwrite
     vnow = datetime(2026, 9, 16, 12)
 
