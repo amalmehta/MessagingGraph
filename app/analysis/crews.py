@@ -208,13 +208,11 @@ def build_crew(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[
         crew.draft, crew.options = write(options[seed % len(options)], style), len(options)
     else:
         when = _next_weekend(now)
-        # Seeds 1 and 2 name the activity; seed 0's "it's been a minute" opener doesn't,
-        # and an invitation that never says what it's for is no use. So there are two
-        # wordings here, not three, and `options` has to say so or the UI cycles back
-        # onto a draft the reader already turned down.
-        crew.options = 2
+        # All three wordings name the activity, so all three are usable. `options` has
+        # to match, or the UI cycles back onto a draft the reader already turned down.
+        crew.options = 3
         crew.draft = write(plan_parts(style, activity, when, now, 19, None, True, False,
-                                      (seed % crew.options) + 1), style)
+                                      seed % crew.options), style)
         crew.when_label = f"{day_words(when, now, style)} {time_words(19, style)}"
     crew.note = (f"{len(members)} people for {activity}"
                  + (f", mostly in {crew.place}" if crew.place else "")
