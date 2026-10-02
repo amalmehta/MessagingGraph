@@ -33,16 +33,34 @@ const shortName = (n) => {
   return s.split(' ')[0];
 };
 
-const STATE_COLOR = {
-  scheduled: '#3fb950', confirmed: '#3fb950', proposed: '#58a6ff',
-  floated: '#a371f7', stale: '#e3873c', done: '#60656b', dropped: '#70757d',
-};
+// ---------------------------------------------------------------- colour
+// The stylesheet owns every colour, including the ones that end up as SVG
+// attributes. These maps are filled from it by readTheme() and refilled when the
+// theme changes, so a chart drawn in light and the same chart drawn in dark come
+// from one definition instead of two that drift apart.
+const cssVar = (n) =>
+  getComputedStyle(document.documentElement).getPropertyValue('--' + n).trim();
+const PAINT = {};
+const STATE_COLOR = {};
 // Descriptive states, not grades -- so no red. Red on a human reads as an alarm,
 // and nothing a texting statistic can see justifies one.
-const STATE_COLOR_PERSON = {
-  close: '#3fb950', steady: '#58a6ff', practical: '#6e7bd6',
-  uneven: '#d29922', quiet: '#70757d', new: '#70757d', group: '#838a96',
-};
+const STATE_COLOR_PERSON = {};
+const SERIES = {};
+const PAINT_KEYS = ['bg', 'panel', 'panel2', 'line', 'line-strong', 'ink', 'dim', 'faint',
+  'adds', 'functional', 'neutral', 'costs', 'unclear', 'accent', 'stale', 'plan'];
+
+function readTheme() {
+  for (const k of PAINT_KEYS) PAINT[k] = cssVar(k);
+  Object.assign(STATE_COLOR, {
+    scheduled: PAINT.adds, confirmed: PAINT.adds, proposed: PAINT.accent,
+    floated: PAINT.plan, stale: PAINT.stale, done: PAINT.faint, dropped: PAINT.unclear,
+  });
+  Object.assign(STATE_COLOR_PERSON, {
+    close: PAINT.adds, steady: PAINT.accent, practical: PAINT.functional,
+    uneven: PAINT.neutral, quiet: PAINT.unclear, new: PAINT.unclear, group: PAINT.unclear,
+  });
+  Object.assign(SERIES, { you: cssVar('series-you'), them: cssVar('series-them') });
+}
 const STATE_LABEL = {
   close: 'close', steady: 'steady', practical: 'practical',
   uneven: 'uneven', quiet: 'quiet', new: 'too early', group: 'groups only',
@@ -52,9 +70,10 @@ const S = { view: 'now', overview: null, people: null, graph: null,
   includeStale: false, sort: 'importance', weeks: 40 };
 
 // ---------------------------------------------------------------- charts
-// Two series, validated against the dark chart surface (#181a1d):
-// worst-pair CVD ΔE 26.8, normal-vision ΔE 31.8, both well clear of the floors.
-const SERIES = { you: '#3987e5', them: '#d95926' };
+// The two series are --series-you / --series-them, set per theme in styles.css
+// and checked by validate.py: each stays above 3:1 against its own chart surface,
+// and the pair stays far apart under normal vision and all three kinds of colour
+// blindness, so "you" and "them" never collapse into one another.
 const NS = 'http://www.w3.org/2000/svg';
 const el = (n, a = {}) => {
   const e = document.createElementNS(NS, n);
@@ -100,9 +119,9 @@ function rateChart(host, data, opts = {}) {
   // hairline, solid, recessive grid
   for (const t of [0, top / 2, top]) {
     svg.append(el('line', { x1: M.l, x2: M.l + iw, y1: y(t), y2: y(t),
-      stroke: '#282d33', 'stroke-width': 1 }));
+      stroke: PAINT.line, 'stroke-width': 1 }));
     const lab = el('text', { x: M.l - 7, y: y(t) + 3.5, 'text-anchor': 'end',
-      fill: '#60656b', 'font-size': 9.5, 'font-family': 'ui-monospace,monospace' });
+      fill: PAINT.faint, 'font-size': 9.5, 'font-family': 'ui-monospace,monospace' });
     lab.textContent = t;
     svg.append(lab);
   }
@@ -114,10 +133,10 @@ function rateChart(host, data, opts = {}) {
     if (i > 0) {
       const x = M.l + i * band;
       svg.append(el('rect', { x: M.l, y: M.t, width: x - M.l, height: ih,
-        fill: '#1e2226', opacity: .5 }));
+        fill: PAINT.panel2, opacity: .5 }));
       svg.append(el('line', { x1: x, x2: x, y1: M.t, y2: M.t + ih,
-        stroke: '#383f47', 'stroke-width': 1 }));
-      const t = el('text', { x: x + 4, y: M.t + 9, fill: '#60656b', 'font-size': 9,
+        stroke: PAINT['line-strong'], 'stroke-width': 1 }));
+      const t = el('text', { x: x + 4, y: M.t + 9, fill: PAINT.faint, 'font-size': 9,
         'font-family': 'system-ui,sans-serif' });
       t.textContent = 'first message';
       svg.append(t);
@@ -143,7 +162,7 @@ function rateChart(host, data, opts = {}) {
     }
     if (i === peak && b.total > 0) {
       const t = el('text', { x: x + cw / 2, y: y(b.total) - 5, 'text-anchor': 'middle',
-        fill: '#91979e', 'font-size': 9.5, 'font-family': 'ui-monospace,monospace' });
+        fill: PAINT.dim, 'font-size': 9.5, 'font-family': 'ui-monospace,monospace' });
       t.textContent = b.total;
       svg.append(t);
     }
@@ -153,13 +172,13 @@ function rateChart(host, data, opts = {}) {
   [0, Math.floor(B.length / 2), B.length - 1].forEach(i => {
     const t = el('text', { x: M.l + i * band + band / 2, y: H - 6,
       'text-anchor': i === 0 ? 'start' : i === B.length - 1 ? 'end' : 'middle',
-      fill: '#60656b', 'font-size': 9.5, 'font-family': 'system-ui,sans-serif' });
+      fill: PAINT.faint, 'font-size': 9.5, 'font-family': 'system-ui,sans-serif' });
     t.textContent = fmtDay(B[i].start);
     svg.append(t);
   });
 
   // hover layer — hit targets span the full band, not just the column
-  const hi = el('rect', { y: M.t, width: band, height: ih, fill: '#eaecee',
+  const hi = el('rect', { y: M.t, width: band, height: ih, fill: PAINT.ink,
     opacity: 0, 'pointer-events': 'none' });
   svg.append(hi);
   const hit = el('rect', { x: M.l, y: M.t, width: iw, height: ih, fill: 'transparent' });
@@ -233,11 +252,12 @@ function spark(values, w = 78, h = 20) {
     <polyline points="${pts.join(' ')}" fill="none" stroke="${SERIES.you}"
       stroke-width="1.75" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${(w).toFixed(1)}" cy="${(h - (last / max) * (h - 3) - 1.5).toFixed(1)}"
-      r="2.5" fill="${SERIES.you}" stroke="#101113" stroke-width="1.5"/></svg>`;
+      r="2.5" fill="${SERIES.you}" stroke="${PAINT.bg}" stroke-width="1.5"/></svg>`;
 }
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  wireTheme();
   S.overview = await api('/api/overview');
   S.people = await api('/api/people');
   const o = S.overview;
@@ -254,6 +274,44 @@ async function boot() {
   go('now');
 }
 
+// ---------------------------------------------------------------- theme
+// Auto follows the system. Light and dark pin it, and the choice is remembered
+// on this Mac. Charts and the force graph are drawn with SVG attributes rather
+// than CSS, so switching re-reads the palette and repaints the open view.
+function wireTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('mg-theme'); } catch { /* private window */ }
+  const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
+  const system = window.matchMedia('(prefers-color-scheme: dark)');
+
+  const apply = (m, repaint) => {
+    if (m === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = m;
+    document.querySelectorAll('[data-theme-set]').forEach(b =>
+      b.classList.toggle('on', b.dataset.themeSet === m));
+    readTheme();
+    if (repaint && S.view) go(S.view);
+  };
+
+  document.querySelectorAll('[data-theme-set]').forEach(b => {
+    b.onclick = () => {
+      const m = b.dataset.themeSet;
+      try {
+        if (m === 'auto') localStorage.removeItem('mg-theme');
+        else localStorage.setItem('mg-theme', m);
+      } catch { /* the theme still applies, it just won't be remembered */ }
+      apply(m, true);
+    };
+  });
+  // On auto, follow the Mac flipping to dark at sunset without a reload. CSS
+  // repaints itself either way; this is what redraws the SVG charts and the
+  // force graph, which carry their colours as attributes.
+  system.addEventListener('change', () => {
+    if (!document.documentElement.dataset.theme) apply('auto', true);
+  });
+  apply(mode, false);
+}
+
 function syncFoot() {
   const s = S.overview.privacy;
   $('#foot-mode').textContent = s.local_only ? 'local only · no network'
@@ -263,6 +321,11 @@ function syncFoot() {
 }
 
 function go(v) {
+  // Re-read the palette on every render rather than caching it once. The CSS is
+  // the authority; this way a theme that changed underneath us -- a system flip,
+  // or a `change` event the browser never delivered -- can never leave the charts
+  // drawn in the other theme's colours.
+  readTheme();
   S.view = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
   ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy })[v]();
@@ -1011,7 +1074,7 @@ async function openProposal(circle, selected, seed) {
 const firstNames = list => list.map(n => esc(shortName(n))).join(', ');
 
 function planRow(r) {
-  const c = STATE_COLOR[r.state] || '#70757d';
+  const c = STATE_COLOR[r.state] || PAINT.unclear;
   const who = r.is_group ? `${esc(r.thread_name)} · ${firstNames(r.people)}` : firstNames(r.people);
   return `<div class="pr" tabindex="0" data-plan="${esc(r.id)}">
     <span class="st" style="background:${c}22;color:${c}">${r.state}</span>
@@ -1039,19 +1102,19 @@ async function drawPlans() {
   const revive = S.showAllRevive ? d.revive : d.revive.slice(0, 6);
   host.innerHTML = `
     <div class="pgrid">
-      ${col('plans-confirmed', '#3fb950', 'Confirmed', 'Someone said yes, or it has a date.',
+      ${col('plans-confirmed', PAINT.adds, 'Confirmed', 'Someone said yes, or it has a date.',
             d.confirmed, 'Nothing confirmed right now.')}
-      ${col('plans-motion', '#58a6ff', 'Still being discussed', 'Floated or proposed, no firm yes yet.',
+      ${col('plans-motion', PAINT.accent, 'Still being discussed', 'Floated or proposed, no firm yes yet.',
             d.in_motion, 'Nothing under discussion right now.')}
       <section class="pcol" id="plans-groups">
-        <div class="phead"><span class="dot" style="background:#a371f7"></span><b>Between groups</b>
+        <div class="phead"><span class="dot" style="background:${PAINT.plan}"></span><b>Between groups</b>
           <span class="cnt">${d.groups.reduce((n, g) => n + g.plans.length, 0)}</span></div>
         <div class="pdef">Live plans in group chats, and who's in each group.</div>
         ${groups}
       </section>
     </div>
     <section class="previve" id="plans-revive">
-      <div class="phead"><span class="dot" style="background:#e3873c"></span><b>Worth reviving</b>
+      <div class="phead"><span class="dot" style="background:${PAINT.stale}"></span><b>Worth reviving</b>
         <span class="cnt">${k.revive}</span></div>
       <div class="pdef">Wanted in the last ${d.revive_window_days} days, and nobody picked a day.</div>
       <div class="rgrid">${revive.map(planRow).join('') || '<div class="pempty">Nothing stalled recently.</div>'}</div>
@@ -1088,9 +1151,9 @@ const COLS = [
   ['trend', 'Trend', p => p.trend === 'none' ? '<span class="num dim">—</span>'
     : `<span class="tag t-${p.trend}">${p.trend}</span>`],
   ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`],
-  ['warmth', 'Warmth', p => bar(p.warmth, '#3fb950')],
-  ['importance', 'Importance', p => bar(p.importance, '#58a6ff')],
-  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? '#d29922' : '#91979e')],
+  ['warmth', 'Warmth', p => bar(p.warmth, PAINT.adds)],
+  ['importance', 'Importance', p => bar(p.importance, PAINT.accent)],
+  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim)],
   ['open_plans', 'Plans', p => `<span class="num">${p.open_plans || '·'}</span>`],
   ['trend', 'Last 20 weeks', p => spark(p.spark)],
 ];
@@ -1324,7 +1387,7 @@ async function openPlan(id) {
     drawer.innerHTML = `<span class="close">&times;</span>
       <div class="empty">${esc(d.detail || "That plan couldn't be loaded.")}</div>`;
   } else {
-    const c = STATE_COLOR[d.state] || '#70757d';
+    const c = STATE_COLOR[d.state] || PAINT.unclear;
     const word = d.activity.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const mark = t => esc(t).replace(new RegExp(`\\b(${word})\\b`, 'gi'), '<mark>$1</mark>');
     const day = ts => new Date(ts).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
@@ -1407,7 +1470,7 @@ function simulate(data) {
   const lineEls = links.map(l => {
     const e = document.createElementNS(NS, 'line');
     const shared = l.kind === 'shared_thread';
-    e.setAttribute('stroke', shared ? '#282d33' : '#383f47');
+    e.setAttribute('stroke', shared ? PAINT.line : PAINT['line-strong']);
     e.setAttribute('stroke-width', shared ? 1 : 1.4);
     if (shared) e.setAttribute('stroke-dasharray', '3 4');
     gl.append(e); return e;
@@ -1421,7 +1484,7 @@ function simulate(data) {
     c.setAttribute('fill', n.type === 'person'
       ? STATE_COLOR_PERSON[n.state] : STATE_COLOR[n.state]);
     c.setAttribute('fill-opacity', n.type === 'person' ? .9 : .78);
-    c.setAttribute('stroke', '#101113');
+    c.setAttribute('stroke', PAINT.bg);
     c.setAttribute('stroke-width', 1.5);
     g.append(c);
     const person = n.type === 'person';
@@ -1430,12 +1493,12 @@ function simulate(data) {
       t.textContent = person ? shortName(n.label) : n.label;
       t.setAttribute('y', n.r + 12);
       t.setAttribute('text-anchor', 'middle');
-      t.setAttribute('fill', person ? '#ced4d9' : '#80868d');
+      t.setAttribute('fill', person ? PAINT.ink : PAINT.dim);
       t.setAttribute('font-size', person ? 11.5 : 9.5);
       t.setAttribute('font-weight', person ? 600 : 400);
       t.setAttribute('font-family', 'system-ui,sans-serif');
       t.setAttribute('paint-order', 'stroke');
-      t.setAttribute('stroke', '#181a1d');
+      t.setAttribute('stroke', PAINT.panel);
       t.setAttribute('stroke-width', 3);
       t.style.pointerEvents = 'none';
       g.append(t);

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>messaging graph</title>
 <link rel="stylesheet" href="/static/styles.css">
+<script src="/static/theme.js"></script>
 </head>
 <body>
 <div id="app">
@@ -16,6 +17,11 @@
       <button data-view="people">People <span class="c" id="c-people"></span></button>
       <button data-view="privacy">Privacy <span class="c" id="c-priv"></span></button>
     </nav>
+    <div class="themepick" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-set="auto">Auto</button>
+      <button type="button" data-theme-set="light">Light</button>
+      <button type="button" data-theme-set="dark">Dark</button>
+    </div>
     <div class="sidefoot">
       <span class="dot"></span><span id="foot-mode">local only</span><br>
       <span id="foot-span"></span>

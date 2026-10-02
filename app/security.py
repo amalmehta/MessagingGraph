@@ -32,8 +32,16 @@ CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline';
        "img-src 'self' data:; connect-src 'self'; font-src 'self'; "
        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
+# Served before there is a session, so it can't pull in styles.css. It follows the
+# system light/dark the same way the app does, rather than always being dark.
 LOCKED = """<!doctype html><meta charset="utf-8"><title>messaging graph</title>
-<body style="font:15px system-ui;background:#0e1116;color:#c9d5e0;padding:48px">
+<style>
+:root{color-scheme:light dark;--page:#f6f5f2;--text:#4a4f55;--head:#1c1e21}
+@media (prefers-color-scheme:dark){:root{--page:#191b1f;--text:#b3bac2;--head:#edeff2}}
+body{font:15px system-ui;background:var(--page);color:var(--text);padding:48px}
+h2{color:var(--head)}
+</style>
+<body>
 <h2>Open the link printed in your terminal.</h2>
 <p>This server only answers the browser that opens the one-time link it printed
 when it started. Restarting the server prints a new one.</p></body>"""

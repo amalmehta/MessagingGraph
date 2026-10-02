@@ -63,6 +63,84 @@ def _profile_scores_ignore_social(st) -> bool:
     return before == after
 
 
+# ---------------------------------------------------------------------------
+# Colour. The UI ships two themes over one set of token names, and every colour
+# in the app -- including the ones that end up as SVG attributes on the charts
+# and the force graph -- is read from those tokens at run time. These let the
+# palette be checked rather than eyeballed: text has to stay legible on every
+# surface it can land on, and the two chart series have to stay apart for a
+# reader with any of the three kinds of colour blindness.
+# ---------------------------------------------------------------------------
+def _srgb(h: str) -> tuple[float, float, float]:
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def _linear(c: float) -> float:
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def contrast_ratio(fg: str, bg: str) -> float:
+    """WCAG 2.1 contrast. 4.5 is the AA floor for body text, 3.0 for graphics."""
+    def lum(h):
+        r, g, b = (_linear(c) for c in _srgb(h))
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    a, b = lum(fg), lum(bg)
+    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+
+
+# Machado/Oliveira/Fernandes severity-1.0 matrices, the usual ones for this.
+_CVD = {
+    "protanopia":   ((0.152286, 1.052583, -0.204868), (0.114503, 0.786281, 0.099216),
+                     (-0.003882, -0.048116, 1.051998)),
+    "deuteranopia": ((0.367322, 0.860646, -0.227968), (0.280085, 0.672501, 0.047413),
+                     (-0.011820, 0.042940, 0.968881)),
+    "tritanopia":   ((1.255528, -0.076749, -0.178779), (-0.078411, 0.930809, 0.147602),
+                     (0.004733, 0.691367, 0.303900)),
+}
+
+
+def _simulate(h: str, kind: str) -> str:
+    r, g, b = (_linear(c) for c in _srgb(h))
+    m = _CVD[kind]
+    out = []
+    for i in range(3):
+        v = max(0.0, min(1.0, m[i][0] * r + m[i][1] * g + m[i][2] * b))
+        v = 12.92 * v if v <= 0.0031308 else 1.055 * (v ** (1 / 2.4)) - 0.055
+        out.append(round(max(0.0, min(1.0, v)) * 255))
+    return "#%02x%02x%02x" % tuple(out)
+
+
+def _lab(h: str) -> tuple[float, float, float]:
+    r, g, b = (_linear(c) for c in _srgb(h))
+    X = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    Y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    Z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+    f = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+    fx, fy, fz = f(X), f(Y), f(Z)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def colour_distance(a: str, b: str) -> float:
+    """Smallest CIE76 ΔE between two colours across normal vision and all three
+    kinds of colour blindness. CIE76 rather than CIEDE2000: cruder, but these two
+    colours are nowhere near each other and a rough floor is enough to catch a
+    palette edit that accidentally puts them side by side."""
+    pairs = [(a, b)] + [(_simulate(a, k), _simulate(b, k)) for k in _CVD]
+    return min(math.dist(_lab(x), _lab(y)) for x, y in pairs)
+
+
+def theme_tokens(css: str) -> dict[str, dict[str, str]]:
+    """The hex-valued custom properties of each theme block in styles.css."""
+    themes = {}
+    for name, pattern in (("light", r":root\{(.*?)\}"),
+                          ("dark", r':root\[data-theme="dark"\]\{(.*?)\}')):
+        m = re.search(pattern, css, re.S)
+        if m:
+            themes[name] = dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{6})", m.group(1)))
+    return themes
+
+
 def corr(name: str, xs: list[float], ys: list[float], floor: float) -> None:
     r = correlation(xs, ys)
     check(f"{name} correlates with ground truth (r >= {floor})", r >= floor, f"r = {r:.2f}")
@@ -1047,6 +1125,10 @@ def main() -> int:
     (conn / "close_friends.json").write_text(_json.dumps({"relationships_close_friends": [_row("priya.r")]}))
     (conn / "blocked_profiles.json").write_text(_json.dumps(
         {"relationships_blocked_users": [_row("ex.roommate.2019")]}))
+    # Meta ships this beside following.json. It is a list of topics, and a looser
+    # filename match reads every one of them as a person you follow.
+    (conn / "following_hashtags.json").write_text(_json.dumps({"relationships_following_hashtags": [
+        _row("sourdough"), _row("bouldering")]}))
     (ig / "personal_information.json").write_text(_json.dumps({"anything": 1}))
     dm = ig / "your_instagram_activity" / "messages" / "inbox" / "someone_123"
     dm.mkdir(parents=True)
@@ -1079,6 +1161,28 @@ def main() -> int:
     check("a path that isn't an export says so rather than importing nothing",
           _raises(SourceUnavailable, lambda: load_export(ig / "personal_information.json"))
           and _raises(SourceUnavailable, lambda: load_export(ig / "nope")))
+    check("hashtags you follow are not read as people you follow",
+          not {"sourdough", "bouldering"} & set(folder.accounts),
+          ", ".join(sorted(folder.accounts)))
+
+    # A file that is absent is a missing signal. A file that is present, that we
+    # picked out by name, and that holds no list we recognise is a layout change,
+    # and importing it as empty would quietly report that you follow nobody.
+    moved = Path(tempfile.mkdtemp()) / "moved"
+    (moved / "connections").mkdir(parents=True)
+    (moved / "connections" / "followers_1.json").write_text(_json.dumps([_row("priya.r")]))
+    (moved / "connections" / "following.json").write_text(
+        _json.dumps({"some_new_key": [_row("priya.r")]}))
+    check("an export key we haven't seen is still read when it's unambiguous",
+          load_export(moved).accounts["priya.r"].i_follow)
+    (moved / "connections" / "following.json").write_text(
+        _json.dumps({"renamed": [_row("priya.r")], "also": [1, 2]}))
+    check("a file whose layout moved fails by name instead of importing a silent half",
+          _raises(SourceUnavailable, lambda: load_export(moved)))
+    try:
+        load_export(moved)
+    except SourceUnavailable as e:
+        check("and the message says which file to look at", "following.json" in str(e), str(e))
 
     # Matching proposes; it never links on its own.
     graph = synthetic_social()
@@ -1181,6 +1285,58 @@ def main() -> int:
     check("excluding someone actually removes their messages",
           len(filtered.messages) < len(corpus.messages),
           f"{len(corpus.messages)} → {len(filtered.messages)}")
+
+    print("\npalette:")
+    css = Path("app/static/styles.css").read_text()
+    js = Path("app/static/app.js").read_text()
+    themes = theme_tokens(css)
+    check("styles.css defines both themes over the same token names",
+          set(themes) == {"light", "dark"}
+          and set(themes["light"]) == set(themes["dark"]),
+          " / ".join(f"{k}: {len(v)} tokens" for k, v in themes.items()))
+
+    # Text has to be legible on each of the four surfaces it can land on. The
+    # theme this replaced put --faint at 2.97:1 on a panel, which is most of what
+    # made the app read as murky. --sidebar is one of them: `aside` sets it, and
+    # the nav, the counts and the footer all put neutral text on top.
+    SURFACES = ("bg", "panel", "panel2", "sidebar")
+    TEXT = ("ink", "dim", "faint")
+    ACCENTS = ("accent", "adds", "functional", "neutral", "costs", "unclear", "stale", "plan")
+    for name, t in sorted(themes.items()):
+        worst = min((contrast_ratio(t[k], t[s_]), f"--{k} on --{s_}")
+                    for k in TEXT for s_ in SURFACES)
+        check(f"{name}: every neutral clears AA on every surface it lands on",
+              worst[0] >= 4.5, f"worst {worst[1]} = {worst[0]:.2f}:1")
+        worst = min((contrast_ratio(t[k], t[s_]), f"--{k} on --{s_}")
+                    for k in ACCENTS for s_ in ("bg", "panel"))
+        check(f"{name}: every accent clears AA as text",
+              worst[0] >= 4.5, f"worst {worst[1]} = {worst[0]:.2f}:1")
+        check(f"{name}: the outgoing bubble's own text and timestamp are legible",
+              min(contrast_ratio(t["mine-ink"], t["mine"]),
+                  contrast_ratio(t["mine-faint"], t["mine"])) >= 4.5,
+              f"{contrast_ratio(t['mine-faint'], t['mine']):.2f}:1 on the timestamp")
+
+        # The charts are drawn on --panel, and "you" and "them" must never collapse
+        # into one another for a colour-blind reader.
+        you, them = t["series-you"], t["series-them"]
+        check(f"{name}: each chart series stands out from the chart surface",
+              min(contrast_ratio(you, t["panel"]), contrast_ratio(them, t["panel"])) >= 3.0,
+              f"you {contrast_ratio(you, t['panel']):.2f}:1, "
+              f"them {contrast_ratio(them, t['panel']):.2f}:1")
+        d = colour_distance(you, them)
+        check(f"{name}: the two chart series stay apart under every kind of colour blindness",
+              d >= 60, f"worst-case ΔE {d:.0f}")
+
+    # The whole point of the tokens is that there is one place to change a colour.
+    # A literal anywhere in the stylesheet's rules, or in the script that paints the
+    # charts, is a colour that will not follow the theme. (The Mac app's status
+    # screen and the locked page are deliberately outside this: they are served
+    # before styles.css can be, and carry their own two neutrals.)
+    body = css[css.index("*{box-sizing:border-box}"):]
+    stray_css = set(re.findall(r"rgba?\([^)]*\)|#[0-9a-fA-F]{3,8}\b", body))
+    stray_js = set(re.findall(r"#[0-9a-fA-F]{6}\b", js))
+    check("styles.css and app.js write no colour outside the palette",
+          not stray_css and not stray_js, ", ".join(sorted(stray_css | stray_js)))
 
     print()
     if FAILS:
