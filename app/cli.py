@@ -114,6 +114,53 @@ def cmd_import(a) -> int:
     return 0
 
 
+def cmd_import_social(a) -> int:
+    """Read an Instagram data export into the vault, beside the messages.
+
+    Instagram has no API for this: the Basic Display API was retired in December
+    2024, and the Graph API is for business accounts and will not hand out a
+    follower list as people. The export you request from Instagram is the whole
+    of the supported path, and it suits this app -- you download it yourself, and
+    it is read here and never sent anywhere.
+    """
+    from .ingest.base import SourceUnavailable
+    from .ingest.instagram import load_export, summarize
+    from .social import SocialStore
+    from .vault import Vault, VaultError
+
+    vault = Vault()
+    if not vault.exists():
+        _line(BAD, "No messages imported yet. Run `./mg import` first, so there is a "
+                   "vault to keep this in.")
+        return 1
+    try:
+        graph = load_export(a.path, network=a.network)
+    except (SourceUnavailable, VaultError) as e:
+        _line(BAD, str(e))
+        return 1
+
+    r = summarize(graph)
+    if not r["accounts"]:
+        _line(BAD, "That export has no followers or following in it. Nothing written.")
+        return 1
+    print(f"\n  accounts read           {r['accounts']:>8,}")
+    print(f"  followers               {r['followers']:>8,}")
+    print(f"  following               {r['following']:>8,}")
+    print(f"  mutuals                 {r['mutuals']:>8,}")
+    print(f"  close friends           {r['close_friends']:>8,}")
+    print(f"  blocked                 {r['blocked']:>8,}\n")
+
+    try:
+        SocialStore(vault).save(graph)
+    except VaultError as e:
+        _line(BAD, str(e))
+        return 1
+    _line(OK, f"Sealed into {vault.root} with the same Keychain key as your messages")
+    _line(OK, "Nobody is linked to a contact yet -- a handle is a guess at a person")
+    print("\nNext:\n  ./mg serve, then confirm the matches under \"Socials\".")
+    return 0
+
+
 def cmd_serve(a) -> int:
     if a.synthetic:
         source = "synthetic"
@@ -227,6 +274,12 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--chatdb", default=DB_PATH, help=argparse.SUPPRESS)
     i.add_argument("--addressbook", default=AB_ROOT, help=argparse.SUPPRESS)
     i.set_defaults(fn=cmd_import)
+
+    g = sub.add_parser("import-social",
+                       help="read an Instagram data export into the vault")
+    g.add_argument("path", help="the export zip Instagram sent you, or the unzipped folder")
+    g.add_argument("--network", default="instagram", help=argparse.SUPPRESS)
+    g.set_defaults(fn=cmd_import_social)
 
     s = sub.add_parser("serve", help="serve the app on 127.0.0.1")
     s.add_argument("--synthetic", action="store_true", help="serve the demo corpus")

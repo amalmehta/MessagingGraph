@@ -2,108 +2,14 @@
 
 A private app for your Mac that reads your Messages history and helps you keep up with the
 people in it: who you've drifted from, plans that never got a date, messages worth sending, and
-how your friends connect to each other.
+how your friends connect to each other. It runs entirely on your computer.
 
-It runs entirely on your computer. Your messages are imported once into an encrypted file and are
-never sent anywhere.
-
-## What it does
-
-- **People**: a profile for everyone you talk to, showing how often you talk, how warm it is,
-  what the thread feels like, and whether it's picking up or going quiet.
-- **Plans**: plans pulled out of your conversations, split into confirmed, still being
-  discussed, and worth reviving. Click one to see the messages it came from.
-- **Messages worth sending**: drafts in the way you usually text each person, for replying,
-  following up, reconnecting or reviving a plan. You copy them; nothing sends itself.
-- **Say thanks**: thank-you notes tied to something that actually happened, like a favour you
-  thanked someone for, a year of texting, or something you did together.
-- **Get a crew together**: say what the plan is — a volo league, a ski trip, a game night —
-  and it picks who to ask, based on who talks about that thing, who's actually done it with
-  you, who shows up, and who already knows each other. It drafts the group invitation too.
-- **Who's connected**: shared group chats, people who come up in other chats, shared
-  interests, where people live, and who might get along.
-- **Clean data**: marketing and automated threads are set aside, and you can name unknown
-  numbers and add locations.
-
-## Requirements
-
-- A Mac with Messages
-- [uv](https://docs.astral.sh/uv/) (it installs the right Python for you)
-
-## Setup
-
-```bash
-git clone <this repository>
-cd messaging_graph
-uv sync
+```mermaid
+flowchart LR
+    A[Messages history] -->|mg import| V[(Encrypted vault<br/>key in Keychain)]
+    B[Instagram export zip] -->|mg import-social| V
+    V --> C[Analysis<br/>people, plans, connections]
+    C --> D[Local app in your browser<br/>or the Mac app]
 ```
 
-## Try it with demo data
-
-```bash
-./mg serve --synthetic
-```
-
-Open the link it prints. The demo uses made-up people, so you can look around before connecting
-your own messages.
-
-## Use it with your own messages
-
-1. Open **System Settings → Privacy & Security → Full Disk Access**, turn it on for **Terminal**,
-   then quit and reopen Terminal.
-2. Import your messages:
-   ```bash
-   ./mg import
-   ```
-3. Turn Full Disk Access back off for Terminal.
-4. Start the app and open the link it prints:
-   ```bash
-   ./mg serve
-   ```
-
-Run `./mg import` again whenever you want fresher data. Your names, locations and other
-corrections are kept.
-
-## Mac app
-
-Prefer an app to Terminal? Build and install it once:
-
-```bash
-uv sync --group app
-./mg build-app
-```
-
-This puts **Messaging Graph** in your Applications folder and starts it at login (add
-`--no-login` to skip that). It opens in its own window; closing the window keeps it in the
-menu bar, where you can reopen it, reload your data, run an import or privacy check in
-Terminal, turn start-at-login on or off, and quit.
-
-The first time it opens, macOS asks whether it can use the "messaging-graph" Keychain item.
-Choose **Always Allow**: that's the key that decrypts your data. The app itself never needs
-Full Disk Access; importing still happens in Terminal. Rebuild after pulling new changes.
-
-## Other commands
-
-| Command | What it does |
-|---|---|
-| `./mg doctor` | Checks for anything left open, like Full Disk Access still being on |
-| `./mg wipe` | Deletes your imported data and its encryption key |
-
-## Privacy
-
-- Nothing leaves your Mac. The app makes no network requests.
-- Imported messages are encrypted and stored in `~/Library/Application Support/messaging-graph`,
-  with the key in your login Keychain, never inside the project folder.
-- The app only responds to the browser that opens the one-time link it prints.
-
-More detail in [docs/how-it-works.md](docs/how-it-works.md).
-
-## Tests
-
-```bash
-.venv/bin/python validate.py
-```
-
-## Limitations
-
-Version 1. macOS only, and the language analysis understands English only.
+**[Instructions →](docs/INSTRUCTIONS.md)** · [File structure](docs/FILE-STRUCTURE.md) · [How it works](docs/how-it-works.md)

@@ -106,10 +106,14 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
         stale = [pl for pl in plans if pl.state == "stale" and pl.thread_id == thread.id
                  and now - pl.last_activity <= timedelta(days=45)]
         if stale:
-            prop = propose(corpus, plans, [p.contact_id], thread.id, 0, now)
+            # The seed chooses the activity and the day, not just the wording, so it has to
+            # reach propose(): "another version" should be able to offer ramen on Tuesday,
+            # not only reword the same dinner.
+            did = f"revive_plan:{p.contact_id}"
+            prop = propose(corpus, plans, [p.contact_id], thread.id, seeds.get(did, 0), now)
             add("revive_plan", prop.reasons[0] + " " + prop.reasons[1],
-                lambda s: plan_parts(style, prop.activity, prop.when, now, prop.when.hour, name, False,
-                                     prop.basis == "revive", s), 3,
+                lambda _: plan_parts(style, prop.activity, prop.when, now, prop.when.hour, name, False,
+                                     prop.basis == "revive", prop.phrasing), prop.options,
                 50 + 0.35 * p.importance, detail=prop.when_label)
 
         if p.state == "quiet" and p.msgs_per_week > 1.2:
@@ -143,13 +147,14 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
             continue
         did = f"group_plan:{t.id}"
         seed = seeds.get(did, 0)
-        prop = propose(corpus, plans, members, t.id, 0, now)
+        prop = propose(corpus, plans, members, t.id, seed, now)
         text = write(plan_parts(group_style, prop.activity, prop.when, now, prop.when.hour,
                                 "you two" if len(members) == 2 else None, True, prop.basis == "revive",
-                                seed % 3), group_style)
+                                prop.phrasing), group_style)
         avg = sum(importance.get(c, 0) for c in members) / len(members)
         group_drafts.append(Draft(did, "group_plan", t.name, members, t.id, " ".join(prop.reasons[:2]), text,
-                                  round(48 + 0.3 * avg, 1), prop.when_label, seed, 3, _voice_note(group_style)))
+                                  round(48 + 0.3 * avg, 1), prop.when_label, seed, prop.options,
+                                  _voice_note(group_style)))
     group_drafts.sort(key=lambda d: d.value, reverse=True)
     out += group_drafts[:2]
 

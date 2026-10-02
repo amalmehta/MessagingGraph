@@ -67,6 +67,51 @@ class Corpus:
 SELF_ID = "__me__"
 
 
+@dataclass(frozen=True)
+class SocialAccount:
+    """One account in a social export, and how it is tied to you.
+
+    A personal data export only ever describes your own edges: who follows you,
+    who you follow, who you put on a close-friends list. It says nothing about how
+    two other people are connected to each other, so nothing here may be read as a
+    link between two of your contacts.
+    """
+    handle: str                    # username, without the leading @
+    name: str                      # display name when the export carried one, else the handle
+    follows_me: bool = False
+    i_follow: bool = False
+    close_friend: bool = False
+    blocked: bool = False
+    since: datetime | None = None  # when the follow started, when the export says
+
+    @property
+    def tie(self) -> str:
+        if self.blocked:
+            return "blocked"
+        if self.follows_me and self.i_follow:
+            return "mutual"
+        if self.i_follow:
+            return "you follow them"
+        if self.follows_me:
+            return "they follow you"
+        return "no follow either way"
+
+
+@dataclass
+class SocialGraph:
+    """Your side of one social network, read from a data export."""
+    network: str = "instagram"
+    accounts: dict[str, SocialAccount] = field(default_factory=dict)   # handle -> account
+    exported_at: datetime | None = None
+
+    def __len__(self) -> int:
+        return len(self.accounts)
+
+    @property
+    def mutuals(self) -> list[SocialAccount]:
+        return [a for a in self.accounts.values() if a.tie == "mutual"]
+
+
 class MessageSource(Protocol):
     """The one seam between the app and wherever messages actually live.
 
@@ -158,6 +203,9 @@ class RelationshipProfile:
     # a share of 0.0, and must not be scored as though it were.
     follow_through: float | None = None
     vibe: Vibe | None = None
+    # How you are tied on a social network you imported. Descriptive only:
+    # never feeds `state`, `balance` or any score.
+    social: dict | None = None
 
 
 @dataclass
