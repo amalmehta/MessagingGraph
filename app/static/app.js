@@ -480,7 +480,7 @@ function wireDraft(card) {
 async function drawCrew() {
   const box = $('#crew-panel');
   if (!box) return;
-  S.crew = S.crew || { activity: '', size: '', nearby: true, seed: 0 };
+  S.crew = S.crew || { activity: '', size: '', nearby: true, seed: 0, crewSeed: 0 };
   let ideas = [];
   try { ideas = (await api('/api/crew/activities')).activities || []; } catch { /* offline */ }
   box.innerHTML = `
@@ -503,6 +503,7 @@ async function drawCrew() {
     S.crew.size = $('#crew-size').value;
     S.crew.nearby = $('#crew-near').checked;
     S.crew.seed = 0;
+    S.crew.crewSeed = 0;
     loadCrew();
   };
   $('.crew-go').onclick = run;
@@ -527,7 +528,7 @@ async function loadCrew() {
   try {
     crew = await api(`/api/crew?activity=${encodeURIComponent(c.activity)}`
       + (c.size ? `&size=${encodeURIComponent(c.size)}` : '')
-      + `&nearby=${c.nearby}&seed=${c.seed}`);
+      + `&nearby=${c.nearby}&seed=${c.seed}&crew_seed=${c.crewSeed}`);
   } catch {
     out.innerHTML = `<div class="empty">Couldn't work that one out. Try saying it a different way.</div>`;
     return;
@@ -543,6 +544,7 @@ async function loadCrew() {
         <ul class="why">${m.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>`).join('')}</div>
     ${crew.alternates.length ? `<div class="alts mini">If someone can't make it:
       ${crew.alternates.map(m => `<span class="link alt" data-id="${esc(m.id)}">${esc(m.name)}</span>`).join(', ')}</div>` : ''}
+    <div class="crewact"><button class="btn another crew-others">Suggest different people</button></div>
     <div class="draft plain">
       <div class="dtop"><span class="who">The ask</span>${crew.when_label
         ? `<span class="kind">${esc(crew.when_label)}</span>` : ''}</div>
@@ -565,7 +567,11 @@ async function loadCrew() {
     }
   };
   out.querySelector('.crew-again').onclick = () => {
-    S.crew.seed = (S.crew.seed + 1) % (crew.options || 3);
+    S.crew.seed = (S.crew.seed + 1) % Math.max(1, crew.options || 1);
+    loadCrew();
+  };
+  out.querySelector('.crew-others').onclick = () => {
+    S.crew.crewSeed = (S.crew.crewSeed + 1) % 3;   // only three starting picks exist
     loadCrew();
   };
 }

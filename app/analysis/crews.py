@@ -73,8 +73,9 @@ class Crew:
     draft: str = ""
     when_label: str | None = None
     note: str = ""
-    seed: int = 0
-    options: int = 3
+    seed: int = 0            # which wording of the invitation
+    crew_seed: int = 0       # which people get asked
+    options: int = 3         # how many distinct wordings exist for this activity
 
 
 def interests_for(activity: str) -> set[str]:
@@ -98,32 +99,35 @@ def crew_size(activity: str, asked: int | None = None) -> int:
 
 def build_crew(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[Plan],
                connections: dict, locations: dict, activity: str, now: datetime,
-               size: int | None = None, nearby: bool = True, seed: int = 0) -> Crew:
+               size: int | None = None, nearby: bool = True, seed: int = 0,
+               crew_seed: int = 0) -> Crew:
     activity = activity.strip() or "dinner"
     want = crew_size(activity, size)
     labels = interests_for(activity)
     imap = interests(corpus, plans)
     by_contact = connections.get("by_contact", {})
 
-    known_interest = any(labels & set(imap.get(p.contact_id, {})) for p in profiles)
+    # Someone you only know through a group chat can't be asked, so their interests
+    # are no reason to claim the crew is interest-backed.
+    known_acts = {a for l in labels for a in INTERESTS.get(l, (None, set()))[1]}
+    eligible = [p for p in profiles if p.state not in SKIP_STATES]
+    known_interest = any(labels & set(imap.get(p.contact_id, {})) for p in eligible)
     scored: list[tuple[float, Member, str | None]] = []
-    for p in profiles:
-        if p.state in SKIP_STATES:
-            continue
+    for p in eligible:
         reasons: list[str] = []
         first = short_name(p.name)
 
         their = imap.get(p.contact_id, {})
-        hit = max((their[l] for l in labels if l in their), default=0)
+        shared = [l for l in labels if l in their]
+        best = min(shared, key=lambda l: (-their[l], l), default=None)
+        hit = their[best] if best else 0
         interest = min(1.0, hit / 6)
-        if hit:
-            shared = sorted(l for l in labels if l in their)
-            reasons.append(f"{shared[0]} comes up in your thread with {first}")
+        if best:
+            reasons.append(f"{best} comes up in your thread with {first}")
 
         theirs = [pl for pl in plans if p.contact_id in pl.participant_ids]
         did = [pl for pl in theirs if pl.state in LANDED
-               and (activity_of(pl).lower() in {a for l in labels for a in INTERESTS.get(l, (None, set()))[1]}
-                    or activity_of(pl).lower() in activity.lower())]
+               and (activity_of(pl).lower() in known_acts or _mentions(activity, activity_of(pl)))]
         history = min(1.0, len(did) / 3)
         if did:
             reasons.append(f"you've actually done {activity_of(did[0]).lower()} together"
@@ -153,8 +157,12 @@ def build_crew(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[
     # A crew, not a leaderboard: after the first pick, favour people who already know
     # each other and (for anything in person) who are in the same place.
     in_person = not TRIP.search(activity)
-    pool = list(scored)
-    chosen: list[tuple[float, Member, str | None]] = [pool.pop(seed % min(len(pool), 3))]
+    # Asking for different people has to set the last anchor aside, not just demote
+    # it: the fill below re-sorts the pool by score on every pass, so anyone merely
+    # moved down the list is pulled straight back into the same crew.
+    offset = crew_seed % min(len(scored), 3)
+    benched, pool = list(scored[:offset]), list(scored[offset:])
+    chosen: list[tuple[float, Member, str | None]] = [pool.pop(0)]
     crew_place = chosen[0][2]
     while pool and len(chosen) < want:
         def fit(row):
@@ -174,10 +182,12 @@ def build_crew(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[
         crew_place = crew_place or pick[2]
 
     members = [row[1] for row in chosen]
-    alternates = [row[1] for row in pool[:2]]
+    # Whoever was benched scored highest, so they are the first person to fall back on.
+    alternates = [row[1] for row in benched + pool][:2]
     places = [row[2] for row in chosen if row[2]]
     crew = Crew(activity, want, members, alternates,
-                place=max(set(places), key=places.count) if places else None, seed=seed)
+                place=max(set(places), key=places.count) if places else None,
+                seed=seed, crew_seed=crew_seed)
     honest = ("" if known_interest else
               f" Nothing in your messages says who's into {activity}, so this is the people you "
               "make plans with most, and whose plans actually happen.")
@@ -190,22 +200,35 @@ def build_crew(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[
         options = [[hello, ("say", f"thinking about signing up for {activity}"), ("ask", "want in")],
                    [hello, ("ask", f"anyone up for {activity} this season"), ("say", "could use a team")],
                    [hello, ("say", f"putting together a group for {activity}"), ("ask", "who's in")]]
-        crew.draft = write(options[seed % len(options)], style)
+        crew.draft, crew.options = write(options[seed % len(options)], style), len(options)
     elif TRIP.search(activity):
         options = [[hello, ("say", f"been thinking about {activity}"), ("ask", "who's in")],
                    [hello, ("ask", f"anyone want to do {activity} this year"), ("say", "could start looking at dates")],
                    [hello, ("say", f"putting feelers out for {activity}"), ("ask", "interested")]]
-        crew.draft = write(options[seed % len(options)], style)
+        crew.draft, crew.options = write(options[seed % len(options)], style), len(options)
     else:
         when = _next_weekend(now)
-        # Seeds 1 and 2 name the activity; seed 0's "it's been a minute" opener doesn't.
+        # All three wordings name the activity, so all three are usable. `options` has
+        # to match, or the UI cycles back onto a draft the reader already turned down.
+        crew.options = 3
         crew.draft = write(plan_parts(style, activity, when, now, 19, None, True, False,
-                                      (seed % 2) + 1), style)
+                                      seed % crew.options), style)
         crew.when_label = f"{day_words(when, now, style)} {time_words(19, style)}"
     crew.note = (f"{len(members)} people for {activity}"
                  + (f", mostly in {crew.place}" if crew.place else "")
                  + f": {', '.join(names)}." + honest)
     return crew
+
+
+def _mentions(activity: str, past: str) -> bool:
+    """Does `activity` name `past` as a whole word?
+
+    Plain substring matching quietly credits the wrong history: "run" sits inside
+    "brunch", so a few morning runs would read as "you've actually done run together"
+    on a brunch crew.
+    """
+    past = past.strip().lower()
+    return bool(past) and re.search(r"\b" + re.escape(past) + r"\b", activity.lower()) is not None
 
 
 def _next_weekend(now: datetime) -> datetime:
