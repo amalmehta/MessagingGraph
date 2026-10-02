@@ -1209,10 +1209,11 @@ def main() -> int:
           and set(themes["light"]) == set(themes["dark"]),
           " / ".join(f"{k}: {len(v)} tokens" for k, v in themes.items()))
 
-    # Text has to be legible on each of the three surfaces it can land on. The
+    # Text has to be legible on each of the four surfaces it can land on. The
     # theme this replaced put --faint at 2.97:1 on a panel, which is most of what
-    # made the app read as murky.
-    SURFACES = ("bg", "panel", "panel2")
+    # made the app read as murky. --sidebar is one of them: `aside` sets it, and
+    # the nav, the counts and the footer all put neutral text on top.
+    SURFACES = ("bg", "panel", "panel2", "sidebar")
     TEXT = ("ink", "dim", "faint")
     ACCENTS = ("accent", "adds", "functional", "neutral", "costs", "unclear", "stale", "plan")
     for name, t in sorted(themes.items()):
