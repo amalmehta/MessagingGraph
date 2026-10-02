@@ -324,8 +324,12 @@ def plan_parts(style: Style, activity: str, when: datetime, now: datetime, hour:
     if activity in NEEDS_PLANNING:
         noun = f"the {activity}" if activity != "visit" else "a visit"
         want = "wanna" if style.ask == "wanna" else "want to"
+        # Three, like the branch below: callers advertise three phrasings per activity,
+        # and two here meant "another version" handed back a draft you'd already seen.
         options = [[("ask", f"{want} finally plan {noun}"), ("ask", f"you free to figure it out {day}")],
-                   [("say", f"we still haven't planned {noun}"), ("ask", f"can we sort it out {day}")]]
+                   [("say", f"we still haven't planned {noun}"), ("ask", f"can we sort it out {day}")],
+                   [("say", f"been meaning to get {noun} on the calendar"),
+                    ("ask", f"{day} work for figuring it out")]]
         return parts + options[seed % len(options)]
     verb, obj = VERBS.get(activity, ("do", activity))
     at = time_words(hour, style)
@@ -341,13 +345,17 @@ def plan_parts(style: Style, activity: str, when: datetime, now: datetime, hour:
                 "should": [("say", f"we should {what} {day} {at}"), ("ask", in_q)]}[style.ask]
 
     recall = f"we still haven't {PAST.get(verb, verb)} {obj}" if revive else "it's been a minute"
+    # Reviving, the opener names the activity, so the ask can just say "go". Otherwise the
+    # ask has to carry it: "it's been a minute / wanna go sat at 7" never says to do what,
+    # and every activity sharing an hour comes out as the same message.
     options = [
-        [("say", recall)] + asking(it),                               # "we still haven't grabbed dinner / wanna go sat at 7"
+        [("say", recall)] + asking(it if revive else doing),          # "we still haven't grabbed dinner / wanna go sat at 7"
         asking(doing) + ([("ask", in_q)] if group and style.ask not in ("lets", "should") else []),
         [("say", f"been wanting to {doing}"), ("ask", f"{day} {at} work")],
     ]
     if style.ask == "free":
-        options[0] = [("say", recall), ("ask", f"you free {day} {at}")]
+        options[0] = [("say", recall), ("ask", f"you free {day} {at}" if revive
+                                       else f"you free to {doing} {day} {at}")]
         options[1] = [("ask", f"you free {day} {at}"), ("say", f"could {doing}")]
     return parts + options[seed % len(options)]
 

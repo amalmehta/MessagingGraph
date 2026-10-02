@@ -351,6 +351,23 @@ def main() -> int:
         check("'another version' on a plan offers another thing to do, not just new wording",
               len(texts) > 3 and len(dates) > 1,
               f"{len(texts)} drafts and {len(dates)} dates across {plan_draft.options} options")
+    check("every version the button offers is a different message",
+          plan_draft is not None and len(texts) == plan_draft.options,
+          f"{len(texts)} distinct of {plan_draft.options}" if plan_draft else "no plan draft")
+    if plan_draft:
+        # Every version has to say what you're proposing. "it's been a minute / want to go
+        # friday at 7" doesn't, and it used to be what every activity collapsed into.
+        from app.analysis.proposals import propose as _propose
+        unnamed = []
+        for s in range(plan_draft.options):
+            prop_s = _propose(st.corpus, st.plans, [plan_draft.target_ids[0]],
+                              plan_draft.thread_id, s, st.now)
+            draft_s = versions[s].draft.lower()
+            if not any(w in draft_s for w in prop_s.activity.lower().split() if len(w) > 3):
+                unnamed.append((s, prop_s.activity))
+        check("every version says what you're suggesting", not unnamed,
+              f"{len(unnamed)} of {plan_draft.options} don't name it" if unnamed
+              else f"all {plan_draft.options} name their activity")
     from app.analysis.voice import plan_parts as _plan_parts, style_for as _vstyle, write as _vwrite
     vnow = datetime(2026, 9, 16, 12)
 
