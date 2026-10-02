@@ -1,6 +1,6 @@
 # File structure
 
-[← Back to the README](../README.md) · [Instructions](INSTRUCTIONS.md)
+[← Back to the README](../README.md) · [Instructions](INSTRUCTIONS.md) · [System design](SYSTEM-DESIGN.md)
 
 | Path | What it is |
 |---|---|
@@ -22,4 +22,5 @@
 | [`tests/`](../tests) | Test fixtures, including a small `chat.db` shaped like the real one |
 | [`validate.py`](../validate.py) | Checks the analysis against the demo generator's hidden parameters |
 | [`docs/`](.) | These docs and [How it works](how-it-works.md) |
+| [`docs/SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | Components, main flows, storage and design decisions |
 | [`pyproject.toml`](../pyproject.toml), [`uv.lock`](../uv.lock) | Python project and locked dependencies |

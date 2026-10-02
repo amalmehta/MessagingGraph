@@ -12,4 +12,4 @@ flowchart LR
     C --> D[Local app in your browser<br/>or the Mac app]
 ```
 
-**[Instructions →](docs/INSTRUCTIONS.md)** · [File structure](docs/FILE-STRUCTURE.md) · [How it works](docs/how-it-works.md)
+**[Instructions →](docs/INSTRUCTIONS.md)** · [System design](docs/SYSTEM-DESIGN.md) · [File structure](docs/FILE-STRUCTURE.md) · [How it works](docs/how-it-works.md)
