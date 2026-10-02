@@ -1,6 +1,6 @@
 # Instructions
 
-[← Back to the README](../README.md) · [File structure](FILE-STRUCTURE.md)
+[← Back to the README](../README.md) · [System design](SYSTEM-DESIGN.md) · [File structure](FILE-STRUCTURE.md)
 
 ## What it does
 
