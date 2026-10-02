@@ -140,7 +140,7 @@ against them.
 The rate series and history are checked too — every message lands in exactly one
 bucket, a new contact's pre-history is empty and marked, paging reaches the whole
 thread without repeats, and search is case-insensitive and scoped to the thread.
-143 checks total.
+251 checks total.
 
 Follow-through at 0.61 is the weakest of these and carries the lowest weight in
 the verdict. Reading intent from text is genuinely hard — enthusiasm is easy to
@@ -185,8 +185,10 @@ About two minutes, and Full Disk Access is only on for the first of them.
    prints.
 
 `./mg doctor` checks for anything left open. `./mg wipe` deletes the vault and its key.
-Re-run `./mg import` whenever you want fresher data; ids stay stable, so exclusions
-keep pointing at the same people.
+Re-run `./mg import` whenever you want fresher data; ids stay stable across imports.
+Exclusions, the other privacy settings and the audit log live only in the server's memory,
+not in the vault: reloading data from the Mac app's menu keeps them, but they reset when the
+server restarts, so set exclusions again on the Privacy page after a restart.
 
 ## Security model
 
