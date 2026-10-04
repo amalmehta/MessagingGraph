@@ -67,7 +67,7 @@ const STATE_LABEL = {
 };
 
 const S = { view: 'now', overview: null, people: null, graph: null,
-  includeStale: false, sort: 'importance', weeks: 40 };
+  includeStale: false, sort: 'importance', weeks: 40, focus: 'everyone' };
 
 // ---------------------------------------------------------------- charts
 // The two series are --series-you / --series-them, set per theme in styles.css
@@ -1426,7 +1426,11 @@ async function viewGraph() {
       scroll to zoom, hover to isolate, click anything for detail.</div>
     <div class="controls">
       <span class="chip ${S.includeStale ? 'on' : ''}" id="t-stale">show stale plans</span>
-      <span class="hint">node size = importance · line = shared thread</span>
+      <span class="focus" role="group" aria-label="How much of the graph to show">${
+        [['everyone', 'everyone'], ['connected', 'connected'], ['strongest', 'strongest ties']]
+          .map(([k, label]) => `<span class="chip ${S.focus === k ? 'on' : ''}"
+            data-focus="${k}">${label}</span>`).join('')}</span>
+      <span class="hint" id="g-count">node size = importance · line = shared thread</span>
     </div>
     <div class="gwrap"><svg id="g"></svg>
       <div class="legend"><b>plan state</b>
@@ -1437,11 +1441,65 @@ async function viewGraph() {
           `<span><i style="background:${STATE_COLOR_PERSON[k]}"></i>${STATE_LABEL[k]}</span>`).join('')}
       </div></div>`;
   $('#t-stale').onclick = () => { S.includeStale = !S.includeStale; viewGraph(); };
+  document.querySelectorAll('[data-focus]').forEach(c => c.onclick = () => {
+    S.focus = c.dataset.focus;
+    document.querySelectorAll('[data-focus]').forEach(o =>
+      o.classList.toggle('on', o.dataset.focus === S.focus));
+    if (S.graph) simulate(S.graph);
+  });
   S.graph = await api('/api/graph?include_stale=' + S.includeStale);
   if (S.view === 'graph') simulate(S.graph);
 }
 
-function simulate(data) {
+// Most people in a real history share no group chat and are in no live plan, so the
+// graph arrives as a handful of clusters in a field of loose dots and the structure is
+// the hardest thing to see. These narrow it: "connected" drops anyone with no edge at
+// all, "strongest" keeps the busiest quarter of what's left and the ties between them.
+// Nothing is deleted -- it's a view, and "everyone" puts it all back.
+function focusGraph(data, mode) {
+  if (mode === 'everyone') return data;
+  const strength = new Map(data.nodes.map(n => [n.id, 0]));
+  const planMates = new Map();                 // plan id -> the people in it
+  for (const l of data.links) {
+    const w = l.weight || 1;
+    for (const end of [l.source, l.target]) {
+      if (strength.has(end)) strength.set(end, strength.get(end) + w);
+    }
+    if (l.kind === 'in_plan') {
+      if (!planMates.has(l.target)) planMates.set(l.target, []);
+      planMates.get(l.target).push(l.source);
+    }
+  }
+  let people = new Set(data.nodes
+    .filter(n => n.type === 'person' && strength.get(n.id) > 0).map(n => n.id));
+  if (mode === 'strongest') {
+    // The busiest quarter, by how much connection a person carries rather than how
+    // many lines touch them. A floor of 2 so this never means "one tie each".
+    const scores = [...people].map(id => strength.get(id)).sort((a, b) => b - a);
+    const cut = Math.max(2, scores[Math.floor(scores.length / 4)] ?? 2);
+    people = new Set([...people].filter(id => strength.get(id) >= cut));
+  }
+  // A plan is the point of this view, so it stays as long as someone in it stayed.
+  const plans = new Set();
+  for (const [plan, mates] of planMates) {
+    if (mates.some(m => people.has(m))) plans.add(plan);
+  }
+  const keep = new Set([...people, ...plans]);
+  return { ...data,
+           nodes: data.nodes.filter(n => keep.has(n.id)),
+           links: data.links.filter(l => keep.has(l.source) && keep.has(l.target)) };
+}
+
+function simulate(raw) {
+  const data = focusGraph(raw, S.focus);
+  const note = $('#g-count');
+  if (note) {
+    const shown = data.nodes.filter(n => n.type === 'person').length;
+    const all = raw.nodes.filter(n => n.type === 'person').length;
+    note.textContent = S.focus === 'everyone'
+      ? 'node size = importance \u00b7 line = shared thread'
+      : `${shown} of ${all} people \u00b7 ${data.links.length} of ${raw.links.length} connections`;
+  }
   const svg = $('#g'), W = svg.clientWidth || 900, H = svg.clientHeight || 560;
   const NS = 'http://www.w3.org/2000/svg';
   const nodes = data.nodes.map((n, i) => ({
@@ -1468,7 +1526,8 @@ function simulate(data) {
     const e = document.createElementNS(NS, 'line');
     const shared = l.kind === 'shared_thread';
     e.setAttribute('stroke', shared ? PAINT.line : PAINT['line-strong']);
-    e.setAttribute('stroke-width', shared ? 1 : 1.4);
+    // Sharing four group chats should look like more than sharing one.
+    e.setAttribute('stroke-width', shared ? Math.min(3.5, 1 + ((l.weight || 1) - 1) * 0.8) : 1.4);
     if (shared) e.setAttribute('stroke-dasharray', '3 4');
     gl.append(e); return e;
   });

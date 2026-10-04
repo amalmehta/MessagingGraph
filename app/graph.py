@@ -62,7 +62,10 @@ def build_graph(corpus: Corpus, plans: list[Plan],
             if cid in by_id:
                 links.append({"source": cid, "target": p.id, "kind": "in_plan"})
 
-    seen: set[tuple[str, str]] = set()
+    # Two people in four group chats together are more connected than two who
+    # overlap in one, so the edge carries the count rather than collapsing to a
+    # single line. `threads` keeps the names for the hover.
+    shared: dict[tuple[str, str], list[str]] = {}
     for thread in corpus.threads.values():
         if not thread.is_group:
             continue
@@ -70,11 +73,10 @@ def build_graph(corpus: Corpus, plans: list[Plan],
         for i, a in enumerate(members):
             for b in members[i + 1:]:
                 key = (a, b) if a < b else (b, a)
-                if key in seen:
-                    continue
-                seen.add(key)
-                links.append({"source": key[0], "target": key[1],
-                              "kind": "shared_thread", "thread": thread.name})
+                shared.setdefault(key, []).append(thread.name)
+    for (a, b), names in shared.items():
+        links.append({"source": a, "target": b, "kind": "shared_thread",
+                      "thread": names[0], "threads": names, "weight": len(names)})
 
     return {"nodes": nodes, "links": links,
             "counts": {"people": len(by_id), "plans": len(live),
