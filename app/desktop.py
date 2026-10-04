@@ -110,6 +110,17 @@ color:var(--text);font:15px -apple-system,system-ui,sans-serif}
 <div class="t">{title}</div>{body}</div></body>"""
 
 
+def _page(title: str, body: str) -> str:
+    """Fill PAGE in by name.
+
+    Not str.format: PAGE carries a stylesheet, and every CSS block in it reads as a
+    replacement field, so formatting it raises KeyError on the first selector. The
+    app died on launch that way, and only in the built bundle -- nothing else loads
+    this page.
+    """
+    return PAGE.replace("{title}", title).replace("{body}", body)
+
+
 class Controller(NSObject):
 
     @objc.python_method
@@ -178,8 +189,8 @@ class Controller(NSObject):
         self.webview.setAutoresizingMask_(18)          # width + height
         self.webview.setNavigationDelegate_(self)
         self.window.setContentView_(self.webview)
-        self.webview.loadHTMLString_baseURL_(PAGE.format(title="Opening Messaging Graph…",
-                                                         body="Decrypting your data on this Mac."), None)
+        self.webview.loadHTMLString_baseURL_(
+            _page("Opening Messaging Graph…", "Decrypting your data on this Mac."), None)
 
     @objc.python_method
     def _build_status_item(self) -> None:
@@ -285,7 +296,7 @@ class Controller(NSObject):
     def _show_error(self, title: str, message: str) -> None:
         body = html.escape(message)
         AppHelper.callAfter(lambda: self.webview.loadHTMLString_baseURL_(
-            PAGE.format(title=title, body=body), None))
+            _page(title, body), None))
 
     @objc.python_method
     def _loaded(self) -> None:
