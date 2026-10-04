@@ -234,6 +234,15 @@ def main() -> int:
     check("one refusal covers the whole list it heads",
           _day("can't do friday or saturday") == "friday"
           and _day("can't do friday, saturday or sunday") == "friday")
+    from app.analysis.plans import _resolve_date as _rd
+    _anchor = datetime(2026, 3, 4, 12)          # a Wednesday
+    check("a greeting is not a date",
+          _wd("hey, how's your week") is None and _wd("let's see how the week goes") is None)
+    check("a week is kept as timing but never turned into a day",
+          _rd("let's do dinner this week", _anchor) == ("this week", None)
+          and _rd("drinks next week?", _anchor) == ("next week", None))
+    check("a weekend still lands on the weekend",
+          (_rd("brunch this weekend", _anchor)[1] or _anchor).weekday() == 5)
     check("a day nobody argued with is still the first one named",
           _day("saturday or sunday?") == "saturday"
           and _day("dinner friday the 14th") == "friday"

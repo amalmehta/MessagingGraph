@@ -72,6 +72,17 @@ _TURNED_DOWN = re.compile(
 _LIST_JOIN = re.compile(r"(?:\s|,|/|\bor\b|\band\b)*", re.I)
 
 
+def _names_a_day(m: "re.Match") -> bool:
+    """Is this match actually about when something happens?
+
+    "How's your week" is a greeting, and it was the only way a bare "week" ever
+    appeared in the demo corpus -- 221 times, every one of them small talk. Read as
+    a date it put plans on a Saturday nobody had named. A week is only a timing
+    expression when someone says which one.
+    """
+    return m.group(2).lower() != "week" or bool(m.group(1))
+
+
 def _wanted_day(text: str) -> "re.Match | None":
     """The first day in the message that nobody has just ruled out.
 
@@ -82,7 +93,7 @@ def _wanted_day(text: str) -> "re.Match | None":
     tuesday. If every day named is ruled out, the first is still returned: the
     message is about those days even when the answer is no.
     """
-    days = list(_DAY.finditer(text))
+    days = [m for m in _DAY.finditer(text) if _names_a_day(m)]
     if len(days) <= 1:
         return days[0] if days else None
     opens_refused = bool(_TURNED_DOWN.search(text[:days[0].start()]))
@@ -111,7 +122,12 @@ def _resolve_date(text: str, anchor: datetime) -> tuple[str | None, datetime | N
         return phrase, anchor.replace(hour=20, minute=0, second=0, microsecond=0)
     if token == "tomorrow":
         return phrase, (anchor + timedelta(days=1)).replace(hour=19, minute=0, second=0, microsecond=0)
-    if token in ("weekend", "week"):
+    if token == "week":
+        # "this week" is a real answer about timing and not a day, so it is worth
+        # keeping as text and worth refusing to turn into one. Guessing a Saturday
+        # here fed invented dates to the plan states and to the day statistics.
+        return phrase, None
+    if token == "weekend":
         days = (5 - anchor.weekday()) % 7 or 7
         if qualifier == "next":
             days += 7
@@ -184,7 +200,7 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                 act = _ACT.search(m.text)
                 if not act:
                     continue
-                if INTENT.search(m.text) or _DAY.search(m.text):
+                if INTENT.search(m.text) or _wanted_day(m.text):
                     seeds.append((i, act.group(1).lower()))
 
             seen_acts: set[str] = set()
