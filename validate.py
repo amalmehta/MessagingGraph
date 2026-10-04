@@ -1097,6 +1097,28 @@ def main() -> int:
           f"weights {sorted({l['weight'] for l in sh})}")
     check("the graph endpoint answers", client.get("/api/graph").status_code == 200)
 
+    # The Mac app's own pages. Nothing else loads these, and they only run in a built
+    # bundle, so a mistake here is invisible until someone rebuilds the app -- which is
+    # exactly how a stylesheet in a str.format template shipped and killed it on launch.
+    try:
+        from app.desktop import LOGIN_AGENT, _page            # noqa: F401
+    except ImportError:
+        check("the Mac app's pages render", True, "skipped: PyObjC not installed")
+    else:
+        try:
+            page = _page("Opening", "Decrypting your data on this Mac.")
+        except Exception as e:                 # a stylesheet read as replacement fields
+            page, why = "", f"{type(e).__name__}: {e}"
+        else:
+            why = f"{len(page)} chars"
+        check("the Mac app's status page renders with its stylesheet intact",
+              bool(page) and "Opening" in page and "Decrypting your data on this Mac." in page
+              and "color-scheme" in page and "{title}" not in page and "{body}" not in page,
+              why)
+        from app.security import LOCKED
+        check("the locked page carries its own colours and needs no filling in",
+              "color-scheme" in LOCKED and "{" in LOCKED and "}" in LOCKED)
+
     # Reloading has to actually re-read, not just answer 200: an import that lands while
     # a tab is open is the whole reason the button exists.
     before = client.get("/api/overview").json()
