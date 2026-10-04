@@ -8,6 +8,7 @@ result, not a lookup.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 # Softening, apologizing, pre-emptively excusing yourself.
 HEDGE_PATTERNS = [
@@ -49,11 +50,19 @@ def _hits(text: str, pats) -> int:
     return sum(1 for p in pats if p.search(text))
 
 
+# These three read one message and nothing else, so the answer only ever depends on
+# the text. Every pass over the corpus asks about the same messages again -- profiles,
+# vibes and signals each want them -- and excluding one person re-runs the lot. Keeping
+# the answers means that costs about half what it did, and a second exclude costs less
+# again. The key is the message text the corpus is already holding, so this adds a dict
+# entry per distinct message, not a second copy of your history.
+@lru_cache(maxsize=None)
 def hedge_score(text: str) -> float:
     """Per-message softening load. Apologies count full, qualifiers count a third."""
     return _hits(text, _H) + 0.34 * _hits(text, _Q)
 
 
+@lru_cache(maxsize=None)
 def affection_score(text: str) -> float:
     score = float(_hits(text, _A)) + 0.6 * _hits(text, _L)
     score += 0.7 * sum(1 for ch in text if ch in WARM_EMOJI)
@@ -62,6 +71,7 @@ def affection_score(text: str) -> float:
     return score
 
 
+@lru_cache(maxsize=None)
 def is_care_question(text: str) -> bool:
     return any(p.search(text) for p in _C)
 

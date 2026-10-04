@@ -388,8 +388,7 @@ function viewNow() {
       Name them so their profiles and drafts make sense.</div>
       <button class="btn primary name-them">Name them</button></div>` : ''}
     ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
-      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div>
-      <button class="btn ghost review-filtered">Review</button></div>` : ''}
+      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div></div>` : ''}
     ${locationNotice(o)}
     <h2>Messaging rate</h2>
     <div class="chartbox"><div class="chead">
@@ -429,7 +428,6 @@ function viewNow() {
       perfectly good week.</div>`;
   document.querySelectorAll('.card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
-  document.querySelectorAll('.review-filtered').forEach(b => b.onclick = () => go('privacy'));
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
   document.querySelectorAll('.stat.jump').forEach(b => b.onclick = () =>
     document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -1612,6 +1610,38 @@ function simulate(data) {
 }
 
 // ---------------------------------------------------------------- privacy
+// Excluding someone re-reads your whole history, so the old handler -- post on every
+// click, then rebuild this page -- made four exclusions four passes, with the chip dead
+// until each finished. The chip flips straight away and the passes are batched into one.
+let exclTimer = null;
+function queueExclusions() {
+  clearTimeout(exclTimer);
+  const note = $('#excl-note');
+  if (note) note.textContent = 'Saving\u2026';
+  exclTimer = setTimeout(async () => {
+    const ids = [...document.querySelectorAll('.chip.x.off')].map(c => c.dataset.id);
+    let res;
+    try {
+      res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
+    } catch {
+      return;                                  // signedOut() has taken the page over
+    }
+    if (!res.ok) {
+      if (note) note.textContent = res.error;
+      return viewPrivacy();                    // put the chips back the way the server has them
+    }
+    S.overview = await api('/api/overview');
+    S.people = await api('/api/people');
+    $('#c-people').textContent = S.overview.contacts;
+    syncFoot();
+    if (note) {
+      note.textContent = ids.length
+        ? `${ids.length} excluded \u00b7 ${S.overview.messages.toLocaleString()} messages in view`
+        : 'Nobody excluded.';
+    }
+  }, 400);
+}
+
 async function viewPrivacy() {
   const d = await api('/api/privacy'), s = d.settings;
   const all = await api('/api/contacts');
@@ -1637,20 +1667,13 @@ async function viewPrivacy() {
     <div class="excl">${all.map(p =>
       `<span class="chip x ${p.excluded ? 'off' : 'on'}"
         data-id="${esc(p.id)}">${esc(p.name)}</span>`).join('')}</div>
-    <h2>Set aside as automated</h2>
-    <div class="sub">Marketing, reminders and alerts are left out of every profile, plan and draft.
-      If one is actually a person, bring it back. Your call is saved and outranks the filter.</div>
-    <div id="filtered"><div class="empty">Loading…</div></div>
+    <div class="sub tight" id="excl-note" role="status"></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
       be sent for ${esc(S.people[0].name)} — shown in full, before anything leaves, every time.</div>
     <pre id="preview">select a person…</pre>
-    <h2>Audit log</h2>
-    <pre id="audit">${d.audit.length ? d.audit.map(a =>
-      `${a.ts.slice(0,19)}  ${a.allowed ? 'ALLOWED' : 'BLOCKED'}  ${a.purpose}  ${a.reason}`).join('\n')
-      : 'No boundary crossings attempted. (Blocked attempts are logged here too.)'}</pre>`;
+`;
 
-  drawFiltered();
   document.querySelectorAll('.toggle').forEach(t => t.onclick = async () => {
     const key = t.dataset.k;
     const body = {}; body[key] = !t.classList.contains('on');
@@ -1658,13 +1681,10 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
-  document.querySelectorAll('.chip.x').forEach(c => c.onclick = async () => {
-    const cur = new Set(S.overview.privacy.excluded_contact_ids);
-    cur.has(c.dataset.id) ? cur.delete(c.dataset.id) : cur.add(c.dataset.id);
-    await fetch('/api/privacy', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ excluded_contact_ids: [...cur] }) });
-    S.overview = await api('/api/overview'); S.people = await api('/api/people');
-    $('#c-people').textContent = S.overview.contacts; syncFoot(); viewPrivacy();
+  document.querySelectorAll('.chip.x').forEach(c => c.onclick = () => {
+    c.classList.toggle('off');
+    c.classList.toggle('on');
+    queueExclusions();
   });
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :
