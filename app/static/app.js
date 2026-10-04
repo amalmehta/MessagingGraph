@@ -258,6 +258,7 @@ function spark(values, w = 78, h = 20) {
 // ---------------------------------------------------------------- boot
 async function boot() {
   wireTheme();
+  wireReload();
   S.overview = await api('/api/overview');
   S.people = await api('/api/people');
   const o = S.overview;
@@ -278,6 +279,31 @@ async function boot() {
 // Auto follows the system. Light and dark pin it, and the choice is remembered
 // on this Mac. Charts and the force graph are drawn with SVG attributes rather
 // than CSS, so switching re-reads the palette and repaints the open view.
+// An import that finishes while this tab is open leaves the server holding the old
+// corpus. Reloading re-reads it in place, so you don't have to restart anything.
+function wireReload() {
+  const b = $('#reload');
+  if (!b) return;
+  const label = b.textContent;
+  const settle = (text, ms) => {
+    b.textContent = text;
+    setTimeout(() => { b.textContent = label; b.disabled = false; }, ms);
+  };
+  b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Reading\u2026';
+    try {
+      const { ok } = await postJSON('/api/reload', {});
+      if (!ok) return settle("Couldn't reload", 2400);
+      await refreshData();
+      if (S.view) go(S.view);
+      settle('Up to date', 1600);
+    } catch {
+      // signedOut() has already replaced the page; leave the button alone.
+    }
+  };
+}
+
 function wireTheme() {
   let saved = null;
   try { saved = localStorage.getItem('mg-theme'); } catch { /* private window */ }
@@ -362,9 +388,14 @@ function viewNow() {
       Name them so their profiles and drafts make sense.</div>
       <button class="btn primary name-them">Name them</button></div>` : ''}
     ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
-      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div>
-      <button class="btn ghost review-filtered">Review</button></div>` : ''}
+      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div></div>` : ''}
     ${locationNotice(o)}
+    <h2>Messaging rate</h2>
+    <div class="chartbox"><div class="chead">
+      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
+      <div class="ranges">${[20, 40, 80].map(w =>
+        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
+    </div><div class="plot" id="rate"></div></div>
     <h2>Messages worth sending</h2>
     <div class="sub tight">Drafted from your history and written the way you've been texting lately.
       Copy one into Messages, ask for another version, or skip it. Nothing sends from here.</div>
@@ -385,17 +416,6 @@ function viewNow() {
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>
-    <h2>Socials</h2>
-    <div class="sub tight">An Instagram export, read on this Mac. It describes your own follows and
-      close friends — not how two of your contacts know each other, which no personal export can see.
-      Handles are linked to people only when you confirm them.</div>
-    <div id="social-panel"><div class="empty">Loading…</div></div>
-    <h2>Messaging rate</h2>
-    <div class="chartbox"><div class="chead">
-      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
-      <div class="ranges">${[20, 40, 80].map(w =>
-        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
-    </div><div class="plot" id="rate"></div></div>
     ${noticing.length ? `<h2>Worth noticing</h2>
     <div class="cards">${noticing.map(a => `
       <div class="card ${a.tone}" data-id="${esc(a.target_id)}" data-kind="${a.kind}">
@@ -408,7 +428,6 @@ function viewNow() {
       perfectly good week.</div>`;
   document.querySelectorAll('.card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
-  document.querySelectorAll('.review-filtered').forEach(b => b.onclick = () => go('privacy'));
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
   document.querySelectorAll('.stat.jump').forEach(b => b.onclick = () =>
     document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
@@ -417,7 +436,6 @@ function viewNow() {
   drawDrafts();
   drawThanks();
   drawCrew();
-  drawSocial();
   drawPlans();
   drawCircles();
   drawOverall();
@@ -768,30 +786,12 @@ async function drawCircles() {
   const interests = d.interests.map(g => `
     <div class="interest"><div class="itop"><b>${esc(g.interest)}</b><span class="cmeta">${g.members.length} people</span></div>
       <div class="cmembers">${g.members.map(m => person(m.id, m.name)).join('')}</div></div>`).join('');
-  const intros = d.introductions.map((x, i) => `
-    <div class="intro">
-      <div class="ctop"><b>${esc(shortName(x.a.name))} &amp; ${esc(shortName(x.b.name))}</b>
-        <span class="cmeta">${x.shared.map(esc).join(' · ')}</span></div>
-      <div class="why">${esc(x.why)}</div>
-      <textarea class="dtext" id="intro-${i}" rows="2" aria-label="Introduction draft">${esc(x.draft)}</textarea>
-      <div class="dact"><button class="btn primary copy-intro" data-i="${i}">Copy introduction</button>
-        <span class="dnote" id="intro-note-${i}" role="status"></span></div>
-    </div>`).join('');
   host.innerHTML = `
     <div class="netsec"><div class="nethead">Group chats <span>${d.circles.length}</span></div>
       <div class="circles">${groups || '<div class="pempty">No group chats.</div>'}</div></div>
     <div class="netsec"><div class="nethead">Shared interests <span>${d.interests.length}</span></div>
       <div class="pdef">What stands out in each person's thread compared with your others, not just what everyone talks about.</div>
       <div class="interests">${interests || '<div class="pempty">Not enough shared topics yet.</div>'}</div></div>
-    <div class="netsec"><div class="nethead">By location <span>${d.places.length}</span></div>
-      <div class="pdef">Where people live, from what you've told the app or what their messages say. Guesses are marked with a question mark.</div>
-      <div class="interests">${d.places.map(g => `
-        <div class="interest"><div class="itop"><b>${esc(g.place)}</b><span class="cmeta">${g.members.length} people</span></div>
-          <div class="cmembers">${g.members.map(m => person(m.id, m.name, m.source === 'messages' ? '<small>?</small>' : '')).join('')}</div></div>`).join('')
-        || '<div class="pempty">Not enough known locations to group anyone yet.</div>'}</div></div>
-    <div class="netsec"><div class="nethead">Might get along <span>${d.introductions.length}</span></div>
-      <div class="pdef">People who aren't connected yet but have things in common. Introducing people tells each about the other, so it's always your call.</div>
-      <div class="intros">${intros || '<div class="pempty">No obvious introductions right now.</div>'}</div></div>
     ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}
     ${d.solo.length ? `<div class="pfoot">Not connected to anyone else here: ${d.solo.map(esc).join(', ')}</div>` : ''}`;
   host.querySelectorAll('.mchip[data-person]').forEach(el => el.onclick = () => openPerson(el.dataset.person));
@@ -799,9 +799,6 @@ async function drawCircles() {
     const c = S.circles[b.dataset.thread];
     openProposal(c, c.members.map(m => m.id), 0);
   });
-  host.querySelectorAll('.intro .dtext').forEach(fitText);
-  host.querySelectorAll('.copy-intro').forEach(b => b.onclick = () =>
-    copyInto($('#intro-' + b.dataset.i), $('#intro-note-' + b.dataset.i)));
 }
 
 // ---------------------------------------------------------------- filtered threads
@@ -1613,6 +1610,38 @@ function simulate(data) {
 }
 
 // ---------------------------------------------------------------- privacy
+// Excluding someone re-reads your whole history, so the old handler -- post on every
+// click, then rebuild this page -- made four exclusions four passes, with the chip dead
+// until each finished. The chip flips straight away and the passes are batched into one.
+let exclTimer = null;
+function queueExclusions() {
+  clearTimeout(exclTimer);
+  const note = $('#excl-note');
+  if (note) note.textContent = 'Saving\u2026';
+  exclTimer = setTimeout(async () => {
+    const ids = [...document.querySelectorAll('.chip.x.off')].map(c => c.dataset.id);
+    let res;
+    try {
+      res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
+    } catch {
+      return;                                  // signedOut() has taken the page over
+    }
+    if (!res.ok) {
+      if (note) note.textContent = res.error;
+      return viewPrivacy();                    // put the chips back the way the server has them
+    }
+    S.overview = await api('/api/overview');
+    S.people = await api('/api/people');
+    $('#c-people').textContent = S.overview.contacts;
+    syncFoot();
+    if (note) {
+      note.textContent = ids.length
+        ? `${ids.length} excluded \u00b7 ${S.overview.messages.toLocaleString()} messages in view`
+        : 'Nobody excluded.';
+    }
+  }, 400);
+}
+
 async function viewPrivacy() {
   const d = await api('/api/privacy'), s = d.settings;
   const all = await api('/api/contacts');
@@ -1638,20 +1667,13 @@ async function viewPrivacy() {
     <div class="excl">${all.map(p =>
       `<span class="chip x ${p.excluded ? 'off' : 'on'}"
         data-id="${esc(p.id)}">${esc(p.name)}</span>`).join('')}</div>
-    <h2>Set aside as automated</h2>
-    <div class="sub">Marketing, reminders and alerts are left out of every profile, plan and draft.
-      If one is actually a person, bring it back. Your call is saved and outranks the filter.</div>
-    <div id="filtered"><div class="empty">Loading…</div></div>
+    <div class="sub tight" id="excl-note" role="status"></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
       be sent for ${esc(S.people[0].name)} — shown in full, before anything leaves, every time.</div>
     <pre id="preview">select a person…</pre>
-    <h2>Audit log</h2>
-    <pre id="audit">${d.audit.length ? d.audit.map(a =>
-      `${a.ts.slice(0,19)}  ${a.allowed ? 'ALLOWED' : 'BLOCKED'}  ${a.purpose}  ${a.reason}`).join('\n')
-      : 'No boundary crossings attempted. (Blocked attempts are logged here too.)'}</pre>`;
+`;
 
-  drawFiltered();
   document.querySelectorAll('.toggle').forEach(t => t.onclick = async () => {
     const key = t.dataset.k;
     const body = {}; body[key] = !t.classList.contains('on');
@@ -1659,13 +1681,10 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
-  document.querySelectorAll('.chip.x').forEach(c => c.onclick = async () => {
-    const cur = new Set(S.overview.privacy.excluded_contact_ids);
-    cur.has(c.dataset.id) ? cur.delete(c.dataset.id) : cur.add(c.dataset.id);
-    await fetch('/api/privacy', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ excluded_contact_ids: [...cur] }) });
-    S.overview = await api('/api/overview'); S.people = await api('/api/people');
-    $('#c-people').textContent = S.overview.contacts; syncFoot(); viewPrivacy();
+  document.querySelectorAll('.chip.x').forEach(c => c.onclick = () => {
+    c.classList.toggle('off');
+    c.classList.toggle('on');
+    queueExclusions();
   });
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :

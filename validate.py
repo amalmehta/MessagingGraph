@@ -1088,6 +1088,17 @@ def main() -> int:
           any("league" in i["activity"] or "trip" in i["activity"] for i in ideas))
 
     check("the crew endpoint answers", client.get("/api/crew?activity=climbing").status_code == 200)
+
+    # Reloading has to actually re-read, not just answer 200: an import that lands while
+    # a tab is open is the whole reason the button exists.
+    before = client.get("/api/overview").json()
+    r = client.post("/api/reload", json={}, headers={"origin": "http://127.0.0.1:8077"})
+    after = client.get("/api/overview").json()
+    check("reloading re-reads the store and the views still answer",
+          r.status_code == 200 and r.json()["ok"]
+          and r.json()["version"] > 0 and r.json()["messages"] > 0
+          and after["contacts"] == before["contacts"],
+          f"version {r.json()['version']}, {r.json()['messages']} messages")
     check("an empty plan is refused, not guessed at",
           client.get("/api/crew?activity=%20").status_code == 400)
     check("an absurd crew size is refused",
