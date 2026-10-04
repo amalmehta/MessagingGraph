@@ -13,13 +13,11 @@ behind what it measures, and what it refuses to do, is in [How it works](how-it-
 flowchart LR
     subgraph Sources["On this Mac"]
         M[(Messages chat.db<br/>+ Contacts)]
-        Z[Instagram export zip]
     end
-    subgraph Import["mg import / import-social<br/>(Full Disk Access, briefly)"]
+    subgraph Import["mg import<br/>(Full Disk Access, briefly)"]
         IM[iMessage reader<br/>in-memory snapshot]
-        IG[Instagram reader]
     end
-    V[(Encrypted vault<br/>corpus, corrections, social)]
+    V[(Encrypted vault<br/>corpus, corrections)]
     K[[Login Keychain<br/>vault key]]
     subgraph Server["mg serve on 127.0.0.1"]
         G[Guard<br/>host, origin, launch token]
@@ -41,10 +39,9 @@ flowchart LR
 
 | Part | What it does | Where |
 |---|---|---|
-| **CLI** | `import`, `import-social`, `serve`, `doctor`, `wipe`, `build-app`. Prints counts and settings only, never names or text. | `mg`, `app/cli.py` |
+| **CLI** | `import`, `serve`, `doctor`, `wipe`, `build-app`. Prints counts and settings only, never names or text. | `mg`, `app/cli.py` |
 | **Sources** | One seam, `load_source`: the synthetic demo, the vault, or a specific `chat.db` copy for tests. Analysis only ever sees the `Corpus` type. | `app/ingest/base.py`, `app/models.py` |
 | **iMessage reader** | Snapshots `chat.db` into memory, decodes `attributedBody`, folds tapbacks into reactions, merges handles, drops machine senders, gives everything keyed-hash ids. | `app/ingest/imessage.py`, `contacts.py` |
-| **Instagram reader** | Reads only the follower, following, close-friends and blocked lists from an export, wherever they sit in the tree. | `app/ingest/instagram.py` |
 | **Vault** | Encrypts and stores the corpus and small sealed documents; derives the stable id key. | `app/vault.py` |
 | **App state** | Loads one corpus, applies your names and filter verdicts, sets aside automated threads, applies privacy settings, then runs every analysis. Re-runs on any change. | `app/state.py` |
 | **Analysis** | Relationships, plans, drafts in your voice, thank-yous, crews, connections, places, vibes, spam filtering, rate series. | `app/analysis/` |
@@ -83,7 +80,7 @@ sequenceDiagram
     Server-->>Browser: app, every request through the Guard
 ```
 
-**Corrections.** Naming someone, restoring or hiding a filtered thread, a location, or confirming a social handle
+**Corrections.** Naming someone, restoring or hiding a filtered thread, or a location
 is a POST that saves an overrides document into the vault and recomputes state. Because ids are keyed hashes
 derived from the vault key, corrections survive a fresh import.
 
@@ -97,7 +94,7 @@ launch link in a WebKit window; otherwise it serves in-process.
 |---|---|---|
 | Imported corpus | `~/Library/Application Support/messaging-graph/corpus.v1.enc` | Compressed JSON, Fernet-encrypted. Written atomically to a `0600` file; plaintext never touches disk. |
 | Vault key | Login Keychain | Random, created on first import. Refuses to fall back to any non-macOS keyring. Also seeds the HMAC id key. |
-| Corrections, social graph | `overrides.v1.enc`, `social.v1.enc` beside the corpus | Sealed with the same key. In memory only for the demo. |
+| Corrections | `overrides.v1.enc` beside the corpus | Sealed with the same key. In memory only for the demo. |
 | Manifest | `manifest.json` beside the corpus | Counts, window and import time; no content. |
 | Vault folder | Same folder | `0700`, excluded from Spotlight and Time Machine; `mg wipe` removes it and the key. |
 | Privacy settings, audit log | Server memory | Reset when the server restarts. |
@@ -122,7 +119,7 @@ launch link in a WebKit window; otherwise it serves in-process.
 ## Testing
 
 There's no unit-test suite. `validate.py` runs a long list of named pass/fail checks: the analysis recovers the synthetic
-generator's hidden parameters, tone rules, plans, drafts, crews, socials, the rate series and history paging,
+generator's hidden parameters, tone rules, plans, drafts, crews, the rate series and history paging,
 the vault round trip, localhost hardening, privacy enforcement and theme contrast. `tests/chatdb_fixture.py`
 builds a small `chat.db` shaped like the real one, including write-ahead-log rows, `attributedBody`, tapbacks
 and hostile names, for the import checks. The Mac app isn't tested.
@@ -133,5 +130,4 @@ and hostile names, for the import checks. The Mac app isn't tested.
 - Data is as fresh as the last `mg import`; the server doesn't watch `chat.db`.
 - Privacy settings and the audit log aren't saved, so exclusions reset on restart.
 - The network path (Claude drafting) is not wired into the UI beyond a preview.
-- The Instagram reader was tested against a constructed export; Meta changes the layout.
 - Nothing protects against malware running as you or an unlocked Mac; FileVault covers a lost one.
