@@ -1071,6 +1071,32 @@ def main() -> int:
 
     check("the crew endpoint answers", client.get("/api/crew?activity=climbing").status_code == 200)
 
+    print("\nplan graph:")
+    from app.graph import build_graph
+    g = build_graph(app_state.corpus, app_state.plans, app_state.profiles, False, app_state.now)
+    ids = {n["id"] for n in g["nodes"]}
+    check("every link joins two nodes that exist",
+          all(l["source"] in ids and l["target"] in ids for l in g["links"]),
+          f"{len(g['nodes'])} nodes, {len(g['links'])} links")
+    sh = [l for l in g["links"] if l["kind"] == "shared_thread"]
+    pairs = [tuple(sorted((l["source"], l["target"]))) for l in sh]
+    check("two people share one edge however many groups they're both in",
+          len(pairs) == len(set(pairs)), f"{len(sh)} shared-thread edges")
+    # The weight is what the filter ranks by, so it has to be the real count.
+    from collections import Counter as _C
+    want = _C()
+    for th in app_state.corpus.threads.values():
+        if th.is_group:
+            ms = sorted(c for c in th.participant_ids if c in ids)
+            for i, a in enumerate(ms):
+                for b in ms[i + 1:]:
+                    want[(a, b)] += 1
+    check("a shared edge weighs the number of groups the two are both in",
+          all(l["weight"] == want[tuple(sorted((l["source"], l["target"])))] for l in sh)
+          and all(l["weight"] >= 1 for l in sh),
+          f"weights {sorted({l['weight'] for l in sh})}")
+    check("the graph endpoint answers", client.get("/api/graph").status_code == 200)
+
     # Reloading has to actually re-read, not just answer 200: an import that lands while
     # a tab is open is the whole reason the button exists.
     before = client.get("/api/overview").json()
