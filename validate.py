@@ -218,6 +218,27 @@ def main() -> int:
           == [(19, 0), (9, 0), (19, 30), (12, 0), (0, 0), (13, 45)])
     check("a bare clock time on a plan is read as the evening", _ck("6:30") == (18, 30))
     check("nonsense is not a time", _ck("25:00") is None and _ck("7:99") is None)
+
+    # A day can be named in order to rule it out. Taking the first day in the message
+    # put the plan on the day that was refused. No message in the demo corpus names
+    # two days, so this is the only thing exercising it.
+    from app.analysis.plans import _wanted_day as _wd
+    def _day(s):
+        m = _wd(s)
+        return m.group(2).lower() if m else None
+    check("a day that was turned down doesn't become the plan",
+          _day("not friday, how about saturday") == "saturday"
+          and _day("friday doesn't work, saturday?") == "saturday"
+          and _day("can't do monday but tuesday works") == "tuesday"
+          and _day("tuesday is no good, thursday then") == "thursday")
+    check("one refusal covers the whole list it heads",
+          _day("can't do friday or saturday") == "friday"
+          and _day("can't do friday, saturday or sunday") == "friday")
+    check("a day nobody argued with is still the first one named",
+          _day("saturday or sunday?") == "saturday"
+          and _day("dinner friday the 14th") == "friday"
+          and _day("monday? or tuesday if easier") == "monday"
+          and _day("how about this weekend") == "weekend")
     # The date used to be stored at 7pm whatever the message said, so "tuesday noon"
     # and "next weekend 9am" both came out as 19:00.
     _T = re.compile(r"\b(?:(\d{1,2})(?::(\d{2}))?\s*(am|pm)|noon|midnight)\b", re.I)
