@@ -211,6 +211,34 @@ def main() -> int:
     check("stale plans are found", states["stale"] > 10, f"{states['stale']} stale")
     check("plans reach a locked date sometimes", states["done"] + states["scheduled"] > 20)
     check("no duplicate plan ids", len({p.id for p in plans}) == len(plans))
+
+    from app.analysis.plans import _clock as _ck
+    check("a time of day is read the way it was written",
+          [_ck(s) for s in ("7pm", "9am", "7:30pm", "noon", "midnight", "13:45")]
+          == [(19, 0), (9, 0), (19, 30), (12, 0), (0, 0), (13, 45)])
+    check("a bare clock time on a plan is read as the evening", _ck("6:30") == (18, 30))
+    check("nonsense is not a time", _ck("25:00") is None and _ck("7:99") is None)
+    # The date used to be stored at 7pm whatever the message said, so "tuesday noon"
+    # and "next weekend 9am" both came out as 19:00.
+    _T = re.compile(r"\b(?:(\d{1,2})(?::(\d{2}))?\s*(am|pm)|noon|midnight)\b", re.I)
+    off = []
+    for pl in plans:
+        if not (pl.when_date and pl.when_text):
+            continue
+        m = _T.search(pl.when_text)
+        if not m:
+            continue
+        if m.group(0).lower() == "noon":
+            want = (12, 0)
+        elif m.group(0).lower() == "midnight":
+            want = (0, 0)
+        else:
+            want = (int(m.group(1)) % 12 + (12 if m.group(3).lower() == "pm" else 0),
+                    int(m.group(2) or 0))
+        if (pl.when_date.hour, pl.when_date.minute) != want:
+            off.append(pl.when_text)
+    check("a plan's date keeps the time the message named", not off,
+          f"{len(off)} disagree" if off else "every dated plan that names a time agrees")
     ft = follow_through(plans)
     check("the low-follow-through persona lands fewer plans than the high one",
           ft["p_leo"] < ft["p_amara"], f"Leo {ft['p_leo']:.0%} vs Amara {ft['p_amara']:.0%}")
