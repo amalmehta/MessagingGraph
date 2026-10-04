@@ -1633,8 +1633,10 @@ async function viewPrivacy() {
     <h2>Exclude people entirely</h2>
     <div class="sub">An excluded person is removed before analysis runs — including from any group
       thread they are in, so they cannot leak back in through group statistics.</div>
+    <input type="search" id="excl-find" class="exfind" autocomplete="off"
+      placeholder="Find someone…" aria-label="Filter the list of people">
     <label class="exrow all"><input type="checkbox" id="excl-all">
-      <span>Exclude everyone (${all.length})</span></label>
+      <span id="excl-all-label">Exclude everyone (${all.length})</span></label>
     <div class="excl">${all.map(p =>
       `<label class="exrow"><input type="checkbox" class="exbox" data-id="${esc(p.id)}"${
         p.excluded ? ' checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</div>
@@ -1652,17 +1654,31 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
-  const boxes = [...document.querySelectorAll('.exbox')], all_ = $('#excl-all');
+  const rows = [...document.querySelectorAll('.excl .exrow')];
+  const all_ = $('#excl-all'), allLabel = $('#excl-all-label'), find = $('#excl-find');
+  const shown = () => rows.filter(r => !r.hidden).map(r => r.querySelector('.exbox'));
   // The top box reads the ones below it: all, none, or part way, which is what
-  // indeterminate is for -- a tick there would claim everyone was excluded.
+  // indeterminate is for -- a tick there would claim everyone was excluded. While
+  // the list is filtered it reads, and acts on, only what you can actually see.
   const syncAll = () => {
-    const on = boxes.filter(b => b.checked).length;
-    all_.checked = on === boxes.length && on > 0;
-    all_.indeterminate = on > 0 && on < boxes.length;
+    const vis = shown(), on = vis.filter(b => b.checked).length;
+    all_.checked = vis.length > 0 && on === vis.length;
+    all_.indeterminate = on > 0 && on < vis.length;
+    all_.disabled = vis.length === 0;
+    allLabel.textContent = vis.length === rows.length
+      ? `Exclude everyone (${rows.length})`
+      : vis.length ? `Exclude the ${vis.length} shown` : 'Nobody matches';
   };
-  boxes.forEach(b => b.onchange = () => { syncAll(); queueExclusions(); });
+  find.oninput = () => {
+    const q = find.value.trim().toLowerCase();
+    for (const r of rows) r.hidden = !!q && !r.textContent.toLowerCase().includes(q);
+    syncAll();
+  };
+  rows.forEach(r => r.querySelector('.exbox').onchange = () => { syncAll(); queueExclusions(); });
   all_.onchange = () => {
-    boxes.forEach(b => { b.checked = all_.checked; });
+    // Only what is on screen. Hidden rows keep whatever they already were, and
+    // queueExclusions still saves every ticked box, filtered out of view or not.
+    for (const b of shown()) b.checked = all_.checked;
     syncAll();
     queueExclusions();
   };
