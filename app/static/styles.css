@@ -268,6 +268,14 @@ pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;pad
    list reads down rather than wrapping into a wall. */
 .excl{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));
   gap:1px 16px;margin-top:2px}
+.exfind{width:100%;max-width:280px;margin-top:10px;padding:7px 11px;font:inherit;
+  font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--line);
+  border-radius:8px}
+.exfind:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--edge-accent)}
+.exfind::placeholder{color:var(--faint)}
+/* .exrow sets display, so it beats the browser's own [hidden] rule and has to say
+   this itself -- otherwise filtering hides nothing. */
+.exrow[hidden]{display:none}
 .exrow{display:flex;align-items:center;gap:9px;min-width:0;padding:5px 7px;
   border-radius:6px;cursor:pointer;font-size:13px;color:var(--dim);user-select:none}
 .exrow:hover{background:var(--panel2);color:var(--ink)}
