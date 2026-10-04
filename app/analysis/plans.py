@@ -103,6 +103,32 @@ def _resolve_date(text: str, anchor: datetime) -> tuple[str | None, datetime | N
     return phrase, None
 
 
+def _clock(text: str) -> tuple[int, int] | None:
+    """The hour and minute a time expression names, or None if it names none.
+
+    A bare "6:30" is read as the evening. Plans skew that way, and the alternative
+    is what this used to do: drop the time on the floor and call every plan 7pm.
+    """
+    s = text.strip().lower()
+    if s == "noon":
+        return 12, 0
+    if s == "midnight":
+        return 0, 0
+    m = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", s)
+    if not m:
+        return None
+    hour, minute, meridiem = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+    if hour > 23 or minute > 59:
+        return None
+    if meridiem == "pm":
+        hour = hour % 12 + 12
+    elif meridiem == "am":
+        hour = hour % 12
+    elif hour <= 11:
+        hour += 12                      # "6:30" about dinner is half six, not dawn
+    return hour, minute
+
+
 def _title(activity: str, thread_name: str) -> str:
     a = activity.strip().lower()
     label = a if a[0].isupper() else a.capitalize()
@@ -139,7 +165,7 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                 window = convo[idx:max(end, idx + 2)]
                 counter += 1
 
-                when_text, when_date = None, None
+                when_text, when_date, said_time = None, None, None
                 yes_others = no_others = maybe_others = 0
                 locked = False
                 for m in window:
@@ -147,8 +173,12 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                         wt, wd = _resolve_date(m.text, m.ts)
                         if wt:
                             when_text, when_date = wt, wd
-                    if _TIME.search(m.text) and when_text and _TIME.search(m.text).group(0) not in (when_text or ""):
-                        when_text = f"{when_text} {_TIME.search(m.text).group(0)}"
+                    # The time can be named before the day ("8pm?" ... "friday works"),
+                    # so it is collected on its own and applied once the window is read.
+                    if said_time is None:
+                        hit = _TIME.search(m.text)
+                        if hit:
+                            said_time = hit.group(0)
                     if _LOCK.search(m.text):
                         locked = True
                     if m is window[0] or m.is_from_me == window[0].is_from_me:
@@ -159,6 +189,13 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                         yes_others += 1
                     elif _MAYBE.search(m.text):
                         maybe_others += 1
+
+                if said_time and when_text and said_time.lower() not in when_text.lower():
+                    when_text = f"{when_text} {said_time}"
+                if said_time and when_date is not None:
+                    hm = _clock(said_time)
+                    if hm:
+                        when_date = when_date.replace(hour=hm[0], minute=hm[1])
 
                 last = window[-1].ts
                 idle = now - last
