@@ -26,9 +26,11 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => (
 
 // A contact with no saved name is just a number, and its first word is the area code.
 // Show the last four digits instead, so two unnamed people don't both read "(408)".
+const isNumberName = (n) =>
+  /^\(\d{3}\) \d{3}-\d{4}$|^\+?[\d\s().-]{7,}$/.test(String(n ?? '').trim());
 const shortName = (n) => {
   const s = String(n ?? '').trim();
-  if (/^\(\d{3}\) \d{3}-\d{4}$|^\+?[\d\s().-]{7,}$/.test(s)) return '…' + s.replace(/\D/g, '').slice(-4);
+  if (isNumberName(s)) return '…' + s.replace(/\D/g, '').slice(-4);
   if (/^[^\s@]+@[^\s@]+$/.test(s)) return s.split('@')[0];
   return s.split(' ')[0];
 };
@@ -1638,8 +1640,11 @@ async function viewPrivacy() {
     <label class="exrow all"><input type="checkbox" id="excl-all">
       <span id="excl-all-label">Exclude everyone (${all.length})</span></label>
     <div class="excl">${all.map(p =>
-      `<label class="exrow"><input type="checkbox" class="exbox" data-id="${esc(p.id)}"${
-        p.excluded ? ' checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</div>
+      `<div class="exrow"><label class="extick"><input type="checkbox" class="exbox"
+        data-id="${esc(p.id)}"${p.excluded ? ' checked' : ''}><span>${esc(p.name)}</span></label>${
+        isNumberName(p.name)
+          ? `<button type="button" class="exname" data-id="${esc(p.id)}"
+               title="Put a name to this number">+ name</button>` : ''}</div>`).join('')}</div>
     <div class="sub tight" id="excl-note" role="status"></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
@@ -1683,6 +1688,47 @@ async function viewPrivacy() {
     queueExclusions();
   };
   syncAll();
+  // A number you can't place is hard to decide about, so it can be named here
+  // rather than only in the naming drawer. The tick is its own label, so opening
+  // this doesn't toggle whether the person is excluded.
+  for (const add of document.querySelectorAll('.exname')) {
+    add.onclick = () => {
+      const row = add.closest('.exrow');
+      if (row.querySelector('.exnameform')) return;
+      add.hidden = true;
+      const form = document.createElement('form');
+      form.className = 'exnameform';
+      form.innerHTML = '<input class="exnameinput" maxlength="60" autocomplete="off" '
+        + 'placeholder="Their name" aria-label="A name for this number">'
+        + '<span class="dnote" role="status"></span>';
+      row.append(form);
+      const input = form.querySelector('input'), note = form.querySelector('.dnote');
+      input.focus();
+      const close = () => { form.remove(); add.hidden = false; };
+      input.onkeydown = e => { if (e.key === 'Escape') close(); };
+      form.onsubmit = async e => {
+        e.preventDefault();
+        const name = input.value.trim();
+        if (!name) return close();
+        input.disabled = true;
+        let res;
+        try {
+          res = await postJSON(`/api/contacts/${encodeURIComponent(add.dataset.id)}/name`, { name });
+        } catch {
+          return;                              // signedOut() has taken the page over
+        }
+        if (!res.ok) {
+          input.disabled = false;
+          note.textContent = res.error;
+          return;
+        }
+        row.querySelector('.extick span').textContent = res.data.name;
+        form.remove();
+        add.remove();                          // it has a name now
+        await refreshData();
+      };
+    };
+  }
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :
     `[BLOCKED — ${pv.reason}]\n[redacted: ${pv.redactions.join(', ') || 'nothing matched'}]\n\n`)
