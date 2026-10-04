@@ -64,8 +64,44 @@ def _conversations(msgs: list[Message]) -> list[list[Message]]:
     return out
 
 
+# A day can be named in order to rule it out: "not friday, how about saturday".
+# Taking the first day in the message put the plan on the day that was refused.
+_TURNED_DOWN = re.compile(
+    r"\b(?:not|can'?t|cannot|won'?t|doesn'?t work|does not work|no good|rather not|"
+    r"busy|unavailable|bad for me)\b", re.I)
+_LIST_JOIN = re.compile(r"(?:\s|,|/|\bor\b|\band\b)*", re.I)
+
+
+def _wanted_day(text: str) -> "re.Match | None":
+    """The first day in the message that nobody has just ruled out.
+
+    A refusal that trails a day belongs to that day, so "friday doesn't work,
+    saturday?" leaves saturday. A refusal that opens the message carries across a
+    list, so "can't do friday or saturday" rules out both -- but only across a plain
+    "or"/"and"; "can't do monday but tuesday works" turns on the "but" and leaves
+    tuesday. If every day named is ruled out, the first is still returned: the
+    message is about those days even when the answer is no.
+    """
+    days = list(_DAY.finditer(text))
+    if len(days) <= 1:
+        return days[0] if days else None
+    opens_refused = bool(_TURNED_DOWN.search(text[:days[0].start()]))
+    carried = opens_refused
+    for i, day in enumerate(days):
+        if i:
+            gap = text[days[i - 1].end():day.start()]
+            if not _LIST_JOIN.fullmatch(gap):
+                carried = False                  # a new clause, not another item
+        trail = text[day.end():days[i + 1].start() if i + 1 < len(days) else len(text)]
+        if not carried and not _TURNED_DOWN.search(trail):
+            return day
+        if _TURNED_DOWN.search(trail):
+            carried = False                      # that refusal was about this day only
+    return days[0]
+
+
 def _resolve_date(text: str, anchor: datetime) -> tuple[str | None, datetime | None]:
-    dm = _DAY.search(text)
+    dm = _wanted_day(text)
     if not dm:
         return None, None
     phrase = dm.group(0).strip().lower()
