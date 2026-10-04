@@ -264,8 +264,20 @@ svg.drag{cursor:grabbing}
 pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px;
   font:11.5px/1.65 var(--mono);color:var(--dim);white-space:pre-wrap;max-height:300px;
   overflow:auto;margin:0}
-.excl{display:flex;flex-wrap:wrap;gap:7px}
-.excl .chip.off{opacity:.45;text-decoration:line-through}
+/* One name per line, in as many columns as the width allows, so a long contact
+   list reads down rather than wrapping into a wall. */
+.excl{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));
+  gap:1px 16px;margin-top:2px}
+.exrow{display:flex;align-items:center;gap:9px;min-width:0;padding:5px 7px;
+  border-radius:6px;cursor:pointer;font-size:13px;color:var(--dim);user-select:none}
+.exrow:hover{background:var(--panel2);color:var(--ink)}
+.exrow input{flex:none;cursor:pointer;accent-color:var(--accent);margin:0}
+.exrow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.exrow:has(input:checked) span{text-decoration:line-through;color:var(--faint)}
+.exrow.all{font-weight:600;color:var(--ink);border-bottom:1px solid var(--line);
+  border-radius:0;padding:6px 7px 9px;margin:10px 0 4px}
+.exrow.all:hover{background:none}
+.exrow.all:has(input:checked) span{text-decoration:none;color:var(--ink)}
 .banner{background:var(--wash-adds-soft);border:1px solid var(--edge-adds);border-radius:10px;
   padding:12px 15px;font-size:12.5px;color:var(--dim);margin-bottom:18px}
 .banner b{color:var(--adds)}

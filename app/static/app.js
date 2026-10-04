@@ -1588,7 +1588,7 @@ function queueExclusions() {
   const note = $('#excl-note');
   if (note) note.textContent = 'Saving\u2026';
   exclTimer = setTimeout(async () => {
-    const ids = [...document.querySelectorAll('.chip.x.off')].map(c => c.dataset.id);
+    const ids = [...document.querySelectorAll('.exbox:checked')].map(c => c.dataset.id);
     let res;
     try {
       res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
@@ -1633,9 +1633,11 @@ async function viewPrivacy() {
     <h2>Exclude people entirely</h2>
     <div class="sub">An excluded person is removed before analysis runs — including from any group
       thread they are in, so they cannot leak back in through group statistics.</div>
+    <label class="exrow all"><input type="checkbox" id="excl-all">
+      <span>Exclude everyone (${all.length})</span></label>
     <div class="excl">${all.map(p =>
-      `<span class="chip x ${p.excluded ? 'off' : 'on'}"
-        data-id="${esc(p.id)}">${esc(p.name)}</span>`).join('')}</div>
+      `<label class="exrow"><input type="checkbox" class="exbox" data-id="${esc(p.id)}"${
+        p.excluded ? ' checked' : ''}><span>${esc(p.name)}</span></label>`).join('')}</div>
     <div class="sub tight" id="excl-note" role="status"></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
@@ -1650,11 +1652,21 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
-  document.querySelectorAll('.chip.x').forEach(c => c.onclick = () => {
-    c.classList.toggle('off');
-    c.classList.toggle('on');
+  const boxes = [...document.querySelectorAll('.exbox')], all_ = $('#excl-all');
+  // The top box reads the ones below it: all, none, or part way, which is what
+  // indeterminate is for -- a tick there would claim everyone was excluded.
+  const syncAll = () => {
+    const on = boxes.filter(b => b.checked).length;
+    all_.checked = on === boxes.length && on > 0;
+    all_.indeterminate = on > 0 && on < boxes.length;
+  };
+  boxes.forEach(b => b.onchange = () => { syncAll(); queueExclusions(); });
+  all_.onchange = () => {
+    boxes.forEach(b => { b.checked = all_.checked; });
+    syncAll();
     queueExclusions();
-  });
+  };
+  syncAll();
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :
     `[BLOCKED — ${pv.reason}]\n[redacted: ${pv.redactions.join(', ') || 'nothing matched'}]\n\n`)
