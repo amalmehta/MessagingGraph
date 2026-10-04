@@ -542,6 +542,18 @@ def name_contact(cid: str, patch: NamePatch):
     return {"ok": True, "name": name}
 
 
+@app.post("/api/reload")
+def reload_data():
+    """Re-read the store, so an import that finished after this server started shows up.
+
+    The Mac app's "Reload data" restarts the whole data server to do this. In a browser
+    there is nothing to restart, so the state re-reads itself in place and every view
+    recomputes off the new corpus.
+    """
+    state.reload()
+    return {"ok": True, "version": state.version, "messages": len(state.corpus.messages)}
+
+
 @app.get("/api/privacy")
 def get_privacy():
     return enc({"settings": state.settings.to_dict(),

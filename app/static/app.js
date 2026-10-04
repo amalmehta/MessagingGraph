@@ -258,6 +258,7 @@ function spark(values, w = 78, h = 20) {
 // ---------------------------------------------------------------- boot
 async function boot() {
   wireTheme();
+  wireReload();
   S.overview = await api('/api/overview');
   S.people = await api('/api/people');
   const o = S.overview;
@@ -278,6 +279,31 @@ async function boot() {
 // Auto follows the system. Light and dark pin it, and the choice is remembered
 // on this Mac. Charts and the force graph are drawn with SVG attributes rather
 // than CSS, so switching re-reads the palette and repaints the open view.
+// An import that finishes while this tab is open leaves the server holding the old
+// corpus. Reloading re-reads it in place, so you don't have to restart anything.
+function wireReload() {
+  const b = $('#reload');
+  if (!b) return;
+  const label = b.textContent;
+  const settle = (text, ms) => {
+    b.textContent = text;
+    setTimeout(() => { b.textContent = label; b.disabled = false; }, ms);
+  };
+  b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Reading\u2026';
+    try {
+      const { ok } = await postJSON('/api/reload', {});
+      if (!ok) return settle("Couldn't reload", 2400);
+      await refreshData();
+      if (S.view) go(S.view);
+      settle('Up to date', 1600);
+    } catch {
+      // signedOut() has already replaced the page; leave the button alone.
+    }
+  };
+}
+
 function wireTheme() {
   let saved = null;
   try { saved = localStorage.getItem('mg-theme'); } catch { /* private window */ }
@@ -365,6 +391,12 @@ function viewNow() {
       ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div>
       <button class="btn ghost review-filtered">Review</button></div>` : ''}
     ${locationNotice(o)}
+    <h2>Messaging rate</h2>
+    <div class="chartbox"><div class="chead">
+      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
+      <div class="ranges">${[20, 40, 80].map(w =>
+        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
+    </div><div class="plot" id="rate"></div></div>
     <h2>Messages worth sending</h2>
     <div class="sub tight">Drafted from your history and written the way you've been texting lately.
       Copy one into Messages, ask for another version, or skip it. Nothing sends from here.</div>
@@ -385,17 +417,6 @@ function viewNow() {
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>
-    <h2>Socials</h2>
-    <div class="sub tight">An Instagram export, read on this Mac. It describes your own follows and
-      close friends — not how two of your contacts know each other, which no personal export can see.
-      Handles are linked to people only when you confirm them.</div>
-    <div id="social-panel"><div class="empty">Loading…</div></div>
-    <h2>Messaging rate</h2>
-    <div class="chartbox"><div class="chead">
-      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
-      <div class="ranges">${[20, 40, 80].map(w =>
-        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
-    </div><div class="plot" id="rate"></div></div>
     ${noticing.length ? `<h2>Worth noticing</h2>
     <div class="cards">${noticing.map(a => `
       <div class="card ${a.tone}" data-id="${esc(a.target_id)}" data-kind="${a.kind}">
@@ -417,7 +438,6 @@ function viewNow() {
   drawDrafts();
   drawThanks();
   drawCrew();
-  drawSocial();
   drawPlans();
   drawCircles();
   drawOverall();
@@ -768,30 +788,12 @@ async function drawCircles() {
   const interests = d.interests.map(g => `
     <div class="interest"><div class="itop"><b>${esc(g.interest)}</b><span class="cmeta">${g.members.length} people</span></div>
       <div class="cmembers">${g.members.map(m => person(m.id, m.name)).join('')}</div></div>`).join('');
-  const intros = d.introductions.map((x, i) => `
-    <div class="intro">
-      <div class="ctop"><b>${esc(shortName(x.a.name))} &amp; ${esc(shortName(x.b.name))}</b>
-        <span class="cmeta">${x.shared.map(esc).join(' · ')}</span></div>
-      <div class="why">${esc(x.why)}</div>
-      <textarea class="dtext" id="intro-${i}" rows="2" aria-label="Introduction draft">${esc(x.draft)}</textarea>
-      <div class="dact"><button class="btn primary copy-intro" data-i="${i}">Copy introduction</button>
-        <span class="dnote" id="intro-note-${i}" role="status"></span></div>
-    </div>`).join('');
   host.innerHTML = `
     <div class="netsec"><div class="nethead">Group chats <span>${d.circles.length}</span></div>
       <div class="circles">${groups || '<div class="pempty">No group chats.</div>'}</div></div>
     <div class="netsec"><div class="nethead">Shared interests <span>${d.interests.length}</span></div>
       <div class="pdef">What stands out in each person's thread compared with your others, not just what everyone talks about.</div>
       <div class="interests">${interests || '<div class="pempty">Not enough shared topics yet.</div>'}</div></div>
-    <div class="netsec"><div class="nethead">By location <span>${d.places.length}</span></div>
-      <div class="pdef">Where people live, from what you've told the app or what their messages say. Guesses are marked with a question mark.</div>
-      <div class="interests">${d.places.map(g => `
-        <div class="interest"><div class="itop"><b>${esc(g.place)}</b><span class="cmeta">${g.members.length} people</span></div>
-          <div class="cmembers">${g.members.map(m => person(m.id, m.name, m.source === 'messages' ? '<small>?</small>' : '')).join('')}</div></div>`).join('')
-        || '<div class="pempty">Not enough known locations to group anyone yet.</div>'}</div></div>
-    <div class="netsec"><div class="nethead">Might get along <span>${d.introductions.length}</span></div>
-      <div class="pdef">People who aren't connected yet but have things in common. Introducing people tells each about the other, so it's always your call.</div>
-      <div class="intros">${intros || '<div class="pempty">No obvious introductions right now.</div>'}</div></div>
     ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}
     ${d.solo.length ? `<div class="pfoot">Not connected to anyone else here: ${d.solo.map(esc).join(', ')}</div>` : ''}`;
   host.querySelectorAll('.mchip[data-person]').forEach(el => el.onclick = () => openPerson(el.dataset.person));
@@ -799,9 +801,6 @@ async function drawCircles() {
     const c = S.circles[b.dataset.thread];
     openProposal(c, c.members.map(m => m.id), 0);
   });
-  host.querySelectorAll('.intro .dtext').forEach(fitText);
-  host.querySelectorAll('.copy-intro').forEach(b => b.onclick = () =>
-    copyInto($('#intro-' + b.dataset.i), $('#intro-note-' + b.dataset.i)));
 }
 
 // ---------------------------------------------------------------- filtered threads

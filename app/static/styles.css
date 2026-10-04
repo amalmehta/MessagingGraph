@@ -113,6 +113,11 @@ nav button.on{background:var(--panel);color:var(--ink);font-weight:550;
 nav button .c{font:11px var(--mono);color:var(--faint)}
 .sidefoot{font-size:11px;color:var(--faint);line-height:1.7;
   border-top:1px solid var(--line);padding-top:12px;margin-top:10px}
+.sidefoot .reload{all:unset;cursor:pointer;display:inline-block;margin-top:9px;
+  padding:4px 9px;border-radius:6px;border:1px solid var(--line);color:var(--dim)}
+.sidefoot .reload:hover{background:var(--panel);color:var(--ink)}
+.sidefoot .reload[disabled]{cursor:default;color:var(--faint);background:none}
+.sidefoot .reload:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .themepick{margin-top:auto;display:flex;gap:2px;padding:2px;border-radius:8px;
   background:var(--bg);border:1px solid var(--line)}
 .themepick button{all:unset;flex:1;text-align:center;cursor:pointer;padding:5px 0;
