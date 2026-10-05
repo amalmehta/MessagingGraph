@@ -198,6 +198,9 @@ def person(cid: str):
         "thread_id": (t.id if (t := state.corpus.direct_thread(cid)) else None),
         "location": state.locations.get(cid),
         "location_unknown": cid in state.location_unknown,
+        # What the message store calls them. Shown so a name you gave can be checked
+        # against the number it belongs to; it is identity, not a field to edit.
+        "handle": (c.handle if (c := state.real.contacts.get(cid)) else None),
     })
 
 

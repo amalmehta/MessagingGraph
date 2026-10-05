@@ -1107,7 +1107,11 @@ async function openPerson(id) {
     : s < 172800 ? `${(s/3600).toFixed(1)}h` : `${(s/86400).toFixed(1)}d`;
   $('#drawer').innerHTML = `
     <span class="close">&times;</span>
-    <h3>${esc(p.name)} <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h3>
+    <h3><span id="pname">${esc(p.name)}</span>
+      <button type="button" class="editname" id="edit-name"
+        title="Change the name you have for them">edit</button>
+      <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h3>
+    ${d.handle ? `<div class="handleline">${esc(d.handle)}</div>` : ''}
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
     ${p.vibe ? vibeCard(p.vibe) : ''}
@@ -1155,6 +1159,41 @@ async function openPerson(id) {
   $('#drawer').querySelectorAll('.mchip[data-person]').forEach(el =>
     el.onclick = () => openPerson(el.dataset.person));
   renderLocation(id, d.location, d.location_unknown);
+  // The name is yours to set; the handle underneath it is what the message store
+  // calls them and is not editable, so it is shown rather than offered.
+  $('#edit-name').onclick = () => {
+    const h3 = $('#drawer h3'), label = $('#pname'), btn = $('#edit-name');
+    if (h3.querySelector('.namingform')) return;
+    label.hidden = btn.hidden = true;
+    const form = document.createElement('form');
+    form.className = 'namingform';
+    form.innerHTML = '<input class="nameinput" maxlength="60" autocomplete="off" '
+      + 'aria-label="Their name"><span class="dnote" role="status"></span>';
+    h3.prepend(form);
+    const input = form.querySelector('input'), note = form.querySelector('.dnote');
+    input.value = label.textContent;
+    input.focus();
+    input.select();
+    const close = () => { form.remove(); label.hidden = btn.hidden = false; };
+    input.onkeydown = e => { if (e.key === 'Escape') close(); };
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const name = input.value.trim();
+      if (!name || name === label.textContent) return close();
+      input.disabled = true;
+      let res;
+      try {
+        res = await postJSON(`/api/contacts/${encodeURIComponent(id)}/name`, { name });
+      } catch {
+        return;                                // signedOut() has taken the page over
+      }
+      if (!res.ok) { input.disabled = false; note.textContent = res.error; return; }
+      label.textContent = res.data.name;
+      close();
+      await refreshData();
+      if (S.view) go(S.view);                  // the list behind still says the old name
+    };
+  };
   wireThanks(id, 0);
   $('#drawer').querySelectorAll('.prow[data-plan]').forEach(el => {
     el.onclick = () => openPlan(el.dataset.plan);
