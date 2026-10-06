@@ -26,6 +26,18 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => (
 
 // A contact with no saved name is just a number, and its first word is the area code.
 // Show the last four digits instead, so two unnamed people don't both read "(408)".
+// How long ago, in the roundest unit that is still true.
+const ago = (iso) => {
+  const d = (Date.now() - new Date(iso).getTime()) / 86400000;
+  if (d < 1) return 'today';
+  if (d < 2) return 'yesterday';
+  if (d < 31) return `${Math.round(d)} days ago`;
+  if (d < 365) return `${Math.round(d / 30.4)} months ago`;
+  const y = d / 365.25;
+  return y < 1.5 ? 'about a year ago' : `${Math.round(y)} years ago`;
+};
+const since = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
 const isNumberName = (n) =>
   /^\(\d{3}\) \d{3}-\d{4}$|^\+?[\d\s().-]{7,}$/.test(String(n ?? '').trim());
 const shortName = (n) => {
@@ -1074,7 +1086,9 @@ function viewPeople() {
     const k = S.sort;
     const key = p => k === 'vibe' ? (p.vibe?.name ?? '') : k === 'location' ? (p.location?.place ?? '') : p[k];
     const x = key(a), y = key(b);
-    return typeof x === 'string' ? String(x).localeCompare(y) : y - x;
+    // Reversible, because the end of this list that is worth looking at is often the
+    // bottom: who you hear from least, who waits longest, who has gone quietest.
+    return (typeof x === 'string' ? String(x).localeCompare(y) : y - x) * (S.sortDir || 1);
   });
   $('#main').innerHTML = `
     <h1>People</h1>
@@ -1085,14 +1099,41 @@ function viewPeople() {
     ${S.overview.unnamed ? `<div class="notice"><div><b>${S.overview.unnamed} without a name.</b>
       Name them so you can tell who's who.</div><button class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(S.overview)}
+    <div class="peoplebar">
+      <input type="search" id="people-find" class="exfind" autocomplete="off"
+        placeholder="Find someone…" aria-label="Filter these people">
+      <span class="hint" id="people-count"></span>
+    </div>
     <div class="tablewrap"><table><thead><tr>${COLS.map(c =>
-      `<th data-k="${c[0]}">${c[1]}${S.sort === c[0] ? ' ↓' : ''}</th>`).join('')}</tr></thead>
+      `<th data-k="${c[0]}">${c[1]}${S.sort === c[0]
+        ? ((S.sortDir || 1) === 1 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(p => `<tr data-id="${esc(p.contact_id)}">${COLS.map(c =>
       `<td>${c[2](p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  document.querySelectorAll('th').forEach(th =>
-    th.onclick = () => { S.sort = th.dataset.k; viewPeople(); });
+  document.querySelectorAll('th').forEach(th => th.onclick = () => {
+    if (S.sort === th.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
+    else { S.sort = th.dataset.k; S.sortDir = 1; }
+    viewPeople();
+  });
   document.querySelectorAll('tbody tr').forEach(tr =>
     tr.onclick = () => openPerson(tr.dataset.id));
+  // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
+  const find = $('#people-find'), count = $('#people-count');
+  const trs = [...document.querySelectorAll('tbody tr')];
+  const applyFind = () => {
+    const q = find.value.trim().toLowerCase();
+    let shown = 0;
+    for (const tr of trs) {
+      // The name only. The box says "find someone", and matching every cell made
+      // two letters pull up people whose vibe happened to contain them.
+      const hit = !q || (tr.querySelector('td')?.textContent || '').toLowerCase().includes(q);
+      tr.hidden = !hit;
+      shown += hit;
+    }
+    count.textContent = q ? `${shown} of ${trs.length}` : '';
+  };
+  find.oninput = applyFind;
+  if (S.peopleQ) { find.value = S.peopleQ; applyFind(); }
+  find.addEventListener('input', () => { S.peopleQ = find.value; });
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
 }
@@ -1112,6 +1153,8 @@ async function openPerson(id) {
         title="Change the name you have for them">edit</button>
       <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h3>
     ${d.handle ? `<div class="handleline">${esc(d.handle)}</div>` : ''}
+    <div class="sinceline">Talking since ${esc(since(p.first_contact))}
+      <span class="dot-sep">·</span> last message ${esc(ago(p.last_contact))}</div>
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
     ${p.vibe ? vibeCard(p.vibe) : ''}

@@ -212,6 +212,13 @@ def main() -> int:
     check("plans reach a locked date sometimes", states["done"] + states["scheduled"] > 20)
     check("no duplicate plan ids", len({p.id for p in plans}) == len(plans))
 
+    # "done" covers two different claims: someone said it was happening and the day
+    # came, or nobody said anything and the day came anyway. Only the first is known.
+    done = [p for p in plans if p.state == "done"]
+    check("a plan is only assumed when nothing said it happened",
+          all(not p.assumed for p in plans if p.state != "done") and any(p.assumed for p in done),
+          f"{sum(p.assumed for p in done)} of {len(done)} done plans are inferred from the date")
+
     from app.analysis.plans import _clock as _ck
     check("a time of day is read the way it was written",
           [_ck(s) for s in ("7pm", "9am", "7:30pm", "noon", "midnight", "13:45")]
@@ -1154,6 +1161,21 @@ def main() -> int:
           and all(l["weight"] >= 1 for l in sh),
           f"weights {sorted({l['weight'] for l in sh})}")
     check("the graph endpoint answers", client.get("/api/graph").status_code == 200)
+
+    # Local-only, stats-only and redaction decide what may leave the machine. They
+    # cannot change a number on screen, so they must not re-read the whole history.
+    csrf2 = {"origin": "http://127.0.0.1:8077"}
+    v0 = app_state.version
+    client.post("/api/privacy", json={"stats_only": True}, headers=csrf2)
+    client.post("/api/privacy", json={"redact_on_send": True}, headers=csrf2)
+    outbound_only = app_state.version
+    client.post("/api/privacy", json={"excluded_contact_ids": ["p_priya"]}, headers=csrf2)
+    after_exclude = app_state.version
+    client.post("/api/privacy", json={"excluded_contact_ids": []}, headers=csrf2)
+    check("a setting about what leaves the machine doesn't re-read your history",
+          outbound_only == v0, f"version {v0} -> {outbound_only}")
+    check("excluding someone still does", after_exclude > outbound_only,
+          f"version {outbound_only} -> {after_exclude}")
 
     # The Mac app's own pages. Nothing else loads these, and they only run in a built
     # bundle, so a mistake here is invisible until someone rebuilds the app -- which is

@@ -517,11 +517,21 @@ def set_privacy(patch: PrivacyPatch):
         s.stats_only = patch.stats_only
     if patch.redact_on_send is not None:
         s.redact_on_send = patch.redact_on_send
+    # Only these two reach the corpus -- apply_settings reads excluded ids and the
+    # retention window and nothing else. Local-only, stats-only and redaction govern
+    # what may leave the machine, so re-reading your whole history for them is a
+    # second of work that cannot change a single number on screen.
+    touches_corpus = False
     if patch.retention_days is not None:
-        s.retention_days = max(0, patch.retention_days)
+        days = max(0, patch.retention_days)
+        touches_corpus |= days != s.retention_days
+        s.retention_days = days
     if patch.excluded_contact_ids is not None:
-        s.excluded_contact_ids = set(patch.excluded_contact_ids)
-    state.recompute()
+        ids = set(patch.excluded_contact_ids)
+        touches_corpus |= ids != s.excluded_contact_ids
+        s.excluded_contact_ids = ids
+    if touches_corpus:
+        state.recompute()
     return enc({"settings": s.to_dict(), "contacts": len(state.corpus.contacts),
                 "messages": len(state.corpus.messages)})
 

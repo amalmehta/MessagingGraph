@@ -128,7 +128,10 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
                     66 + 0.2 * p.importance, span=span)
 
         # 3. Something you actually did together, a couple of weeks back or more.
+        # `assumed` plans are ones the date simply went past. Thanking someone for an
+        # evening that may never have happened is worse than saying nothing.
         done = sorted((pl for pl in plans if pl.thread_id == thread.id and pl.state == "done"
+                       and not pl.assumed
                        and 14 <= (now - pl.last_activity).days <= 180),
                       key=lambda pl: pl.last_activity, reverse=True)
         if done:
