@@ -176,3 +176,6 @@ class Plan:
     when_date: datetime | None = None
     evidence: list[str] = field(default_factory=list)   # message ids
     excerpt: str = ""
+    # True when "done" is an inference from the date going by rather than anything
+    # anyone said. Nobody confirmed it happened; the calendar just moved.
+    assumed: bool = False

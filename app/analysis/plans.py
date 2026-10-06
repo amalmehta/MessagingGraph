@@ -267,8 +267,12 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
 
                 if state in ("floated", "proposed") and idle > STALE_AFTER:
                     state = "stale"
+                assumed = False
                 if state == "confirmed" and when_date and when_date < now - timedelta(days=2):
-                    state = "done"
+                    # Agreed to, dated, and the date went by. That is not the same as
+                    # knowing it happened -- nobody said so -- so it is marked as the
+                    # guess it is, and anything that would speak for you leaves it alone.
+                    state, assumed = "done", True
 
                 confidence = 0.45
                 if INTENT.search(window[0].text):
@@ -288,7 +292,7 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                     first_seen=window[0].ts, last_activity=last,
                     when_text=when_text, when_date=when_date,
                     evidence=[m.id for m in window[:8]],
-                    excerpt=window[0].text[:160],
+                    excerpt=window[0].text[:160], assumed=assumed,
                 ))
 
     return _merge(plans)
