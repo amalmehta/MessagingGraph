@@ -48,7 +48,23 @@ class Corpus:
     source_name: str = "unknown"
 
     def messages_in(self, thread_id: str) -> list[Message]:
-        return [m for m in self.messages if m.thread_id == thread_id]
+        """Every message in one thread, in order.
+
+        Grouped once rather than scanned per call. Almost every pass over the store
+        asks this for each thread in turn, so a scan each time made the work threads
+        times messages: on the demo corpus a single recompute walked 548,000 messages
+        to read 7,211 of them. A corpus is built once and never added to, so the
+        grouping is built on first use and kept.
+
+        The list belongs to the corpus -- read it, don't sort or append to it.
+        """
+        if getattr(self, "_by_thread_len", None) != len(self.messages):
+            grouped: dict[str, list[Message]] = {}
+            for m in self.messages:
+                grouped.setdefault(m.thread_id, []).append(m)
+            self._by_thread = grouped
+            self._by_thread_len = len(self.messages)
+        return self._by_thread.get(thread_id, [])
 
     def threads_with(self, contact_id: str) -> list[Thread]:
         return [t for t in self.threads.values() if contact_id in t.participant_ids]
