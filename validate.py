@@ -1173,6 +1173,27 @@ def main() -> int:
     _s.recompute()
     check("excluding someone doesn't re-read or re-classify the store",
           _s.named is _named and _s.verdicts is _verdicts)
+    # messages_in used to scan the whole store per call, so a pass over the corpus
+    # cost threads x messages. It is grouped once now; this fails if it goes back.
+    _c = _s.corpus
+    for _tid in list(_c.threads)[:4]:
+        if [m.id for m in _c.messages_in(_tid)] != [m.id for m in _c.messages if m.thread_id == _tid]:
+            break
+    else:
+        _tid = None
+    _scanned = {"n": 0}
+    _orig_len = len(_c.messages)
+    class _Counting(list):
+        def __iter__(self):
+            _scanned["n"] += 1
+            return list.__iter__(self)
+    _c.messages = _Counting(_c.messages)
+    _c._by_thread_len = None                     # force one rebuild, then reuse
+    for _t in _c.threads:
+        _c.messages_in(_t)
+    check("reading one thread doesn't walk the whole store",
+          _tid is None and _scanned["n"] == 1 and len(_c.messages) == _orig_len,
+          f"{len(_c.threads)} threads read after {_scanned['n']} pass over {_orig_len} messages")
     _o = _s.overrides.load(); _o.names["p_priya"] = "Priya R."; _s.overrides.save(_o)
     _s.recompute()
     check("renaming someone does", _s.named is not _named)
