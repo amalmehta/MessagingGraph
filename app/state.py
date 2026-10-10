@@ -46,8 +46,16 @@ class AppState:
         now = self.now
         # Your corrections first, so a name you gave is what every later step sees.
         o = self.overrides.load()
-        self.named = apply_names(self.raw, o.names)
-        self.verdicts = classify(self.named)
+        # Naming and spam classification read the store and your corrections and
+        # nothing else -- not the privacy settings, which are applied further down.
+        # Classifying is the single most expensive step in here, and excluding one
+        # person used to pay for it again to arrive at exactly the same verdicts.
+        reading = (id(self.raw), tuple(sorted(o.names.items())),
+                   tuple(sorted(o.automated)), tuple(sorted(o.real)))
+        if getattr(self, "_reading", None) != reading:
+            self.named = apply_names(self.raw, o.names)
+            self.verdicts = classify(self.named)
+            self._reading = reading
         for tid, v in self.verdicts.items():
             if tid in o.automated:
                 v.automated, v.decided_by = True, "you"

@@ -253,6 +253,7 @@ def plan_detail(pid: str):
         "people": [{"id": c.id, "name": c.name} for c in people],
         "when_text": plan.when_text, "first_seen": plan.first_seen, "last_activity": plan.last_activity,
         "days_idle": (state.now - plan.last_activity).days, "confidence": plan.confidence,
+        "assumed": plan.assumed,
         "mentions": [{"started": group[0].ts, "messages": [
             {"id": m.id, "ts": m.ts, "who": sender(m), "mine": m.is_from_me, "text": m.text,
              "names_it": bool(names_it.search(m.text))} for m in group]} for group in mentions],

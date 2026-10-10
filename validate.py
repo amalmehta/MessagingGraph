@@ -1162,6 +1162,21 @@ def main() -> int:
           f"weights {sorted({l['weight'] for l in sh})}")
     check("the graph endpoint answers", client.get("/api/graph").status_code == 200)
 
+    # Classifying every thread for spam is the most expensive step in a recompute, and
+    # it runs before the privacy settings are applied -- so excluding someone cannot
+    # change a single verdict and must not pay for them again. Its own AppState, so
+    # the toggling here cannot leak into any other check.
+    from app.state import AppState as _AS
+    _s = _AS("synthetic")
+    _named, _verdicts = _s.named, _s.verdicts
+    _s.settings.excluded_contact_ids = {"p_priya"}
+    _s.recompute()
+    check("excluding someone doesn't re-read or re-classify the store",
+          _s.named is _named and _s.verdicts is _verdicts)
+    _o = _s.overrides.load(); _o.names["p_priya"] = "Priya R."; _s.overrides.save(_o)
+    _s.recompute()
+    check("renaming someone does", _s.named is not _named)
+
     # Local-only, stats-only and redaction decide what may leave the machine. They
     # cannot change a number on screen, so they must not re-read the whole history.
     csrf2 = {"origin": "http://127.0.0.1:8077"}

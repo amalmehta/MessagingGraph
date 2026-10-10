@@ -32,10 +32,15 @@ const ago = (iso) => {
   if (d < 1) return 'today';
   if (d < 2) return 'yesterday';
   if (d < 31) return `${Math.round(d)} days ago`;
-  if (d < 365) return `${Math.round(d / 30.4)} months ago`;
+  if (d < 365) {
+    const m = Math.round(d / 30.4);
+    return m === 1 ? 'a month ago' : `${m} months ago`;
+  }
   const y = d / 365.25;
   return y < 1.5 ? 'about a year ago' : `${Math.round(y)} years ago`;
 };
+const secs = s => s < 90 ? `${s | 0}s` : s < 5400 ? `${(s / 60) | 0}m`
+  : s < 172800 ? `${(s / 3600).toFixed(1)}h` : `${(s / 86400).toFixed(1)}d`;
 const since = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
 const isNumberName = (n) =>
@@ -286,7 +291,16 @@ async function boot() {
     b.onclick = () => go(b.dataset.view));
   $('#scrim').onclick = closeDrawer;
   document.addEventListener('keydown', e => e.key === 'Escape' && closeDrawer());
-  go('now');
+  window.onpopstate = () => go(viewFromUrl(), false);
+  go(viewFromUrl(), false);
+}
+
+// The view lives in the address bar, so a reload comes back where you were and the
+// browser's own Back button walks through the app rather than out of it.
+const VIEWS = ['now', 'graph', 'people', 'privacy'];
+function viewFromUrl() {
+  const v = new URLSearchParams(location.search).get('view');
+  return VIEWS.includes(v) ? v : 'now';
 }
 
 // ---------------------------------------------------------------- theme
@@ -360,13 +374,16 @@ function syncFoot() {
     ? s.excluded_contact_ids.length + ' hidden' : '';
 }
 
-function go(v) {
+function go(v, push = true) {
   // Re-read the palette on every render rather than caching it once. The CSS is
   // the authority; this way a theme that changed underneath us -- a system flip,
   // or a `change` event the browser never delivered -- can never leave the charts
   // drawn in the other theme's colours.
   readTheme();
   S.view = v;
+  if (push && viewFromUrl() !== v) {
+    history.pushState({ view: v }, '', v === 'now' ? location.pathname : `?view=${v}`);
+  }
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
   ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy })[v]();
 }
@@ -1076,7 +1093,14 @@ const COLS = [
   ['importance', 'Importance', p => bar(p.importance, PAINT.accent)],
   ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim)],
   ['open_plans', 'Plans', p => `<span class="num">${p.open_plans || '·'}</span>`],
-  ['trend', 'Last 20 weeks', p => spark(p.spark)],
+  // Who you have not spoken to longest is the question this app exists to answer,
+  // and until now it was the one thing the table could not be sorted by.
+  ['last_contact', 'Last spoke', p => `<span class="num dim">${esc(ago(p.last_contact))}</span>`],
+  ['their_median_reply_s', 'They reply', p => `<span class="num">${esc(secs(p.their_median_reply_s))}</span>`],
+  ['my_median_reply_s', 'You reply', p => `<span class="num">${esc(secs(p.my_median_reply_s))}</span>`],
+  // Its own key: sharing "trend" put the sort arrow on two headers at once and made
+  // clicking the second reverse the first instead of sorting by itself.
+  [null, 'Last 20 weeks', p => spark(p.spark)],
 ];
 const bar = (v, c) => `<span class="num">${v.toFixed(0)}</span>
   <div class="bar"><i style="width:${Math.min(100, v)}%;background:${c}"></i></div>`;
@@ -1105,17 +1129,20 @@ function viewPeople() {
       <span class="hint" id="people-count"></span>
     </div>
     <div class="tablewrap"><table><thead><tr>${COLS.map(c =>
-      `<th data-k="${c[0]}">${c[1]}${S.sort === c[0]
+      `<th${c[0] ? ` data-k="${c[0]}"` : ' class="nosort"'}>${c[1]}${c[0] && S.sort === c[0]
         ? ((S.sortDir || 1) === 1 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
     <tbody>${rows.map(p => `<tr data-id="${esc(p.contact_id)}">${COLS.map(c =>
       `<td>${c[2](p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  document.querySelectorAll('th').forEach(th => th.onclick = () => {
+  document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
     if (S.sort === th.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
     else { S.sort = th.dataset.k; S.sortDir = 1; }
     viewPeople();
   });
-  document.querySelectorAll('tbody tr').forEach(tr =>
-    tr.onclick = () => openPerson(tr.dataset.id));
+  document.querySelectorAll('tbody tr').forEach(tr => {
+    tr.onclick = () => openPerson(tr.dataset.id);
+    tr.tabIndex = 0;                      // plan rows already answer Enter; these should too
+    tr.onkeydown = e => { if (e.key === 'Enter') openPerson(tr.dataset.id); };
+  });
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
   const find = $('#people-find'), count = $('#people-count');
   const trs = [...document.querySelectorAll('tbody tr')];
@@ -1144,8 +1171,6 @@ function closeDrawer() { $('#drawer').classList.remove('on'); $('#scrim').classL
 async function openPerson(id) {
   if (!id || !id.startsWith('p_')) return;
   const d = await api('/api/people/' + id), p = d.profile;
-  const secs = s => s < 90 ? `${s|0}s` : s < 5400 ? `${(s/60)|0}m`
-    : s < 172800 ? `${(s/3600).toFixed(1)}h` : `${(s/86400).toFixed(1)}d`;
   $('#drawer').innerHTML = `
     <span class="close">&times;</span>
     <h3><span id="pname">${esc(p.name)}</span>
@@ -1391,6 +1416,14 @@ async function openPlan(id) {
         · last mentioned ${d.days_idle === 0 ? 'today' : d.days_idle === 1 ? 'yesterday' : d.days_idle + ' days ago'}</div>
       ${d.state === 'stale' ? `<div class="pdef">Wanted, and nobody picked a day. There's often a drafted nudge for
         plans like this under Messages worth sending.</div>` : ''}
+      ${d.assumed ? `<div class="pdef">Counted as done because the day came and went. Nobody
+        actually said it happened, so this one is a guess — nothing here will thank anyone
+        for it.</div>` : ''}
+      ${d.first_seen ? `<div class="pdef">First came up ${esc(ago(d.first_seen))}${
+        // Only worth saying when it ran on for a while; otherwise both dates are the
+        // same sentence twice.
+        (new Date(d.last_activity) - new Date(d.first_seen)) / 86400000 >= 2
+          ? `, and ran on until ${esc(ago(d.last_activity))}` : ''}.</div>` : ''}
       <h2>Where it came up</h2>
       ${d.mentions.length ? d.mentions.map(g => `
         <div class="daysep"><span>${day(g.started)}</span></div>
@@ -1817,4 +1850,11 @@ async function viewPrivacy() {
     + pv.would_send;
 }
 
-boot();
+// A rejected fetch in here used to abort the boot halfway: no navigation wired, no
+// message, an empty window. Say so instead.
+boot().catch(err => {
+  document.body.innerHTML = `<div class="signedout"><h2>Couldn't load your data</h2>
+    <p>The app reached the server but something went wrong reading from it. Reload the
+    page; if it keeps happening, restart the server from your terminal.</p></div>`;
+  console.error(err);
+});
