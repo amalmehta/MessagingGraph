@@ -1128,11 +1128,7 @@ function viewPeople() {
         placeholder="Find someone…" aria-label="Filter these people">
       <span class="hint" id="people-count"></span>
     </div>
-    ${archivedIds().length ? `<div class="archbar">
-      <span>${archivedIds().length} archived — left out of every profile, plan and draft here.
-        Your messages are untouched.</span>
-      <button type="button" class="btn ghost" id="arch-show">Show</button>
-      <div class="archlist" id="arch-list" hidden></div></div>` : ''}
+    <div id="archwrap"></div>
     <div class="tablewrap"><table><thead><tr>${COLS.map(c =>
       `<th${c[0] ? ` data-k="${c[0]}"` : ' class="nosort"'}>${c[1]}${c[0] && S.sort === c[0]
         ? ((S.sortDir || 1) === 1 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
@@ -1153,13 +1149,12 @@ function viewPeople() {
       rowMenu(e, tr.dataset.id, tr.querySelector('td').textContent.trim());
     };
   });
-  const showArch = $('#arch-show');
-  if (showArch) showArch.onclick = () => drawArchived(showArch);
+  paintArchBar();
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
   const find = $('#people-find'), count = $('#people-count');
-  const trs = [...document.querySelectorAll('tbody tr')];
   const applyFind = () => {
     const q = find.value.trim().toLowerCase();
+    const trs = [...document.querySelectorAll('tbody tr')];
     let shown = 0;
     for (const tr of trs) {
       // The name only. The box says "find someone", and matching every cell made
@@ -1183,17 +1178,40 @@ function viewPeople() {
 // to Messages and changes nothing about your actual history.
 const archivedIds = () => (S.overview?.privacy?.excluded_contact_ids) || [];
 
+// The caller has already taken the row (or the chip) off the screen: recomputing
+// everyone's numbers without them takes a second or two, and there is nothing in
+// that wait worth watching a row you just archived sit there for. So the list S
+// carries moves now, and only goes back if the save is refused.
 async function setArchived(ids, note) {
+  const before = archivedIds();
+  if (S.overview?.privacy) S.overview.privacy.excluded_contact_ids = ids;
+  if (note) toast(note);
   let res;
   try {
     res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
   } catch {
     return;                                   // signedOut() has taken the page over
   }
-  if (!res.ok) return;
-  await refreshData();
+  if (!res.ok && S.overview?.privacy) S.overview.privacy.excluded_contact_ids = before;
+  else await refreshData();
   if (S.view === 'people') viewPeople();
-  if (note) toast(note);
+}
+
+function archBar() {
+  const n = archivedIds().length;
+  return n ? `<div class="archbar">
+    <span>${n} archived — left out of every profile, plan and draft here.
+      Your messages are untouched.</span>
+    <button type="button" class="btn ghost" id="arch-show">Show</button>
+    <div class="archlist" id="arch-list" hidden></div></div>` : '';
+}
+
+function paintArchBar() {
+  const wrap = $('#archwrap');
+  if (!wrap) return;
+  wrap.innerHTML = archBar();
+  const show = $('#arch-show');
+  if (show) show.onclick = () => drawArchived(show);
 }
 
 function toast(text) {
@@ -1215,7 +1233,10 @@ function rowMenu(ev, id, name) {
   m.style.top = Math.min(ev.clientY, innerHeight - 70) + 'px';
   m.querySelector('button').onclick = () => {
     closeRowMenu();
+    document.querySelector(`tbody tr[data-id="${CSS.escape(id)}"]`)?.remove();
     setArchived([...archivedIds(), id], `${shortName(name)} archived.`);
+    paintArchBar();
+    $('#people-find')?.dispatchEvent(new Event('input'));   // "13 of 14" was true a moment ago
   };
   document.body.append(m);
   m.querySelector('button').focus();
@@ -1241,9 +1262,11 @@ async function drawArchived(btn) {
     ? away.map(c => `<span class="archchip">${esc(c.name)}<button type="button"
         data-id="${esc(c.id)}" title="Bring ${esc(c.name)} back">bring back</button></span>`).join('')
     : '<span class="pempty">Nobody is archived.</span>';
-  box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () =>
+  box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => {
+    b.closest('.archchip')?.remove();
     setArchived(archivedIds().filter(x => x !== b.dataset.id),
-                `${shortName(away.find(c => c.id === b.dataset.id)?.name || 'They')} is back.`));
+                `${shortName(away.find(c => c.id === b.dataset.id)?.name || 'They')} is back.`);
+  });
 }
 
 // ---------------------------------------------------------------- drawer
