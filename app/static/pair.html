@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Pair this phone</title>
+<link rel="stylesheet" href="/static/pair.css">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+</head>
+<body>
+<main>
+  <h1>Pair this phone</h1>
+  <p class="sub">On your Mac, open <b>messaging graph</b> → <b>Privacy</b> → <b>Show a
+    pairing code</b>, then type the six digits here. The code lasts two minutes.</p>
+  <form id="f" autocomplete="off">
+    <label for="code">Pairing code</label>
+    <input id="code" name="code" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+      autocomplete="one-time-code" placeholder="000000" aria-describedby="say">
+    <p class="say" id="say" role="status"></p>
+    <button type="submit" id="go">Pair</button>
+  </form>
+  <p class="fine">Pairing lets this phone read what the Mac has already worked out.
+    Your messages stay on the Mac — nothing is copied here, and nothing leaves your
+    home network.</p>
+</main>
+<script src="/static/pair.js"></script>
+</body>
+</html>

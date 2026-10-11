@@ -130,12 +130,30 @@ def cmd_serve(a) -> int:
     os.environ["MG_SOURCE"] = source
     os.environ["MG_PORT"] = str(a.port)
 
+    host = "127.0.0.1"
+    if a.phone:
+        from .net import reachable_at
+        where = reachable_at(a.port)
+        if not where:
+            _line(BAD, "This Mac isn't on a network I can find (no Wi-Fi or Ethernet address).")
+            return 1
+        os.environ["MG_PHONE"] = "1"
+        host = "0.0.0.0"          # noqa: S104 -- deliberate, and only with --phone
+
     import uvicorn
     print(f"Loading {source.split(':')[0]} data…", flush=True)
     from . import main
     print(f"\nOpen this link (it works only for this run of the server):\n\n  "
           f"{main.guard.launch_url}\n", flush=True)
-    uvicorn.run(main.app, host="127.0.0.1", port=a.port, access_log=False,
+    if a.phone:
+        _line(WARN, "Answering on your local network. Anyone on this Wi-Fi can reach "
+                    "the pairing page; only a phone with a code gets past it.")
+        print("      On the phone, open:  "
+              f"http://{where[0]}/pair", flush=True)
+        for extra in where[1:]:
+            print(f"                     or:  http://{extra}/pair", flush=True)
+        print("      Then open Privacy on this Mac and press Show a pairing code.\n", flush=True)
+    uvicorn.run(main.app, host=host, port=a.port, access_log=False,
                 server_header=False, log_level="warning")
     return 0
 
@@ -233,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("serve", help="serve the app on 127.0.0.1")
     s.add_argument("--synthetic", action="store_true", help="serve the demo corpus")
     s.add_argument("--port", type=int, default=8077)
+    s.add_argument("--phone", action="store_true",
+                   help="also answer this Mac's own address, so a paired phone can read it")
     s.add_argument("--chatdb-source", default=None, help=argparse.SUPPRESS)
     s.add_argument("--addressbook", default=AB_ROOT, help=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_serve)

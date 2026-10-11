@@ -12,6 +12,7 @@ trust any of the numbers the UI displays.
 from __future__ import annotations
 
 import math
+import os
 import re
 import shutil
 import sqlite3
@@ -674,6 +675,39 @@ def main() -> int:
     check("wipe removes the data and the key", not vroot.exists() and keys.get() is None)
     shutil.rmtree(tmp, ignore_errors=True)
 
+    print("\nletting a phone in:")
+    from app.pairing import Pairing as _P, PairingStore as _PS, MAX_ATTEMPTS as _MAX
+    _pg = _P()
+    check("pairing is closed until you open it",
+          not _pg.offering and _pg.code_on_offer() is None)
+    _code = _pg.open()
+    _wrong = "000000" if _code != "000000" else "111111"
+    check("the code is six digits and runs out", len(_code) == 6 and _code.isdigit()
+          and 0 < _pg.seconds_left() <= 120, f"{_pg.seconds_left()}s left")
+    check("a wrong code pairs nothing and doesn't spend the offer",
+          _pg.redeem(_wrong, "iPhone") is None and _pg.offering)
+    _dev = _pg.redeem(_code, "An iPhone")
+    check("the right code pairs the phone once", _dev is not None and bool(_dev.token))
+    check("and the code is spent", not _pg.offering and _pg.redeem(_code, "again") is None)
+    check("the token identifies that phone and nothing else",
+          _pg.device_for(_dev.token) is _dev
+          and _pg.device_for("nope") is None and _pg.device_for(None) is None)
+    # The UI lists paired phones; a token in that list would be a token on screen.
+    check("a device never shows its own token", "token" not in _dev.public())
+    _bf = _P(); _real = _bf.open()
+    for _ in range(_MAX + 1):
+        _bf.redeem("999999" if _real != "999999" else "888888", "x")
+    check("guessing at six digits closes pairing rather than letting you keep going",
+          not _bf.offering, f"shut after {_MAX} wrong")
+    _ex = _P(); _ex.open(); _ex._code_until = 0.0
+    check("an expired code is no code at all", not _ex.offering)
+    _store = _PS(); _pg2 = _store.load(); _c2 = _pg2.open()
+    _d2 = _pg2.redeem(_c2, "Phone"); _store.save(_pg2)
+    _back = _store.load()
+    check("a paired phone survives a restart", _back.device_for(_d2.token) is not None)
+    check("and can be revoked one phone at a time",
+          _back.revoke(_d2.id) and _back.device_for(_d2.token) is None)
+
     print("\nlocalhost hardening:")
     anon = TestClient(fastapi_app, base_url="http://127.0.0.1:8077")
     check("the API refuses a browser that hasn't opened the launch link",
@@ -703,6 +737,89 @@ def main() -> int:
     check("interactive API docs and the schema are not served",
           client.get("/api/docs").status_code == 404
           and client.get("/openapi.json").status_code == 404)
+
+    print("\nletting the phone in over the network:")
+    MAC_ORIGIN = {"origin": "http://127.0.0.1:8077"}
+    STATIC = Path("app/static")
+    # A second, separate app object built the way `./mg serve --phone` builds it,
+    # so the loopback one the checks above used stays exactly as locked as it was.
+    # Loaded under its own name rather than reloaded: importlib.reload mutates the
+    # module in place, which would hand both halves of this file the same app.
+    import importlib.util
+    _env = dict(os.environ)
+    os.environ.update(MG_SOURCE="synthetic", MG_PORT="8077", MG_PHONE="1")
+    _spec = importlib.util.spec_from_file_location("app.main_on_lan", "app/main.py")
+    lanmod = importlib.util.module_from_spec(_spec)
+    sys.modules["app.main_on_lan"] = lanmod
+    try:
+        _spec.loader.exec_module(lanmod)
+    finally:
+        os.environ.clear(); os.environ.update(_env)
+
+    LAN = lanmod.LAN_HOSTS[0] if lanmod.LAN_HOSTS else "nowhere.local:8077"
+    check("--phone publishes a .local name and not a loopback one",
+          bool(lanmod.LAN_HOSTS) and not any(h.startswith("127.") or h.startswith("localhost")
+                                             for h in lanmod.LAN_HOSTS), LAN)
+    lanmac = TestClient(lanmod.app, base_url="http://127.0.0.1:8077")
+    lanmac.get(f"/?token={lanmod.guard.token}")
+    ph = TestClient(lanmod.app, base_url=f"http://{LAN}")
+    ORIG = {"origin": f"http://{LAN}".lower()}
+
+    check("an unpaired phone on the Wi-Fi gets nothing but the pairing page",
+          ph.get("/api/overview").status_code == 401 and ph.get("/").status_code == 401
+          and ph.get("/pair").status_code == 200)
+    check("a host that isn't this Mac is still refused",
+          ph.get("/", headers={"host": "attacker.example:8077"}).status_code == 403)
+    _code = lanmac.post("/api/phone/open", headers=MAC_ORIGIN).json()["code"]
+    # 401 here, not 403: this phone hasn't paired yet, so it is turned away before
+    # anyone asks whether it would be allowed to see a code. Once it has paired it
+    # is refused on the other ground, which the paired check below covers.
+    check("the code is shown on the Mac and never over the network",
+          len(_code) == 6 and ph.get("/api/phone").status_code == 401)
+    _bad = ph.post("/api/pair/redeem", headers=ORIG,
+                   json={"code": "000001" if _code != "000001" else "000002"})
+    check("a wrong code hands out no cookie",
+          _bad.status_code == 401 and "mg_device" not in _bad.cookies)
+    _ok = ph.post("/api/pair/redeem", json={"code": _code, "name": "A phone"}, headers=ORIG)
+    _sc = _ok.headers.get("set-cookie", "").lower()
+    check("the right code hands out an HttpOnly, SameSite=Strict device cookie",
+          _ok.status_code == 200 and "httponly" in _sc and "samesite=strict" in _sc)
+    check("and then the phone can read the same app the Mac sees",
+          ph.get("/api/overview").status_code == 200)
+    check("a paired phone still can't pair the next one",
+          ph.post("/api/phone/open", headers=ORIG).status_code == 403
+          and ph.get("/api/phone").status_code == 403)
+    check("someone else on the Wi-Fi is no better off than before",
+          TestClient(lanmod.app, base_url=f"http://{LAN}")
+          .get("/api/overview").status_code == 401)
+    _dev = lanmac.get("/api/phone").json()["devices"][0]
+    check("the Mac lists the phone without ever showing its token", "token" not in _dev)
+    lanmac.post(f"/api/phone/revoke/{_dev['id']}", headers=MAC_ORIGIN)
+    check("revoking it shuts that phone out at once",
+          ph.get("/api/overview").status_code == 401)
+
+    print("\nadded to the Home Screen:")
+    _idx = ph.get("/pair").status_code and lanmac.get("/").text
+    check("the page declares itself installable, with an icon iOS can mask",
+          'rel="manifest"' in _idx and 'apple-touch-icon' in _idx
+          and 'name="apple-mobile-web-app-capable"' in _idx)
+    _man = lanmac.get("/static/manifest.webmanifest")
+    _mj = _man.json()
+    check("the manifest is served as a manifest and opens standalone",
+          _man.headers["content-type"] == "application/manifest+json"
+          and _mj["display"] == "standalone" and _mj["start_url"] == "/")
+    check("the CSP allows the manifest it asks for",
+          "manifest-src 'self'" in lanmac.get("/").headers["content-security-policy"])
+    _ico = lanmac.get("/static/icon-180.png")
+    check("the home-screen icon is a real PNG, square and opaque",
+          _ico.headers["content-type"] == "image/png"
+          and _ico.content[:8] == b"\x89PNG\r\n\x1a\n"
+          and int.from_bytes(_ico.content[16:20], "big") == 180
+          and int.from_bytes(_ico.content[20:24], "big") == 180,
+          f"{len(_ico.content):,} bytes")
+    check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
+          "max-width:760px" in (STATIC / "styles.css").read_text()
+          and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
     print("\nautomated vs real conversations:")
     from app.analysis.spam import NEVER_FILTER_AFTER, classify, classify_thread

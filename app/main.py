@@ -12,7 +12,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -28,16 +28,37 @@ from .analysis.series import contact_series, overall_series, sparkline_points
 from .analysis.suggestions import build as build_suggestions
 from .analysis.voice import style_for
 from .graph import build_graph
+from .net import reachable_at
 from .overrides import clean_name, clean_place, is_unnamed
-from .security import Guard
+from .pairing import PairingStore
+from .security import DEVICE_COOKIE, DEVICE_MAX_AGE, Guard
 from .state import AppState
+
+
+def _vault_if_any():
+    """Paired phones belong with the data they can read: in the vault when the
+    vault is what is being served, and in memory for the demo corpus."""
+    if os.environ.get("MG_SOURCE", "synthetic") != "vault":
+        return None
+    from .vault import Vault
+    return Vault()
+
 
 STATIC = Path(__file__).parent / "static"
 
 # No interactive docs: they would be one more unauthenticated-looking surface
 # describing every endpoint that returns message text.
 app = FastAPI(title="messaging graph", docs_url=None, redoc_url=None, openapi_url=None)
-guard = Guard(int(os.environ.get("MG_PORT", "8077")))
+PORT = int(os.environ.get("MG_PORT", "8077"))
+
+# Off unless `./mg serve --phone` asked for it. Everything about the network door
+# -- the Host headers accepted, the pairing endpoints, the hint on the locked page
+# -- hangs off this being non-empty.
+LAN_HOSTS = tuple(reachable_at(PORT)) if os.environ.get("MG_PHONE") == "1" else ()
+pairing_store = PairingStore(_vault_if_any())
+pairing = pairing_store.load()
+
+guard = Guard(PORT, lan_hosts=LAN_HOSTS, device_for=lambda t: pairing.device_for(t))
 guard.install(app)
 state = AppState(os.environ.get("MG_SOURCE", "synthetic"))
 
@@ -55,7 +76,7 @@ def enc(obj):
 
 
 @app.get("/api/overview")
-def overview():
+def overview(request: Request):
     c, plans, profiles = state.corpus, state.plans, state.profiles
     first, last = (c.span if c.messages else (datetime.now(), datetime.now()))
     open_plans = [p for p in plans if p.state in OPEN_STATES]
@@ -76,6 +97,14 @@ def overview():
         "locations": {"unknown": sum(1 for a in location_asks(1000) if not a["suggestion"]),
                       "to_confirm": sum(1 for a in location_asks(1000) if a["suggestion"])},
         "privacy": state.settings.to_dict(),
+        # Serving on the LAN is a different thing from the local-only switch, which
+        # is about calls going out. Both belong in the footer, or it says "no
+        # network" while a phone is reading over the Wi-Fi.
+        "lan": {"on": guard.on_lan, "devices": len(pairing.devices),
+                # "session" on this Mac, "device" on a paired phone. The screens
+                # differ in the few places where the phone is deliberately not
+                # allowed to do what the Mac can.
+                "via": getattr(request.state, "via", None)},
     })
 
 
@@ -548,6 +577,81 @@ def preview_outbound(cid: str):
     msgs = state.corpus.messages_in(thread.id)[-24:] if thread else []
     payload = build_payload(DraftRequest(profile=prof, recent=msgs, intent="check in"))
     return enc(state.gate.preview("draft", payload))
+
+
+# ------------------------------------------------------------------ the phone
+class Redeem(BaseModel):
+    code: str
+    name: str = ""
+
+
+def _mac_only(request):
+    """Pairing is administered from this Mac. A paired phone is trusted with your
+    messages, not with letting the next device in."""
+    if getattr(request.state, "via", None) != "session":
+        raise HTTPException(403, "Pair from the Mac.")
+
+
+@app.get("/api/phone")
+def phone_status(request: Request):
+    """What the Privacy screen shows: whether the door is open, where to point the
+    phone, the code if one is on offer, and who is already in."""
+    _mac_only(request)
+    return enc({
+        "on": guard.on_lan,
+        "addresses": [f"http://{h}/pair" for h in LAN_HOSTS],
+        "offering": pairing.offering,
+        "code": pairing.code_on_offer(),
+        "seconds_left": pairing.seconds_left(),
+        "devices": sorted((d.public() for d in pairing.devices.values()),
+                          key=lambda d: d["paired_at"], reverse=True),
+    })
+
+
+@app.post("/api/phone/open")
+def phone_open(request: Request):
+    _mac_only(request)
+    if not guard.on_lan:
+        raise HTTPException(409, "Start the server with ./mg serve --phone first.")
+    pairing.open()
+    return phone_status(request)
+
+
+@app.post("/api/phone/close")
+def phone_close(request: Request):
+    _mac_only(request)
+    pairing.close()
+    return phone_status(request)
+
+
+@app.post("/api/phone/revoke/{device_id}")
+def phone_revoke(device_id: str, request: Request):
+    _mac_only(request)
+    if pairing.revoke(device_id):
+        pairing_store.save(pairing)
+    return phone_status(request)
+
+
+@app.post("/api/pair/redeem")
+def pair_redeem(body: Redeem, request: Request):
+    """The one endpoint a stranger on your network can reach. It answers the same
+    way to a wrong code and to no code at all, and `pairing.py` shuts the door
+    after five tries."""
+    if not guard.on_lan:
+        raise HTTPException(404, "Not serving on the network.")
+    device = pairing.redeem(body.code, body.name or "A phone")
+    if device is None:
+        return JSONResponse({"ok": False, "offering": pairing.offering}, 401)
+    pairing_store.save(pairing)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(DEVICE_COOKIE, device.token, httponly=True, samesite="strict",
+                    path="/", max_age=DEVICE_MAX_AGE)
+    return resp
+
+
+@app.get("/pair")
+def pair_page():
+    return FileResponse(STATIC / "pair.html")
 
 
 @app.get("/")

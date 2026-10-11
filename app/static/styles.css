@@ -133,8 +133,8 @@ nav button .c{font:11px var(--mono);color:var(--faint)}
 main{overflow-y:auto;padding:26px 30px 60px}
 h1{font-size:19px;margin:0 0 3px;letter-spacing:-.3px}
 .sub{color:var(--dim);font-size:13px;margin-bottom:22px;max-width:78ch}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint);
-  margin:30px 0 12px;font-weight:600}
+h2{font-size:14.5px;letter-spacing:-.15px;color:var(--dim);
+  margin:30px 0 12px;font-weight:650}
 
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
@@ -158,8 +158,8 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint
 
 /* table */
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;color:var(--faint);font-size:10.5px;text-transform:uppercase;
-  letter-spacing:.6px;font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--line);
+th{text-align:left;color:var(--faint);font-size:11.5px;
+  font-weight:600;padding:0 10px 9px;border-bottom:1px solid var(--line);
   cursor:pointer;user-select:none;white-space:nowrap}
 th.nosort{cursor:default}
 tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
@@ -168,6 +168,18 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--panel)}
 .name{font-weight:550}
+.pcell{display:flex;align-items:center;gap:9px;min-width:0}
+.av{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  width:27px;height:27px;border-radius:50%;font-size:10.5px;font-weight:700;
+  letter-spacing:.2px;line-height:1;user-select:none}
+.av.c0{background:var(--wash-accent);color:var(--accent)}
+.av.c1{background:var(--wash-adds);color:var(--adds)}
+.av.c2{background:var(--wash-plan);color:var(--plan)}
+.av.c3{background:var(--wash-neutral);color:var(--neutral)}
+.av.c4{background:var(--wash-functional);color:var(--functional)}
+.av.c5{background:var(--wash-stale);color:var(--stale)}
+.av.sm{width:21px;height:21px;font-size:9px}
+.av.big{width:44px;height:44px;font-size:16px}
 .tag{font:10.5px var(--mono);padding:2.5px 7px;border-radius:5px;text-transform:uppercase;
   letter-spacing:.4px;white-space:nowrap}
 /* Connection states are namespaced `s-*` and trends `t-*`: an unprefixed
@@ -221,7 +233,7 @@ svg.drag{cursor:grabbing}
 .headline{color:var(--dim);font-size:13.5px;margin:10px 0 18px;line-height:1.6}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:8px}
 .metric{background:var(--panel2);border-radius:8px;padding:10px 12px}
-.metric .n{font:600 16px var(--mono)} .metric .l{color:var(--faint);font-size:10.5px;margin-top:2px}
+.metric .n{font:600 16px var(--mono)} .metric .l{color:var(--faint);font-size:11px;margin-top:3px;line-height:1.35}
 
 .sig{padding:11px 0;border-bottom:1px solid var(--line)}
 .sig .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
@@ -278,7 +290,7 @@ pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;pad
   color:var(--dim);font-size:12.5px}
 .archlist{flex-basis:100%;display:flex;flex-wrap:wrap;gap:7px}
 .archlist[hidden]{display:none}
-.archchip{display:inline-flex;align-items:center;gap:7px;padding:4px 6px 4px 11px;
+.archchip{display:inline-flex;align-items:center;gap:7px;padding:4px 6px 4px 5px;
   border:1px solid var(--line);border-radius:20px;background:var(--bg);font-size:12.5px;
   color:var(--dim)}
 .archchip button{all:unset;cursor:pointer;color:var(--accent);font-size:11.5px;
@@ -439,11 +451,11 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .vcol{color:var(--ink);font-size:12.5px;white-space:nowrap}
 .vibe{margin:14px 0 6px;padding:14px 16px 12px;border:1px solid var(--line);border-radius:11px;
   background:linear-gradient(135deg,var(--wash-plan),var(--wash-accent-soft))}
-.veyebrow{font:10px var(--mono);text-transform:uppercase;letter-spacing:.8px;color:var(--faint)}
+.veyebrow{font:11px/1.4 inherit;font-weight:600;color:var(--faint)}
 .vname{font-size:18px;font-weight:600;letter-spacing:-.3px;margin-top:2px}
 .vline{color:var(--dim);font-size:13px;margin-top:3px;line-height:1.5}
 .vdims{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px 14px;margin-top:13px}
-.vd span{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px}
+.vd span{font-size:11px;color:var(--faint)}
 .vd i{display:block;height:4px;border-radius:2px;background:var(--line);margin-top:4px;position:relative;overflow:hidden}
 .vd i b{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:2px;opacity:.75}
 .vd.top span{color:var(--ink)}
@@ -463,8 +475,9 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ctop b{font-weight:600}
 .cmeta{color:var(--faint);font:11px var(--mono);white-space:nowrap}
 .cmembers{display:flex;flex-wrap:wrap;gap:6px}
-.mchip{appearance:none;display:inline-flex;align-items:baseline;gap:6px;background:var(--panel2);
-  border:1px solid var(--line);border-radius:20px;padding:3px 10px;font:12px system-ui,sans-serif;color:var(--ink);cursor:pointer}
+.mchip{appearance:none;display:inline-flex;align-items:center;gap:7px;background:var(--panel2);
+  border:1px solid var(--line);border-radius:20px;padding:3px 11px 3px 4px;
+  font:12px system-ui,sans-serif;color:var(--ink);cursor:pointer}
 .mchip:hover{border-color:var(--line-strong)}
 .mchip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .mchip small{color:var(--faint);font-size:10.5px}
@@ -543,6 +556,8 @@ tbody tr[hidden]{display:none}
 .editname{all:unset;cursor:pointer;font-size:11.5px;font-weight:500;color:var(--accent);
   padding:2px 7px;border-radius:5px;vertical-align:middle;opacity:.8}
 .editname:hover{background:var(--wash-accent);opacity:1}
+.editname.danger{color:var(--costs)}
+.editname.danger:hover{background:var(--wash-stale)}
 .editname:focus-visible{outline:2px solid var(--accent);outline-offset:1px;opacity:1}
 .editname[hidden],#pname[hidden]{display:none}
 .namingform{display:inline-flex;align-items:center;gap:8px;vertical-align:middle}
@@ -578,3 +593,63 @@ button.stat:hover{border-color:var(--hover-edge)}
 
 /* what the drafts learned about how you text */
 .voicenote{color:var(--faint);font-size:11.5px;margin:-6px 0 12px;line-height:1.5}
+
+/* Pairing a phone, from the Privacy screen. */
+.steps{margin:14px 0 16px;padding-left:22px;color:var(--dim);font-size:13px;line-height:1.65}
+.steps li{margin-bottom:7px}
+.steps b{color:var(--ink);font-weight:600}
+code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--line);
+  border-radius:5px;padding:1px 5px;color:var(--ink)}
+.paircode{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px;
+  border:1px solid var(--edge-accent);border-radius:11px;background:var(--wash-accent-soft)}
+.paircode .code{font:600 32px/1 var(--mono);letter-spacing:.3em;color:var(--ink);
+  padding-left:.3em}
+.paircode .left{font:12px var(--mono);color:var(--faint);margin-right:auto}
+
+/* ---------------------------------------------------------------- the phone
+   Added to the Home Screen, this is the whole app -- so the sidebar becomes the
+   bottom tab bar it would be in a native one, and the parts of it that aren't
+   navigation (theme, source, reload) move to the end of the page. app.js does
+   the moving, so those controls keep the handlers they already had rather than
+   being a second copy that can drift. */
+@media (max-width:760px){
+  #app{grid-template-columns:1fr;grid-template-rows:1fr auto auto;height:100dvh}
+  /* A grid item defaults to min-width:auto, so one row that doesn't fit widens
+     the whole column and every other row with it -- which is how a 418px footer
+     pushed the page off the side of a 375px phone. */
+  #app>*{min-width:0}
+  main{grid-row:1;padding:16px 16px 26px}
+  aside{grid-row:3;flex-direction:row;align-items:stretch;gap:0;
+    border-right:0;border-top:1px solid var(--line);
+    padding:5px 7px calc(5px + env(safe-area-inset-bottom))}
+  aside .brand,aside .themepick,aside .sidefoot{display:none}
+  nav{flex-direction:row;flex:1;margin:0;gap:3px}
+  nav button{flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:1px;
+    padding:7px 2px 5px;font-size:11px;text-align:center;border-radius:9px}
+  nav button.on{box-shadow:inset 0 2px 0 var(--accent)}
+  nav button .c{font-size:10px}
+
+  /* One line above the tabs, so nothing the sidebar offered is lost on a phone
+     -- just flattened. The date span goes; the Now page opens by saying it. */
+  #phonefoot{display:flex;grid-row:2;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;gap:6px 10px;padding:6px 14px;background:var(--sidebar);
+    border-top:1px solid var(--line)}
+  #phonefoot .themepick{display:flex;margin:0;flex:0 0 auto;width:138px}
+  #phonefoot .themepick button{min-height:30px;padding:3px 0}
+  #phonefoot .sidefoot{display:flex;align-items:center;flex-wrap:wrap;gap:4px 9px;
+    margin:0;padding:0;border:0;font-size:11px;min-width:0}
+  #phonefoot .sidefoot br,#phonefoot #foot-span{display:none}
+  #phonefoot .sidefoot .reload{margin:0}
+
+  h1{font-size:21px}
+  .sub{font-size:13.5px;margin-bottom:18px}
+  h2{margin:24px 0 10px}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .drawer{width:100%;border-left:0;padding:20px 18px calc(50px + env(safe-area-inset-bottom))}
+  .notice{flex-direction:column;align-items:flex-start;gap:9px}
+  .peoplebar{flex-wrap:wrap}
+  /* Thumbs, not pointers: the 24px rows and 11px chips of a desktop table are
+     under the 44pt Apple asks for, and this is a list you scroll and tap. */
+  td{padding:12px 10px}
+  nav button,.btn,.archchip button,.themepick button{min-height:38px}
+}

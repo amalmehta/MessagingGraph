@@ -1,0 +1,37 @@
+/* The one page a phone sees before it is let in. It can't use styles.css --
+   that is behind the door this page opens -- so it carries its own, small and
+   with the same palette names written out. */
+:root{
+  color-scheme:light;
+  --bg:#f6f5f2; --panel:#fffefc; --line:#e2dfd8; --line-strong:#c9c5bb;
+  --ink:#1c1e21; --dim:#4a4f55; --faint:#636970; --accent:#1668d6; --costs:#c4303c;
+  --adds:#1a7f37; --shadow:rgba(28,30,33,.14);
+}
+@media (prefers-color-scheme:dark){:root{
+  color-scheme:dark;
+  --bg:#191b1f; --panel:#21242a; --line:#363b44; --line-strong:#4a515b;
+  --ink:#edeff2; --dim:#b3bac2; --faint:#8f969f; --accent:#6cb1ff; --costs:#ff7b82;
+  --adds:#56d364; --shadow:rgba(0,0,0,.45);
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 -apple-system,system-ui,sans-serif;
+  padding:max(28px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom))}
+main{max-width:30rem;margin:0 auto}
+h1{font-size:23px;letter-spacing:-.3px;margin:8px 0 6px}
+.sub{color:var(--dim);font-size:14.5px;margin:0 0 26px}
+label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.7px;
+  color:var(--faint);font-weight:600;margin-bottom:8px}
+input{width:100%;padding:16px;border-radius:12px;border:1px solid var(--line-strong);
+  background:var(--panel);color:var(--ink);box-shadow:0 1px 2px var(--shadow);
+  font:600 30px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:.4em;text-align:center}
+input:focus{outline:2px solid var(--accent);outline-offset:1px}
+button{width:100%;margin-top:16px;padding:15px;border:0;border-radius:12px;
+  background:var(--accent);color:#fff;font:600 16px/1 inherit;cursor:pointer}
+button[disabled]{opacity:.5}
+.say{min-height:1.4em;margin:12px 0 0;font-size:14px;color:var(--dim)}
+.say.bad{color:var(--costs)}
+.say.good{color:var(--adds)}
+.fine{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);
+  color:var(--faint);font-size:13px}
