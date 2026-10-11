@@ -1128,6 +1128,11 @@ function viewPeople() {
         placeholder="Find someone…" aria-label="Filter these people">
       <span class="hint" id="people-count"></span>
     </div>
+    ${archivedIds().length ? `<div class="archbar">
+      <span>${archivedIds().length} archived — left out of every profile, plan and draft here.
+        Your messages are untouched.</span>
+      <button type="button" class="btn ghost" id="arch-show">Show</button>
+      <div class="archlist" id="arch-list" hidden></div></div>` : ''}
     <div class="tablewrap"><table><thead><tr>${COLS.map(c =>
       `<th${c[0] ? ` data-k="${c[0]}"` : ' class="nosort"'}>${c[1]}${c[0] && S.sort === c[0]
         ? ((S.sortDir || 1) === 1 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
@@ -1142,7 +1147,14 @@ function viewPeople() {
     tr.onclick = () => openPerson(tr.dataset.id);
     tr.tabIndex = 0;                      // plan rows already answer Enter; these should too
     tr.onkeydown = e => { if (e.key === 'Enter') openPerson(tr.dataset.id); };
+    // contextmenu, not a right-click listener: the keyboard's menu key raises it too.
+    tr.oncontextmenu = e => {
+      e.preventDefault();
+      rowMenu(e, tr.dataset.id, tr.querySelector('td').textContent.trim());
+    };
   });
+  const showArch = $('#arch-show');
+  if (showArch) showArch.onclick = () => drawArchived(showArch);
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
   const find = $('#people-find'), count = $('#people-count');
   const trs = [...document.querySelectorAll('tbody tr')];
@@ -1163,6 +1175,75 @@ function viewPeople() {
   find.addEventListener('input', () => { S.peopleQ = find.value; });
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
+}
+
+// Putting someone away is the same switch the privacy screen used to offer as a
+// wall of checkboxes: they are dropped before any analysis runs, including out of
+// group threads so they cannot come back through group statistics. It says nothing
+// to Messages and changes nothing about your actual history.
+const archivedIds = () => (S.overview?.privacy?.excluded_contact_ids) || [];
+
+async function setArchived(ids, note) {
+  let res;
+  try {
+    res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
+  } catch {
+    return;                                   // signedOut() has taken the page over
+  }
+  if (!res.ok) return;
+  await refreshData();
+  if (S.view === 'people') viewPeople();
+  if (note) toast(note);
+}
+
+function toast(text) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = text;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+function closeRowMenu() { document.querySelector('.rowmenu')?.remove(); }
+
+function rowMenu(ev, id, name) {
+  closeRowMenu();
+  const m = document.createElement('div');
+  m.className = 'rowmenu';
+  m.innerHTML = `<button type="button">Archive ${esc(shortName(name))}</button>`;
+  m.style.left = Math.min(ev.clientX, innerWidth - 220) + 'px';
+  m.style.top = Math.min(ev.clientY, innerHeight - 70) + 'px';
+  m.querySelector('button').onclick = () => {
+    closeRowMenu();
+    setArchived([...archivedIds(), id], `${shortName(name)} archived.`);
+  };
+  document.body.append(m);
+  m.querySelector('button').focus();
+  setTimeout(() => {
+    document.addEventListener('pointerdown', closeRowMenu, { once: true });
+    document.addEventListener('keydown', e => e.key === 'Escape' && closeRowMenu(), { once: true });
+  });
+}
+
+async function drawArchived(btn) {
+  const box = $('#arch-list');
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; btn.textContent = 'Show'; return; }
+  box.hidden = false;
+  btn.textContent = 'Hide';
+  box.innerHTML = '<span class="pempty">Loading…</span>';
+  // /api/people only returns who is still in the analysis, so the names of the
+  // people who are not have to come from the unfiltered list.
+  let all;
+  try { all = await api('/api/contacts'); } catch { return; }
+  const away = all.filter(c => archivedIds().includes(c.id));
+  box.innerHTML = away.length
+    ? away.map(c => `<span class="archchip">${esc(c.name)}<button type="button"
+        data-id="${esc(c.id)}" title="Bring ${esc(c.name)} back">bring back</button></span>`).join('')
+    : '<span class="pempty">Nobody is archived.</span>';
+  box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () =>
+    setArchived(archivedIds().filter(x => x !== b.dataset.id),
+                `${shortName(away.find(c => c.id === b.dataset.id)?.name || 'They')} is back.`));
 }
 
 // ---------------------------------------------------------------- drawer
@@ -1696,41 +1777,9 @@ function simulate(raw) {
 }
 
 // ---------------------------------------------------------------- privacy
-// Excluding someone re-reads your whole history, so the old handler -- post on every
-// click, then rebuild this page -- made four exclusions four passes, with the chip dead
-// until each finished. The chip flips straight away and the passes are batched into one.
-let exclTimer = null;
-function queueExclusions() {
-  clearTimeout(exclTimer);
-  const note = $('#excl-note');
-  if (note) note.textContent = 'Saving\u2026';
-  exclTimer = setTimeout(async () => {
-    const ids = [...document.querySelectorAll('.exbox:checked')].map(c => c.dataset.id);
-    let res;
-    try {
-      res = await postJSON('/api/privacy', { excluded_contact_ids: ids });
-    } catch {
-      return;                                  // signedOut() has taken the page over
-    }
-    if (!res.ok) {
-      if (note) note.textContent = res.error;
-      return viewPrivacy();                    // put the chips back the way the server has them
-    }
-    S.overview = await api('/api/overview');
-    S.people = await api('/api/people');
-    $('#c-people').textContent = S.overview.contacts;
-    syncFoot();
-    if (note) {
-      note.textContent = ids.length
-        ? `${ids.length} excluded \u00b7 ${S.overview.messages.toLocaleString()} messages in view`
-        : 'Nobody excluded.';
-    }
-  }, 400);
-}
 
 async function viewPrivacy() {
   const d = await api('/api/privacy'), s = d.settings;
-  const all = await api('/api/contacts');
   const T = (key, on, title, note) => `
     <div class="toggle ${on ? 'on' : ''}" data-k="${key}">
       <div class="sw"></div><div class="tx"><b>${title}</b><span>${note}</span></div></div>`;
@@ -1747,20 +1796,6 @@ async function viewPrivacy() {
         'Derived numbers may cross the boundary; raw message bodies may not.')}
     ${T('redact_on_send', s.redact_on_send, 'Redact identifiers',
         'Strips phone numbers, emails, addresses, URLs, and card-shaped digits before anything is sent.')}
-    <h2>Exclude people entirely</h2>
-    <div class="sub">An excluded person is removed before analysis runs — including from any group
-      thread they are in, so they cannot leak back in through group statistics.</div>
-    <input type="search" id="excl-find" class="exfind" autocomplete="off"
-      placeholder="Find someone…" aria-label="Filter the list of people">
-    <label class="exrow all"><input type="checkbox" id="excl-all">
-      <span id="excl-all-label">Exclude everyone (${all.length})</span></label>
-    <div class="excl">${all.map(p =>
-      `<div class="exrow"><label class="extick"><input type="checkbox" class="exbox"
-        data-id="${esc(p.id)}"${p.excluded ? ' checked' : ''}><span>${esc(p.name)}</span></label>${
-        isNumberName(p.name)
-          ? `<button type="button" class="exname" data-id="${esc(p.id)}"
-               title="Put a name to this number">+ name</button>` : ''}</div>`).join('')}</div>
-    <div class="sub tight" id="excl-note" role="status"></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
       be sent for ${esc(S.people[0].name)} — shown in full, before anything leaves, every time.</div>
@@ -1774,76 +1809,6 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
-  const rows = [...document.querySelectorAll('.excl .exrow')];
-  const all_ = $('#excl-all'), allLabel = $('#excl-all-label'), find = $('#excl-find');
-  const shown = () => rows.filter(r => !r.hidden).map(r => r.querySelector('.exbox'));
-  // The top box reads the ones below it: all, none, or part way, which is what
-  // indeterminate is for -- a tick there would claim everyone was excluded. While
-  // the list is filtered it reads, and acts on, only what you can actually see.
-  const syncAll = () => {
-    const vis = shown(), on = vis.filter(b => b.checked).length;
-    all_.checked = vis.length > 0 && on === vis.length;
-    all_.indeterminate = on > 0 && on < vis.length;
-    all_.disabled = vis.length === 0;
-    allLabel.textContent = vis.length === rows.length
-      ? `Exclude everyone (${rows.length})`
-      : vis.length ? `Exclude the ${vis.length} shown` : 'Nobody matches';
-  };
-  find.oninput = () => {
-    const q = find.value.trim().toLowerCase();
-    for (const r of rows) r.hidden = !!q && !r.textContent.toLowerCase().includes(q);
-    syncAll();
-  };
-  rows.forEach(r => r.querySelector('.exbox').onchange = () => { syncAll(); queueExclusions(); });
-  all_.onchange = () => {
-    // Only what is on screen. Hidden rows keep whatever they already were, and
-    // queueExclusions still saves every ticked box, filtered out of view or not.
-    for (const b of shown()) b.checked = all_.checked;
-    syncAll();
-    queueExclusions();
-  };
-  syncAll();
-  // A number you can't place is hard to decide about, so it can be named here
-  // rather than only in the naming drawer. The tick is its own label, so opening
-  // this doesn't toggle whether the person is excluded.
-  for (const add of document.querySelectorAll('.exname')) {
-    add.onclick = () => {
-      const row = add.closest('.exrow');
-      if (row.querySelector('.exnameform')) return;
-      add.hidden = true;
-      const form = document.createElement('form');
-      form.className = 'exnameform';
-      form.innerHTML = '<input class="exnameinput" maxlength="60" autocomplete="off" '
-        + 'placeholder="Their name" aria-label="A name for this number">'
-        + '<span class="dnote" role="status"></span>';
-      row.append(form);
-      const input = form.querySelector('input'), note = form.querySelector('.dnote');
-      input.focus();
-      const close = () => { form.remove(); add.hidden = false; };
-      input.onkeydown = e => { if (e.key === 'Escape') close(); };
-      form.onsubmit = async e => {
-        e.preventDefault();
-        const name = input.value.trim();
-        if (!name) return close();
-        input.disabled = true;
-        let res;
-        try {
-          res = await postJSON(`/api/contacts/${encodeURIComponent(add.dataset.id)}/name`, { name });
-        } catch {
-          return;                              // signedOut() has taken the page over
-        }
-        if (!res.ok) {
-          input.disabled = false;
-          note.textContent = res.error;
-          return;
-        }
-        row.querySelector('.extick span').textContent = res.data.name;
-        form.remove();
-        add.remove();                          // it has a name now
-        await refreshData();
-      };
-    };
-  }
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :
     `[BLOCKED — ${pv.reason}]\n[redacted: ${pv.redactions.join(', ') || 'nothing matched'}]\n\n`)
