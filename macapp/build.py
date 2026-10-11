@@ -25,14 +25,20 @@ NAME = "Messaging Graph"
 BUNDLE_ID = "com.messaginggraph.app"
 
 
-def _png(path: Path, size: int = 1024) -> None:
-    """Draw the icon: people as nodes, connected, on a warm charcoal squircle."""
+def _png(path: Path, size: int = 1024, pad: int = 100, radius: int = 185) -> None:
+    """Draw the icon: people as nodes, connected, on a warm charcoal squircle.
+
+    The artwork is laid out on a 1024 grid, so draw it at 1024 and scale down --
+    at a small `size` the nodes fall off the canvas. `pad=0, radius=0` gives the
+    same picture full-bleed and fully opaque, which is what a home-screen icon
+    wants: iOS rounds and masks it itself, and a transparent corner there comes
+    out as a black one.
+    """
     def clamp(x):
         return 0.0 if x < 0 else 1.0 if x > 1 else x
 
     nodes = [((330, 600), 118, (88, 166, 255)), ((655, 410), 138, (227, 135, 60)), ((690, 700), 92, (63, 185, 80))]
     edges = [(nodes[0][0], nodes[1][0]), (nodes[1][0], nodes[2][0]), (nodes[0][0], nodes[2][0])]
-    pad, radius = 100, 185
     rows = bytearray()
     for y in range(size):
         rows.append(0)

@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>messaging graph</title>
+<!-- Added to the Home Screen on a phone, this opens with no browser chrome. The
+     apple-* pair is what iOS reads; display:standalone in the manifest is the
+     standard spelling of the same thing. -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="messaging">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#191b1f" media="(prefers-color-scheme:dark)">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
 <link rel="stylesheet" href="/static/styles.css">
 <script src="/static/theme.js"></script>
 </head>
@@ -13,7 +24,7 @@
     <div class="brand">messaging graph<small id="src">loading</small></div>
     <nav>
       <button data-view="now" class="on">Now <span class="c" id="c-now"></span></button>
-      <button data-view="graph">Plan graph <span class="c" id="c-graph"></span></button>
+      <button data-view="graph">My brainstorm <span class="c" id="c-graph"></span></button>
       <button data-view="people">People <span class="c" id="c-people"></span></button>
       <button data-view="privacy">Privacy <span class="c" id="c-priv"></span></button>
     </nav>
@@ -29,6 +40,9 @@
     </div>
   </aside>
   <main id="main"></main>
+  <!-- Empty on a desktop. On a phone app.js moves the theme switch and the
+       source/reload line in here, out of the sidebar that has become tabs. -->
+  <div id="phonefoot" hidden></div>
 </div>
 <div class="scrim" id="scrim"></div>
 <div class="drawer" id="drawer"></div>

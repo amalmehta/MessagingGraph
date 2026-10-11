@@ -45,6 +45,30 @@ const since = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'lon
 
 const isNumberName = (n) =>
   /^\(\d{3}\) \d{3}-\d{4}$|^\+?[\d\s().-]{7,}$/.test(String(n ?? '').trim());
+// A face where there is only a name. Initials, in a colour the name itself picks,
+// so the same person is the same colour on every screen. The colour arrives as a
+// class, never a literal, so both themes keep control of what it actually is.
+const AV_COLOURS = 6;
+function initials(name) {
+  const t = String(name ?? '').trim();
+  if (isNumberName(t)) return '#';
+  const parts = t.split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  // Spread, not [0]: an emoji or an accented letter is more than one code unit.
+  const first = [...parts[0]][0] || '';
+  const last = parts.length > 1 ? ([...parts[parts.length - 1]][0] || '') : '';
+  return (first + last).toUpperCase();
+}
+function avClass(key) {
+  let h = 0;
+  for (const ch of String(key ?? '')) h = (h * 31 + ch.codePointAt(0)) >>> 0;
+  return 'c' + (h % AV_COLOURS);
+}
+// aria-hidden: the name is always right there in text, so a screen reader
+// reading "PR" first would only be in the way.
+const avatar = (name, size = '') =>
+  `<span class="av ${avClass(name)} ${size}" aria-hidden="true">${esc(initials(name))}</span>`;
+
 const shortName = (n) => {
   const s = String(n ?? '').trim();
   if (isNumberName(s)) return '…' + s.replace(/\D/g, '').slice(-4);
@@ -278,6 +302,7 @@ function spark(values, w = 78, h = 20) {
 async function boot() {
   wireTheme();
   wireReload();
+  wirePhoneLayout();
   S.overview = await api('/api/overview');
   S.people = await api('/api/people');
   const o = S.overview;
@@ -293,6 +318,30 @@ async function boot() {
   document.addEventListener('keydown', e => e.key === 'Escape' && closeDrawer());
   window.onpopstate = () => go(viewFromUrl(), false);
   go(viewFromUrl(), false);
+}
+
+// On a phone the sidebar becomes the bottom tab bar, which leaves no room for the
+// theme switch or the source/reload line. They are moved rather than copied: the
+// same elements, so every handler wired in boot() still points at them and there
+// is no second set to keep in step. Watched rather than read once, because a
+// phone turned on its side can cross the breakpoint.
+function wirePhoneLayout() {
+  const narrow = matchMedia('(max-width:760px)');
+  const foot = $('#phonefoot'), side = $('aside'), nav = $('nav');
+  const place = () => {
+    const picker = $('.themepick'), feet = $('.sidefoot');
+    if (narrow.matches) {
+      foot.append(picker, feet);          // append moves a node that already has a parent
+      foot.hidden = false;
+    } else {
+      side.append(feet);                  // back where the stylesheet expects them:
+      side.append(picker);                // the foot under nav, the picker last
+      nav.after(feet);
+      foot.hidden = true;
+    }
+  };
+  place();
+  narrow.addEventListener('change', place);
 }
 
 // The view lives in the address bar, so a reload comes back where you were and the
@@ -367,9 +416,15 @@ function wireTheme() {
 }
 
 function syncFoot() {
-  const s = S.overview.privacy;
-  $('#foot-mode').textContent = s.local_only ? 'local only · no network'
-    : 'network open: ' + s.network_consent.join(', ');
+  const s = S.overview.privacy, lan = S.overview.lan || {};
+  // Two separate facts, and the footer has been wrong when it told only one of
+  // them: local_only is about calls leaving for the internet, lan.on is about
+  // this Mac answering the Wi-Fi. "No network" while a phone is reading is a lie.
+  const out = s.local_only ? 'local only' : 'network open: ' + s.network_consent.join(', ');
+  const here = !lan.on ? 'no network'
+    : lan.devices === 1 ? 'on Wi-Fi · 1 phone'
+    : `on Wi-Fi · ${lan.devices} phones`;
+  $('#foot-mode').textContent = `${out} · ${here}`;
   $('#c-priv').textContent = s.excluded_contact_ids.length
     ? s.excluded_contact_ids.length + ' hidden' : '';
 }
@@ -393,7 +448,7 @@ function go(v, push = true) {
 function greeting() {
   const h = new Date().getHours();
   const part = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  return `${part}. Here's what's going on.`;
+  return `${part}. Here's how everyone's doing.`;
 }
 
 function viewNow() {
@@ -715,7 +770,7 @@ async function drawCircles() {
   S.circles = Object.fromEntries(d.circles.map(c => [c.thread_id, c]));
   const ago = n => n === null ? '—' : n === 0 ? 'active today' : `last active ${n}d ago`;
   const person = (id, name, extra = '') =>
-    `<button class="mchip" data-person="${esc(id)}">${esc(name)}${extra}</button>`;
+    `<button class="mchip" data-person="${esc(id)}">${avatar(name, 'sm')}${esc(name)}${extra}</button>`;
   const groups = d.circles.map(c => `
     <div class="circle">
       <div class="ctop"><b>${esc(c.name)}</b><span class="cmeta">${ago(c.days_idle)}</span></div>
@@ -733,8 +788,7 @@ async function drawCircles() {
     <div class="netsec"><div class="nethead">Shared interests <span>${d.interests.length}</span></div>
       <div class="pdef">What stands out in each person's thread compared with your others, not just what everyone talks about.</div>
       <div class="interests">${interests || '<div class="pempty">Not enough shared topics yet.</div>'}</div></div>
-    ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}
-    ${d.solo.length ? `<div class="pfoot">Not connected to anyone else here: ${d.solo.map(esc).join(', ')}</div>` : ''}`;
+    ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}`;
   host.querySelectorAll('.mchip[data-person]').forEach(el => el.onclick = () => openPerson(el.dataset.person));
   host.querySelectorAll('.propose').forEach(b => b.onclick = () => {
     const c = S.circles[b.dataset.thread];
@@ -802,10 +856,29 @@ function wireThanks(cid, seed) {
 }
 
 // ---------------------------------------------------------------- locations
-function locTag(loc) {
+// A guess is a question the table was asking without giving you anywhere to
+// answer it. Now the guess is the button: press it and it's settled.
+function locTag(loc, cid) {
   if (!loc) return '<span class="num dim">—</span>';
   if (loc.source === 'you') return `<span class="loc">${esc(loc.place)}</span>`;
-  return `<span class="loc guess" title="${esc('From messages: “' + loc.quote + '”')}">${esc(loc.place)}?</span>`;
+  const why = esc('From messages: “' + loc.quote + '”');
+  if (!cid) return `<span class="loc guess" title="${why}">${esc(loc.place)}?</span>`;
+  return `<button type="button" class="loc guess ask" data-loc-for="${esc(cid)}"
+    data-place="${esc(loc.place)}"
+    title="${why} — press to confirm">${esc(loc.place)}?</button>`;
+}
+
+async function confirmLocation(btn) {
+  const cid = btn.dataset.locFor, place = btn.dataset.place;
+  // Settled on screen before the recompute behind it finishes, the same way
+  // archiving is. If the save is refused, the re-render puts the guess back.
+  const settled = document.createElement('span');
+  settled.className = 'loc';
+  settled.textContent = place;
+  btn.replaceWith(settled);
+  toast(`${place} it is.`);
+  await saveLocation(cid, { place });
+  if (S.view === 'people') viewPeople();
 }
 
 function locationNotice(o) {
@@ -1082,10 +1155,10 @@ async function drawOverall() {
 
 // ---------------------------------------------------------------- people
 const COLS = [
-  ['name', 'Person', p => `<span class="name">${esc(p.name)}</span>`],
+  ['name', 'Person', p => `<span class="pcell">${avatar(p.name)}<span class="name">${esc(p.name)}</span></span>`],
   ['state', 'Connection', p => `<span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span>`],
   ['vibe', 'Vibe', p => `<span class="vcol">${esc(p.vibe ? p.vibe.name : '—')}</span>`],
-  ['location', 'Location', p => locTag(p.location)],
+  ['location', 'Location', p => locTag(p.location, p.contact_id)],
   ['trend', 'Trend', p => p.trend === 'none' ? '<span class="num dim">—</span>'
     : `<span class="tag t-${p.trend}">${p.trend}</span>`],
   ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`],
@@ -1116,10 +1189,9 @@ function viewPeople() {
   });
   $('#main').innerHTML = `
     <h1>People</h1>
-    <div class="sub">A profile per person, built only from message timing and language.
-      These describe how a connection is running at the moment, not how good anyone is
-      to have in your life. Open a row to see every number behind the summary — and the
-      ordinary explanation for each one.</div>
+    <div class="sub">Everyone you talk to, and how things are going with them lately.
+      This is read from when and how you text, nothing more — it's a nudge to think of
+      someone, not a verdict on them. Open anyone to see where each number came from.</div>
     ${S.overview.unnamed ? `<div class="notice"><div><b>${S.overview.unnamed} without a name.</b>
       Name them so you can tell who's who.</div><button class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(S.overview)}
@@ -1138,6 +1210,13 @@ function viewPeople() {
     if (S.sort === th.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
     else { S.sort = th.dataset.k; S.sortDir = 1; }
     viewPeople();
+  });
+  // Before the row handlers, so stopping the click here stops it opening the
+  // profile too -- and the keydown, because Enter on a button is a click that
+  // the row would otherwise also hear.
+  document.querySelectorAll('button[data-loc-for]').forEach(b => {
+    b.onclick = e => { e.stopPropagation(); confirmLocation(b); };
+    b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); };
   });
   document.querySelectorAll('tbody tr').forEach(tr => {
     tr.onclick = () => openPerson(tr.dataset.id);
@@ -1224,6 +1303,16 @@ function toast(text) {
 
 function closeRowMenu() { document.querySelector('.rowmenu')?.remove(); }
 
+// Right-click on a row and Remove inside a profile are the same act, so they are
+// the same function -- including taking the row away before the recompute lands.
+// Safe from the graph view too, where there is no table and nothing to remove.
+function archivePerson(id, name) {
+  document.querySelector(`tbody tr[data-id="${CSS.escape(id)}"]`)?.remove();
+  setArchived([...archivedIds(), id], `${shortName(name)} archived.`);
+  paintArchBar();
+  $('#people-find')?.dispatchEvent(new Event('input'));   // "13 of 14" was true a moment ago
+}
+
 function rowMenu(ev, id, name) {
   closeRowMenu();
   const m = document.createElement('div');
@@ -1233,10 +1322,7 @@ function rowMenu(ev, id, name) {
   m.style.top = Math.min(ev.clientY, innerHeight - 70) + 'px';
   m.querySelector('button').onclick = () => {
     closeRowMenu();
-    document.querySelector(`tbody tr[data-id="${CSS.escape(id)}"]`)?.remove();
-    setArchived([...archivedIds(), id], `${shortName(name)} archived.`);
-    paintArchBar();
-    $('#people-find')?.dispatchEvent(new Event('input'));   // "13 of 14" was true a moment ago
+    archivePerson(id, name);
   };
   document.body.append(m);
   m.querySelector('button').focus();
@@ -1259,7 +1345,7 @@ async function drawArchived(btn) {
   try { all = await api('/api/contacts'); } catch { return; }
   const away = all.filter(c => archivedIds().includes(c.id));
   box.innerHTML = away.length
-    ? away.map(c => `<span class="archchip">${esc(c.name)}<button type="button"
+    ? away.map(c => `<span class="archchip">${avatar(c.name, 'sm')}${esc(c.name)}<button type="button"
         data-id="${esc(c.id)}" title="Bring ${esc(c.name)} back">bring back</button></span>`).join('')
     : '<span class="pempty">Nobody is archived.</span>';
   box.querySelectorAll('button[data-id]').forEach(b => b.onclick = () => {
@@ -1267,6 +1353,100 @@ async function drawArchived(btn) {
     setArchived(archivedIds().filter(x => x !== b.dataset.id),
                 `${shortName(away.find(c => c.id === b.dataset.id)?.name || 'They')} is back.`);
   });
+}
+
+// ---------------------------------------------------------------- the phone
+// Reading this on a phone means the Mac answers on the network, which is the one
+// place the app stops being "nothing leaves this machine". So the screen says so
+// plainly, the door is shut unless the server was started with --phone, and a
+// code is only on offer for the two minutes after you ask for one.
+let phoneTick = null;
+
+async function drawPhone() {
+  const box = $('#phonebox');
+  if (!box) return;                        // navigated away while the fetch was out
+  // On the phone itself there is nothing to administer: pairing is a Mac job, and
+  // asking anyway would come back 403 and be read as "not on the network at all".
+  if (S.overview.lan?.via === 'device') {
+    box.innerHTML = `<div class="notice quiet"><div>You're reading this on a paired
+      phone, over your local network. Codes are shown, and phones removed, on the Mac
+      — under Privacy there.</div></div>`;
+    return;
+  }
+
+  let p;
+  try { p = await api('/api/phone'); } catch { return; }
+  if (!$('#phonebox')) return;
+
+  if (!p.on) {
+    box.innerHTML = `<div class="notice quiet"><div>This server is answering
+      <b>127.0.0.1 only</b>, so nothing on your network can see it — not even your phone.
+      To read it on a phone, stop the server and start it again with
+      <code>./mg serve --phone</code>.</div></div>`;
+    return;
+  }
+
+  const devices = p.devices.length
+    ? `<div class="archlist">${p.devices.map(d => `<span class="archchip">${esc(d.name)}
+        <button type="button" data-revoke="${esc(d.id)}"
+          title="Stop ${esc(d.name)} reading this Mac">remove</button></span>`).join('')}</div>`
+    : '<span class="pempty">No phone is paired.</span>';
+
+  box.innerHTML = `
+    <div class="notice"><div><b>Answering on your local network.</b>
+      Anyone on this Wi-Fi can load the pairing page; only a phone that has typed a
+      code gets past it. Your messages stay here — the phone reads what this Mac
+      has already worked out.</div></div>
+    <ol class="steps">
+      <li>On the phone, open <b>${p.addresses.map(a => `<code>${esc(a)}</code>`).join('</b> or <b>')}</b></li>
+      <li><b>Add it to the Home Screen first</b>, then open it from there.
+        iOS keeps a home-screen app's cookies apart from Safari's, so pairing in
+        Safari would only have to be done again.</li>
+      <li>Press the button below and type the six digits into the phone.</li>
+    </ol>
+    ${p.offering
+      ? `<div class="paircode"><span class="code">${esc(p.code)}</span>
+         <span class="left" id="pair-left">${p.seconds_left}s left</span>
+         <button type="button" class="btn ghost" id="pair-close">Stop showing it</button></div>`
+      : '<button type="button" class="btn primary" id="pair-open">Show a pairing code</button>'}
+    <h2>Paired</h2>
+    ${devices}`;
+
+  clearInterval(phoneTick);
+  if (p.offering) {
+    // Counts down on screen rather than only in the server: a code that has quietly
+    // expired while you were walking to the phone should say so. Every other second
+    // it also asks the Mac, because the thing that spends the code happens on the
+    // phone and this screen would otherwise sit there offering a code that is gone.
+    let left = p.seconds_left;
+    phoneTick = setInterval(async () => {
+      const el = $('#pair-left');
+      if (!el) return clearInterval(phoneTick);
+      left -= 1;
+      if (left <= 0) { clearInterval(phoneTick); drawPhone(); return; }
+      el.textContent = `${left}s left`;
+      if (left % 2) return;
+      let now;
+      try { now = await api('/api/phone'); } catch { return; }
+      if (!now.offering) { clearInterval(phoneTick); refreshFoot(); drawPhone(); }
+    }, 1000);
+  }
+
+  const open = $('#pair-open'), close = $('#pair-close');
+  if (open) open.onclick = async () => { await postJSON('/api/phone/open', {}); drawPhone(); };
+  if (close) close.onclick = async () => { await postJSON('/api/phone/close', {}); drawPhone(); };
+  box.querySelectorAll('button[data-revoke]').forEach(b => b.onclick = async () => {
+    b.closest('.archchip')?.remove();
+    await postJSON(`/api/phone/revoke/${b.dataset.revoke}`, {});
+    refreshFoot();
+    drawPhone();
+  });
+}
+
+// The footer carries the phone count, so it goes stale whenever that changes.
+async function refreshFoot() {
+  try { S.overview = await api('/api/overview'); } catch { return; }
+  syncFoot();
 }
 
 // ---------------------------------------------------------------- drawer
@@ -1277,9 +1457,12 @@ async function openPerson(id) {
   const d = await api('/api/people/' + id), p = d.profile;
   $('#drawer').innerHTML = `
     <span class="close">&times;</span>
-    <h3><span id="pname">${esc(p.name)}</span>
+    <h3>${avatar(p.name, 'big')}<span id="pname">${esc(p.name)}</span>
       <button type="button" class="editname" id="edit-name"
         title="Change the name you have for them">edit</button>
+      <button type="button" class="editname danger" id="remove-person"
+        title="Archive ${esc(p.name)} — leave them out of this app, not out of Messages"
+        >remove</button>
       <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h3>
     ${d.handle ? `<div class="handleline">${esc(d.handle)}</div>` : ''}
     <div class="sinceline">Talking since ${esc(since(p.first_contact))}
@@ -1289,12 +1472,12 @@ async function openPerson(id) {
     ${p.vibe ? vibeCard(p.vibe) : ''}
     <div class="thankbox" id="thankbox"><button class="btn ghost" id="thank-btn">Draft a thank-you</button></div>
     <div class="metrics">
-      <div class="metric"><div class="n">${p.msgs_per_week_recent.toFixed(1)}</div><div class="l">msgs / week now</div></div>
+      <div class="metric"><div class="n">${p.msgs_per_week_recent.toFixed(1)}</div><div class="l">messages a week</div></div>
       <div class="metric"><div class="n">${p.warmth.toFixed(0)}</div><div class="l">warmth</div></div>
       <div class="metric"><div class="n">${p.importance.toFixed(0)}</div><div class="l">importance</div></div>
       <div class="metric"><div class="n">${p.depth.toFixed(0)}</div><div class="l">depth</div></div>
-      <div class="metric"><div class="n">${secs(p.their_median_reply_s)}</div><div class="l">their reply</div></div>
-      <div class="metric"><div class="n">${secs(p.my_median_reply_s)}</div><div class="l">your reply</div></div>
+      <div class="metric"><div class="n">${secs(p.their_median_reply_s)}</div><div class="l">${esc(shortName(p.name))} writes back in</div></div>
+      <div class="metric"><div class="n">${secs(p.my_median_reply_s)}</div><div class="l">you write back in</div></div>
     </div>
     ${p.confidence < .7 ? `<div class="empty">Only ${p.total_messages} messages here, so
       this is a sketch rather than a reading (confidence ${(p.confidence*100).toFixed(0)}%).</div>` : ''}
@@ -1302,7 +1485,7 @@ async function openPerson(id) {
     ${p.signals.map(sig).join('')}
     <h2>Connected to</h2>
     <div class="cmembers">${d.connections.length ? d.connections.map(x =>
-      `<button class="mchip" data-person="${esc(x.id)}">${esc(x.name)}<small>${esc(x.via.join(', '))}</small></button>`).join('')
+      `<button class="mchip" data-person="${esc(x.id)}">${avatar(x.name, 'sm')}${esc(x.name)}<small>${esc(x.via.join(', '))}</small></button>`).join('')
       : '<div class="pempty">No group chats together, just your one-to-one thread.</div>'}</div>
     <h2>Plans together</h2>
     <div class="plist">${d.plans.length ? d.plans.map(pl => `
@@ -1333,6 +1516,12 @@ async function openPerson(id) {
   renderLocation(id, d.location, d.location_unknown);
   // The name is yours to set; the handle underneath it is what the message store
   // calls them and is not editable, so it is shown rather than offered.
+  // Reversible, and the toast and the archived bar say how -- so no confirm step
+  // between pressing it and seeing it happen.
+  $('#remove-person').onclick = () => {
+    closeDrawer();
+    archivePerson(id, p.name);
+  };
   $('#edit-name').onclick = () => {
     const h3 = $('#drawer h3'), label = $('#pname'), btn = $('#edit-name');
     if (h3.querySelector('.namingform')) return;
@@ -1551,7 +1740,7 @@ async function openPlan(id) {
 // ---------------------------------------------------------------- graph
 async function viewGraph() {
   $('#main').innerHTML = `
-    <h1>Plan graph</h1>
+    <h1>My brainstorm</h1>
     <div class="sub">People and the live plans connecting them, pulled out of message text.
       Turn on stale plans to see what was agreed to and never landed. Drag to rearrange,
       scroll to zoom, hover to isolate, click anything for detail.</div>
@@ -1819,11 +2008,14 @@ async function viewPrivacy() {
         'Derived numbers may cross the boundary; raw message bodies may not.')}
     ${T('redact_on_send', s.redact_on_send, 'Redact identifiers',
         'Strips phone numbers, emails, addresses, URLs, and card-shaped digits before anything is sent.')}
+    <h2>Your phone</h2>
+    <div id="phonebox"><span class="pempty">Loading…</span></div>
     <h2>What a Claude call would contain</h2>
     <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
       be sent for ${esc(S.people[0].name)} — shown in full, before anything leaves, every time.</div>
     <pre id="preview">select a person…</pre>
 `;
+  drawPhone();
 
   document.querySelectorAll('.toggle').forEach(t => t.onclick = async () => {
     const key = t.dataset.k;
