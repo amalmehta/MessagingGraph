@@ -18,7 +18,6 @@ restart but not a `mg wipe`.
 from __future__ import annotations
 
 import hmac
-import json
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -137,16 +136,18 @@ class PairingStore:
         self.vault = vault
         self._memory: Pairing | None = None
 
+    # seal/unseal, the same small-JSON door OverrideStore uses. `read` and `write`
+    # on a Vault are the corpus, not a named document, and asking them for one
+    # took the server down on startup wherever a real vault existed.
     def load(self) -> Pairing:
         if self.vault is None:
             if self._memory is None:
                 self._memory = Pairing()
             return self._memory
-        raw = self.vault.read(self.NAME)
-        return Pairing.from_dict(json.loads(raw) if raw else {})
+        return Pairing.from_dict(self.vault.unseal(self.NAME) or {})
 
     def save(self, pairing: Pairing) -> None:
         if self.vault is None:
             self._memory = pairing
             return
-        self.vault.write(self.NAME, json.dumps(pairing.to_dict()).encode())
+        self.vault.seal(self.NAME, pairing.to_dict())

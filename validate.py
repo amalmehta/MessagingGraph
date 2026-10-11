@@ -676,7 +676,7 @@ def main() -> int:
     shutil.rmtree(tmp, ignore_errors=True)
 
     print("\nletting a phone in:")
-    from app.pairing import Pairing as _P, PairingStore as _PS, MAX_ATTEMPTS as _MAX
+    from app.pairing import Pairing as _P, PairingStore as _PS, PairingStore, MAX_ATTEMPTS as _MAX
     _pg = _P()
     check("pairing is closed until you open it",
           not _pg.offering and _pg.code_on_offer() is None)
@@ -707,6 +707,26 @@ def main() -> int:
     check("a paired phone survives a restart", _back.device_for(_d2.token) is not None)
     check("and can be revoked one phone at a time",
           _back.revoke(_d2.id) and _back.device_for(_d2.token) is None)
+
+    # Against a real Vault, not just the in-memory store. The first version of
+    # this called Vault.read/write -- which are the corpus, not a named document
+    # -- so the server died on startup for anyone who had actually imported, and
+    # every check above passed anyway because none of them had a vault.
+    _pvroot = Path(tempfile.mkdtemp(prefix="mg-pair-")) / "vault"
+    _pvault = Vault(_pvroot, MemoryKeyStore())
+    _pvault.write(corpus, {"messages": len(corpus.messages)})
+    _ps3 = PairingStore(_pvault)
+    _pg3 = _ps3.load()
+    check("a vault with no phones in it yet reads as no phones", not _pg3.devices)
+    _c3 = _pg3.open()
+    _d3 = _pg3.redeem(_c3, "Sealed phone")
+    _ps3.save(_pg3)
+    _reopened = PairingStore(_pvault).load()
+    check("a paired phone is sealed into the vault and comes back after a restart",
+          _reopened.device_for(_d3.token) is not None)
+    check("and it is on disk encrypted, not as readable JSON",
+          b"Sealed phone" not in (_pvroot / PairingStore.NAME).read_bytes())
+    shutil.rmtree(_pvroot.parent, ignore_errors=True)
 
     print("\nlocalhost hardening:")
     anon = TestClient(fastapi_app, base_url="http://127.0.0.1:8077")
