@@ -254,6 +254,25 @@ class Controller(NSObject):
     def _start_child(self, project: Path) -> None:
         from app.vault import Vault
         self._stop_child()
+        # macOS keeps Desktop, Documents and Downloads behind a permission an app
+        # has to be granted, and a double-clicked app is not a terminal: it gets
+        # refused where your shell is not. The data server is the project's own
+        # Python, run from the project, so if that folder can't be read here it
+        # cannot be read there either -- and the failure arrives as a server that
+        # starts and never answers. Ask the cheap question first.
+        try:
+            os.listdir(project)
+        except PermissionError:
+            # One paragraph: _show_error escapes the message, so a line break here
+            # would arrive as a space.
+            raise RuntimeError(
+                f"macOS won't let Messaging Graph read the project at {project} — "
+                "that folder is one it protects, and an app has to be allowed in even "
+                "where your terminal already is. Allow it under System Settings › "
+                "Privacy & Security › Files and Folders, then open the app again. "
+                "Keeping the project outside Desktop, Documents and Downloads avoids "
+                "the question entirely."
+            ) from None
         port = _free_port()
         cmd = [str(project / ".venv" / "bin" / "python"), "-m", "app.cli", "serve", "--port", str(port)]
         if not Vault().exists():

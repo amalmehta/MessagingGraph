@@ -115,6 +115,13 @@ def build_bundle(icns: Path) -> Path:
         # Shown when macOS asks whether the app may open Terminal for an import.
         "NSAppleEventsUsageDescription": "Messaging Graph opens Terminal to import your messages, so only "
                                          "Terminal needs Full Disk Access, and only while importing.",
+        # Without these, macOS has no words to put in the dialog -- so it never
+        # asks, and quietly refuses instead. The app runs the project's own Python
+        # from wherever the project lives, which is often one of these folders.
+        **{f"NS{folder}FolderUsageDescription":
+           f"Messaging Graph runs its data server from your project folder, so it needs to read it "
+           f"if you keep the project in {folder}."
+           for folder in ("Desktop", "Documents", "Downloads")},
     })
     info_path.write_bytes(plistlib.dumps(info))
     # Editing Info.plist invalidates the signature; sign again (ad hoc, for this Mac).
