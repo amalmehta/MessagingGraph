@@ -1009,6 +1009,14 @@ def main() -> int:
     oak_groups = [g for g in oak.get("/api/connections").json()["places"] if g["place"] == "Oakland"]
     check("people saved in the same place are grouped together",
           len(oak_groups) == 1 and {m["id"] for m in oak_groups[0]["members"]} >= {"p_priya", "p_nadia"})
+    # What pressing the guess in the People table does: the same place, saved,
+    # which is what turns "Oakland?" into Oakland.
+    _loc = next(x["location"] for x in oak.get("/api/people").json()
+                if x["contact_id"] == "p_priya")
+    check("confirming a place makes it yours rather than a guess",
+          _loc["source"] == "you" and _loc["place"] == "Oakland", _loc["source"])
+    check("and the table offers the guess as something you can press",
+          'data-loc-for=' in (STATIC / "app.js").read_text())
     for cid in ("p_priya", "p_nadia"):
         oak.post(f"/api/contacts/{cid}/location", json={"place": ""}, headers=same_origin)
     lroot = Path(tempfile.mkdtemp(prefix="mg-loc-")) / "vault"

@@ -856,10 +856,29 @@ function wireThanks(cid, seed) {
 }
 
 // ---------------------------------------------------------------- locations
-function locTag(loc) {
+// A guess is a question the table was asking without giving you anywhere to
+// answer it. Now the guess is the button: press it and it's settled.
+function locTag(loc, cid) {
   if (!loc) return '<span class="num dim">—</span>';
   if (loc.source === 'you') return `<span class="loc">${esc(loc.place)}</span>`;
-  return `<span class="loc guess" title="${esc('From messages: “' + loc.quote + '”')}">${esc(loc.place)}?</span>`;
+  const why = esc('From messages: “' + loc.quote + '”');
+  if (!cid) return `<span class="loc guess" title="${why}">${esc(loc.place)}?</span>`;
+  return `<button type="button" class="loc guess ask" data-loc-for="${esc(cid)}"
+    data-place="${esc(loc.place)}"
+    title="${why} — press to confirm">${esc(loc.place)}?</button>`;
+}
+
+async function confirmLocation(btn) {
+  const cid = btn.dataset.locFor, place = btn.dataset.place;
+  // Settled on screen before the recompute behind it finishes, the same way
+  // archiving is. If the save is refused, the re-render puts the guess back.
+  const settled = document.createElement('span');
+  settled.className = 'loc';
+  settled.textContent = place;
+  btn.replaceWith(settled);
+  toast(`${place} it is.`);
+  await saveLocation(cid, { place });
+  if (S.view === 'people') viewPeople();
 }
 
 function locationNotice(o) {
@@ -1139,7 +1158,7 @@ const COLS = [
   ['name', 'Person', p => `<span class="pcell">${avatar(p.name)}<span class="name">${esc(p.name)}</span></span>`],
   ['state', 'Connection', p => `<span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span>`],
   ['vibe', 'Vibe', p => `<span class="vcol">${esc(p.vibe ? p.vibe.name : '—')}</span>`],
-  ['location', 'Location', p => locTag(p.location)],
+  ['location', 'Location', p => locTag(p.location, p.contact_id)],
   ['trend', 'Trend', p => p.trend === 'none' ? '<span class="num dim">—</span>'
     : `<span class="tag t-${p.trend}">${p.trend}</span>`],
   ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`],
@@ -1191,6 +1210,13 @@ function viewPeople() {
     if (S.sort === th.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
     else { S.sort = th.dataset.k; S.sortDir = 1; }
     viewPeople();
+  });
+  // Before the row handlers, so stopping the click here stops it opening the
+  // profile too -- and the keydown, because Enter on a button is a click that
+  // the row would otherwise also hear.
+  document.querySelectorAll('button[data-loc-for]').forEach(b => {
+    b.onclick = e => { e.stopPropagation(); confirmLocation(b); };
+    b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); };
   });
   document.querySelectorAll('tbody tr').forEach(tr => {
     tr.onclick = () => openPerson(tr.dataset.id);
