@@ -1740,7 +1740,7 @@ async function openPlan(id) {
 // ---------------------------------------------------------------- graph
 async function viewGraph() {
   $('#main').innerHTML = `
-    <h1>Plan graph</h1>
+    <h1>My brainstorm</h1>
     <div class="sub">People and the live plans connecting them, pulled out of message text.
       Turn on stale plans to see what was agreed to and never landed. Drag to rearrange,
       scroll to zoom, hover to isolate, click anything for detail.</div>
