@@ -309,7 +309,7 @@ async function boot() {
   S.overview = await api('/api/overview');
   S.people = await api('/api/people');
   const o = S.overview;
-  $('#src').textContent = o.source + ' source';
+  $('#src').textContent = SOURCE_LABEL[o.source] || o.source;
   $('#c-now').textContent = o.suggestions.length;
   $('#c-people').textContent = o.contacts;
   $('#c-graph').textContent = o.plans.open + o.plans.stale;
@@ -460,6 +460,21 @@ function greeting() {
   return `${part}. Here's how everyone's doing.`;
 }
 
+const SOURCE_LABEL = { synthetic: 'demo data', imessage: 'your messages' };
+
+// Fourteen invented people, in an app whose whole premise is that these are
+// yours. Say so at the top, and say what to type to change it.
+function demoBanner(o) {
+  if (o.source !== 'synthetic') return '';
+  return `<div class="notice demo"><div><b>These people aren't real.</b>
+    You're looking at a made-up history so the app has something to show. To read
+    your own, quit this and run two commands in Terminal — the first asks macOS for
+    permission to read Messages once, the second starts the app again.
+    <div class="cmds"><code>./mg import</code><code>./mg serve</code></div>
+    Nothing is uploaded by either: the import writes an encrypted copy on this Mac
+    and the key goes in your Keychain.</div></div>`;
+}
+
 function viewNow() {
   const o = S.overview, v = o.states, pc = o.plans;
   const noticing = o.suggestions.filter(a => !['reconnect', 'revive_plan', 'check_in'].includes(a.kind));
@@ -469,6 +484,7 @@ function viewNow() {
       messages across ${o.threads} threads. Nothing has left your computer — and
       nothing here knows what kind of year anyone is having, so treat it as a
       prompt to think, not a scoreboard.</div>
+    ${demoBanner(o)}
     <div class="stats">
       <button class="stat jump" data-jump="plans-confirmed"><div class="n" style="color:var(--adds)">${pc.confirmed}</div>
         <div class="l">plans confirmed</div></button>
@@ -1163,30 +1179,46 @@ async function drawOverall() {
 }
 
 // ---------------------------------------------------------------- people
+// [sort key, heading, cell, what the heading means]. The fourth is new: these
+// are scores with names you would have to be told, and the only explanation
+// lived inside the profile, which you had to already be curious enough to open.
 const COLS = [
-  ['name', 'Person', p => `<span class="pcell">${avatar(p.name)}<span class="name">${esc(p.name)}</span></span>`],
-  ['state', 'Connection', p => `<span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span>`],
-  ['vibe', 'Vibe', p => `<span class="vcol">${esc(p.vibe ? p.vibe.name : '—')}</span>`],
-  ['location', 'Location', p => locTag(p.location, p.contact_id)],
+  ['name', 'Person', p => `<span class="pcell">${avatar(p.name)}<span class="name">${esc(p.name)}</span></span>`,
+    'Who the thread is with.'],
+  ['state', 'Connection', p => `<span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span>`,
+    'Shorthand for how this thread is running lately — not a grade on the person.'],
+  ['vibe', 'Vibe', p => `<span class="vcol">${esc(p.vibe ? p.vibe.name : '—')}</span>`,
+    'The tone that stands out with them, set against your other threads.'],
+  ['location', 'Location', p => locTag(p.location, p.contact_id),
+    'Where they live. Yours if you said so; otherwise a guess from their messages, with a "?" — press it to confirm.'],
   ['trend', 'Trend', p => p.trend === 'none' ? '<span class="num dim">—</span>'
-    : `<span class="tag t-${p.trend}">${p.trend}</span>`],
-  ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`],
-  ['warmth', 'Warmth', p => bar(p.warmth, PAINT.adds)],
-  ['importance', 'Importance', p => bar(p.importance, PAINT.accent)],
-  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim)],
-  ['open_plans', 'Plans', p => `<span class="num">${p.open_plans || '·'}</span>`],
+    : `<span class="tag t-${p.trend}">${p.trend}</span>`,
+    'Whether you have been talking more or less than usual lately.'],
+  ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`,
+    'Messages a week between you, recently.'],
+  ['warmth', 'Warmth', p => bar(p.warmth, PAINT.adds),
+    'Affection, laughter, reactions, and them asking how you are. 0–100.'],
+  ['importance', 'Importance', p => bar(p.importance, PAINT.accent),
+    'How much of your messaging life this thread is at the moment. 0–100.'],
+  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim),
+    'How much more carefully you write to them than you do to everyone else.'],
+  ['open_plans', 'Plans', p => `<span class="num">${p.open_plans || '·'}</span>`,
+    'Things the two of you have talked about doing that have not happened yet.'],
   // Who you have not spoken to longest is the question this app exists to answer,
   // and until now it was the one thing the table could not be sorted by.
-  ['last_contact', 'Last spoke', p => `<span class="num dim">${esc(ago(p.last_contact))}</span>`],
+  ['last_contact', 'Last spoke', p => `<span class="num dim">${esc(ago(p.last_contact))}</span>`,
+    'When the most recent message either way was.'],
   ['their_median_reply_s', 'They reply', p => `<span class="num${p.their_median_reply_s === null
     ? ' dim" title="You two have never replied to each other inside the window' : '"'}>${
-    esc(secs(p.their_median_reply_s))}</span>`],
+    esc(secs(p.their_median_reply_s))}</span>`,
+    'Typical time they take to answer. A dash means the two of you have never replied to each other inside the window.'],
   ['my_median_reply_s', 'You reply', p => `<span class="num${p.my_median_reply_s === null
     ? ' dim" title="You two have never replied to each other inside the window' : '"'}>${
-    esc(secs(p.my_median_reply_s))}</span>`],
+    esc(secs(p.my_median_reply_s))}</span>`,
+    'Typical time you take to answer. A dash means there is nothing to time.'],
   // Its own key: sharing "trend" put the sort arrow on two headers at once and made
   // clicking the second reverse the first instead of sorting by itself.
-  [null, 'Last 20 weeks', p => spark(p.spark)],
+  [null, 'Last 20 weeks', p => spark(p.spark), 'Messages a week, drawn as a shape.'],
 ];
 const bar = (v, c) => `<span class="num">${v.toFixed(0)}</span>
   <div class="bar"><i style="width:${Math.min(100, v)}%;background:${c}"></i></div>`;
@@ -1211,6 +1243,10 @@ function viewPeople() {
     <div class="peoplebar">
       <input type="search" id="people-find" class="exfind" autocomplete="off"
         placeholder="Find someone…" aria-label="Filter these people">
+      <label class="sortpick"><span>Sort</span><select id="people-sort"
+        aria-label="Sort these people by">${COLS.filter(c => c[0]).map(c =>
+          `<option value="${c[0]}"${S.sort === c[0] ? ' selected' : ''}>${esc(c[1])}</option>`
+        ).join('')}</select></label>
       <span class="hint" id="people-count"></span>
     </div>
     <div id="archwrap"></div>
@@ -1219,12 +1255,14 @@ function viewPeople() {
         : 'No conversations in this window yet.'}</div></div>`}
     <div class="tablewrap"${rows.length ? '' : ' hidden'}><table><thead><tr>${COLS.map(c => {
       const on = c[0] && S.sort === c[0], up = (S.sortDir || 1) !== 1;
-      if (!c[0]) return `<th class="nosort">${c[1]}</th>`;
+      if (!c[0]) return `<th class="nosort" title="${esc(c[3] || '')}">${c[1]}</th>`;
       return `<th aria-sort="${on ? (up ? 'ascending' : 'descending') : 'none'}"><button
-        type="button" class="sortb" data-k="${c[0]}">${c[1]}${on ? (up ? ' ↑' : ' ↓') : ''}</button></th>`;
+        type="button" class="sortb" data-k="${c[0]}" title="${esc(c[3] || '')}"
+        >${c[1]}${on ? (up ? ' ↑' : ' ↓') : ''}</button></th>`;
     }).join('')}</tr></thead>
     <tbody>${rows.map(p => `<tr data-id="${esc(p.contact_id)}">${COLS.map(c =>
-      `<td>${c[2](p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+      `<td class="c-${c[0] || 'spark'}" data-label="${esc(c[1])}">${c[2](p)}</td>`
+      ).join('')}</tr>`).join('')}</tbody></table></div>`;
   document.querySelectorAll('.sortb').forEach(b => b.onclick = () => {
     if (S.sort === b.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
     else { S.sort = b.dataset.k; S.sortDir = 1; }
@@ -1252,6 +1290,10 @@ function viewPeople() {
     };
   });
   paintArchBar();
+  // The sortable headers go with the thead on a phone, so sorting gets its own
+  // control there rather than quietly disappearing.
+  const pick = $('#people-sort');
+  if (pick) pick.onchange = () => { S.sort = pick.value; S.sortDir = 1; viewPeople(); };
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
   const find = $('#people-find'), count = $('#people-count');
   const applyFind = () => {
