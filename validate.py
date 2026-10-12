@@ -699,6 +699,8 @@ def main() -> int:
         _bf.redeem("999999" if _real != "999999" else "888888", "x")
     check("guessing at six digits closes pairing rather than letting you keep going",
           not _bf.offering, f"shut after {_MAX} wrong")
+    check("and the Mac is told it was guessing that shut it, not you",
+          _bf.shut_by_guessing and not _P().shut_by_guessing)
     _ex = _P(); _ex.open(); _ex._code_until = 0.0
     check("an expired code is no code at all", not _ex.offering)
     _store = _PS(); _pg2 = _store.load(); _c2 = _pg2.open()
@@ -840,6 +842,38 @@ def main() -> int:
     check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
+
+    print("\nnumbers that aren't there:")
+    # A pair who have never replied to each other inside the window. The medians
+    # used to fall back to the corpus-wide figure, so this read as a confident
+    # "they write back in 24h" borrowed from other people's threads.
+    from app.models import (Contact as _C, Corpus as _Cx, Message as _M,
+                            SELF_ID as _SELF, Thread as _T)
+    _n0 = datetime(2026, 10, 1, 12, 0)
+    _t0 = _n0 - timedelta(days=200)
+    _one = [_M(f"m{i}", "t1", "p_x", _t0 + timedelta(days=i * 4), "thinking of you", False)
+            for i in range(45)]
+    _one += [_M(f"b{i}", "t2", "p_y" if i % 2 else _SELF,
+                     _t0 + timedelta(days=i // 2, minutes=7 * (i % 2)), "chatty", bool(i % 2 == 0))
+             for i in range(200)]
+    _one.sort(key=lambda m: m.ts)
+    _oc = _Cx(contacts={"p_x": _C("p_x", "One Sided", "+15550000001"),
+                           "p_y": _C("p_y", "Chatty", "+15550000002")},
+                 threads={"t1": _T("t1", "", ("p_x",), False),
+                          "t2": _T("t2", "", ("p_y",), False)},
+                 messages=_one, source_name="test")
+    _by = {p.name: p for p in profile_all(_oc, _n0)}
+    _sided, _chatty = _by["One Sided"], _by["Chatty"]
+    check("a pair who have never replied to each other get no reply time at all",
+          _sided.my_median_reply_s is None and _sided.their_median_reply_s is None)
+    check("and not one borrowed from everyone else's threads",
+          _chatty.their_median_reply_s is not None
+          and _sided.their_median_reply_s != _chatty.their_median_reply_s)
+    check("the reply-speed signal is left out rather than scored as average",
+          not any(s.key == "latency" for s in _sided.signals)
+          and any(s.key == "latency" for s in _chatty.signals))
+    check("a vibe still reads without a reply speed to read",
+          _sided.vibe is None or bool(_sided.vibe.name))
 
     print("\nautomated vs real conversations:")
     from app.analysis.spam import NEVER_FILTER_AFTER, classify, classify_thread

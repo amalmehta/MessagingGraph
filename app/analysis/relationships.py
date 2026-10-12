@@ -167,7 +167,7 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
         return RelationshipProfile(
             contact_id=contact_id, name=contact.name, msgs_per_week=0.0, msgs_per_week_recent=0.0,
             trend="none", warmth=0.0, importance=_pct(min(1.0, len(theirs_in_groups) / 300) * 35),
-            reciprocity=0.5, initiation_balance=0.5, my_median_reply_s=0.0, their_median_reply_s=0.0,
+            reciprocity=0.5, initiation_balance=0.5, my_median_reply_s=None, their_median_reply_s=None,
             self_editing=33.0, depth=0.0, balance=0.0, state="group",
             headline=(f"You know {short_name(contact.name)} through {where} rather than one-on-one, "
                       f"so there's no one-on-one pattern to describe."),
@@ -212,8 +212,12 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     initiation = starts_mine / starts_total if starts_total else 0.5
 
     my_lat, their_lat = _reply_latencies(dm)
-    my_med = _median(my_lat, base.reply_s)
-    their_med = _median(their_lat, base.reply_s)
+    # No fallback. This used to hand back the corpus-wide median, so a thread
+    # where nobody has ever replied -- a parent who sends photos, someone you
+    # have gone quiet on -- reported a confident "they write back in 8m" taken
+    # from other people's conversations, and looked exactly like a measurement.
+    my_med = _median(my_lat) if my_lat else None
+    their_med = _median(their_lat) if their_lat else None
 
     # -- tone ------------------------------------------------------------
     their_affection = _density(theirs, lexicon.affection_score)
@@ -289,15 +293,19 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
         "not a verdict on the friendship. Worth knowing if you'd like it more even, "
         "and worth saying out loud rather than keeping score."))
 
-    lat_ratio = their_med / max(60.0, my_med)
-    signals.append(Signal(
-        "latency", "Reply speed, them and you", lat_ratio,
-        f"they reply in {_human(their_med)}, you in {_human(my_med)}",
-        _clamp((2.2 - lat_ratio) / 2.2), 0.13,
-        "Typical time to answer, in each direction.",
-        "Reply speed mostly measures someone's relationship with their phone. Slow "
-        "repliers are often the same with everyone, and a busy season can stretch "
-        "this for months without anything being wrong."))
+    # Only when there is something on both sides to compare. `raw` below divides by
+    # the weights of the signals actually present, so leaving this one out reads as
+    # "not measured here" rather than quietly scoring as average.
+    if my_med is not None and their_med is not None:
+        lat_ratio = their_med / max(60.0, my_med)
+        signals.append(Signal(
+            "latency", "Reply speed, them and you", lat_ratio,
+            f"they reply in {_human(their_med)}, you in {_human(my_med)}",
+            _clamp((2.2 - lat_ratio) / 2.2), 0.13,
+            "Typical time to answer, in each direction.",
+            "Reply speed mostly measures someone's relationship with their phone. Slow "
+            "repliers are often the same with everyone, and a busy season can stretch "
+            "this for months without anything being wrong."))
 
     signals.append(Signal(
         "warmth_received", "Warmth coming back to you", warmth_received,
@@ -368,7 +376,8 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
         msgs_per_week=round(per_week, 1), msgs_per_week_recent=round(recent, 1),
         trend=trend, warmth=warmth, importance=importance,
         reciprocity=round(reciprocity, 3), initiation_balance=round(initiation, 3),
-        my_median_reply_s=round(my_med), their_median_reply_s=round(their_med),
+        my_median_reply_s=None if my_med is None else round(my_med),
+        their_median_reply_s=None if their_med is None else round(their_med),
         self_editing=self_editing, depth=depth, balance=balance, state=state,
         signals=signals,
         headline=_headline(contact.name, state, signals, trend, confidence,

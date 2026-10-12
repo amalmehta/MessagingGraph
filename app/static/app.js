@@ -39,7 +39,10 @@ const ago = (iso) => {
   const y = d / 365.25;
   return y < 1.5 ? 'about a year ago' : `${Math.round(y)} years ago`;
 };
-const secs = s => s < 90 ? `${s | 0}s` : s < 5400 ? `${(s / 60) | 0}m`
+// null means the two of you have never replied to each other inside the window.
+// It is not a slow reply and it is not zero, so it does not get a number.
+const secs = s => s === null || s === undefined ? '—'
+  : s < 90 ? `${s | 0}s` : s < 5400 ? `${(s / 60) | 0}m`
   : s < 172800 ? `${(s / 3600).toFixed(1)}h` : `${(s / 86400).toFixed(1)}d`;
 const since = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
@@ -316,6 +319,7 @@ async function boot() {
     b.onclick = () => go(b.dataset.view));
   $('#scrim').onclick = closeDrawer;
   document.addEventListener('keydown', e => e.key === 'Escape' && closeDrawer());
+  document.addEventListener('keydown', trapTab);
   window.onpopstate = () => go(viewFromUrl(), false);
   go(viewFromUrl(), false);
 }
@@ -439,7 +443,12 @@ function go(v, push = true) {
   if (push && viewFromUrl() !== v) {
     history.pushState({ view: v }, '', v === 'now' ? location.pathname : `?view=${v}`);
   }
-  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  document.querySelectorAll('nav button').forEach(b => {
+    const here = b.dataset.view === v;
+    b.classList.toggle('on', here);
+    if (here) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy })[v]();
 }
 
@@ -944,7 +953,7 @@ function renderLocation(cid, loc, unknown) {
 async function openLocations() {
   const list = await api('/api/locations/ask');
   $('#drawer').innerHTML = `
-    <span class="close">&times;</span>
+    <button type="button" class="close" aria-label="Close">&times;</button>
     <h3>Where do they live?</h3>
     <div class="headline">The people you talk to most, a few at a time. Confirm a guess, type a place,
       or say you don't know and it won't ask again. Saved on this Mac, encrypted with your data.</div>
@@ -963,7 +972,7 @@ async function openLocations() {
         </form>
       </div>`).join('') : '<div class="empty">Everyone you talk to most has a location, or you\'ve said you don\'t know.</div>'}`;
   $('#drawer .close').onclick = () => { closeDrawer(); go(S.view); };
-  $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  openDrawer();
   $('#drawer').scrollTop = 0;
   $('#drawer').querySelectorAll('.nameme').forEach(card => {
     const form = card.querySelector('form'), note = card.querySelector('.dnote');
@@ -996,7 +1005,7 @@ async function refreshData() {
 async function openNaming() {
   const list = await api('/api/unnamed');
   $('#drawer').innerHTML = `
-    <span class="close">&times;</span>
+    <button type="button" class="close" aria-label="Close">&times;</button>
     <h3>Who are these people?</h3>
     <div class="headline">Real conversations with numbers that aren't in your Contacts. A name you give
       is saved on this Mac, encrypted with the rest of your data, and kept if you import again.
@@ -1016,7 +1025,7 @@ async function openNaming() {
         </form>
       </div>`).join('') : '<div class="empty">Everyone you talk to has a name.</div>'}`;
   $('#drawer .close').onclick = () => { closeDrawer(); go(S.view); };
-  $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  openDrawer();
   $('#drawer').scrollTop = 0;
   $('#drawer').querySelectorAll('.nameme').forEach(card => {
     const form = card.querySelector('.nm-form'), input = card.querySelector('.nm-input'),
@@ -1044,7 +1053,7 @@ async function openProposal(circle, selected, seed) {
   if (everyone) qs.set('thread_id', circle.thread_id);   // a subset isn't "the group chat"
   const p = await api('/api/proposals?' + qs);
   $('#drawer').innerHTML = `
-    <span class="close">&times;</span>
+    <button type="button" class="close" aria-label="Close">&times;</button>
     <h3>A plan for ${esc(circle.name)}</h3>
     <div class="headline">A starting point built from this group's own history. Change who's invited,
       edit the wording, then copy it into the chat yourself.</div>
@@ -1068,7 +1077,7 @@ async function openProposal(circle, selected, seed) {
       <span class="dnote" id="pp-note" role="status"></span>
     </div>`;
   $('#drawer .close').onclick = closeDrawer;
-  $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  openDrawer();
   $('#drawer').querySelectorAll('.mchip.toggle').forEach(b => b.onclick = () => {
     const id = b.dataset.id;
     const next = selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
@@ -1169,8 +1178,12 @@ const COLS = [
   // Who you have not spoken to longest is the question this app exists to answer,
   // and until now it was the one thing the table could not be sorted by.
   ['last_contact', 'Last spoke', p => `<span class="num dim">${esc(ago(p.last_contact))}</span>`],
-  ['their_median_reply_s', 'They reply', p => `<span class="num">${esc(secs(p.their_median_reply_s))}</span>`],
-  ['my_median_reply_s', 'You reply', p => `<span class="num">${esc(secs(p.my_median_reply_s))}</span>`],
+  ['their_median_reply_s', 'They reply', p => `<span class="num${p.their_median_reply_s === null
+    ? ' dim" title="You two have never replied to each other inside the window' : '"'}>${
+    esc(secs(p.their_median_reply_s))}</span>`],
+  ['my_median_reply_s', 'You reply', p => `<span class="num${p.my_median_reply_s === null
+    ? ' dim" title="You two have never replied to each other inside the window' : '"'}>${
+    esc(secs(p.my_median_reply_s))}</span>`],
   // Its own key: sharing "trend" put the sort arrow on two headers at once and made
   // clicking the second reverse the first instead of sorting by itself.
   [null, 'Last 20 weeks', p => spark(p.spark)],
@@ -1201,15 +1214,25 @@ function viewPeople() {
       <span class="hint" id="people-count"></span>
     </div>
     <div id="archwrap"></div>
-    <div class="tablewrap"><table><thead><tr>${COLS.map(c =>
-      `<th${c[0] ? ` data-k="${c[0]}"` : ' class="nosort"'}>${c[1]}${c[0] && S.sort === c[0]
-        ? ((S.sortDir || 1) === 1 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
+    ${rows.length ? '' : `<div class="notice quiet"><div><b>Nobody here.</b>
+      ${archivedIds().length ? 'Everyone you talk to is archived — Show above brings them back.'
+        : 'No conversations in this window yet.'}</div></div>`}
+    <div class="tablewrap"${rows.length ? '' : ' hidden'}><table><thead><tr>${COLS.map(c => {
+      const on = c[0] && S.sort === c[0], up = (S.sortDir || 1) !== 1;
+      if (!c[0]) return `<th class="nosort">${c[1]}</th>`;
+      return `<th aria-sort="${on ? (up ? 'ascending' : 'descending') : 'none'}"><button
+        type="button" class="sortb" data-k="${c[0]}">${c[1]}${on ? (up ? ' ↑' : ' ↓') : ''}</button></th>`;
+    }).join('')}</tr></thead>
     <tbody>${rows.map(p => `<tr data-id="${esc(p.contact_id)}">${COLS.map(c =>
       `<td>${c[2](p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-  document.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {
-    if (S.sort === th.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
-    else { S.sort = th.dataset.k; S.sortDir = 1; }
+  document.querySelectorAll('.sortb').forEach(b => b.onclick = () => {
+    if (S.sort === b.dataset.k) S.sortDir = (S.sortDir || 1) * -1;
+    else { S.sort = b.dataset.k; S.sortDir = 1; }
     viewPeople();
+    // The table was replaced underneath the press; put focus back on the same
+    // header so a keyboard can keep going.
+    document.querySelector(`.sortb[data-k="${CSS.escape(b.dataset.k)}"]`)?.focus();
+    say(`Sorted by ${b.textContent.replace(/[↑↓]/g, '').trim()}`);
   });
   // Before the row handlers, so stopping the click here stops it opening the
   // profile too -- and the keydown, because Enter on a button is a click that
@@ -1298,10 +1321,30 @@ function toast(text) {
   el.className = 'toast';
   el.textContent = text;
   document.body.append(el);
+  say(text);
   setTimeout(() => el.remove(), 3200);
 }
 
-function closeRowMenu() { document.querySelector('.rowmenu')?.remove(); }
+// Everything the app says in passing goes through here as well as on screen.
+// Cleared first, because setting a live region to the text it already holds
+// announces nothing -- archive two people in a row and you'd hear it once.
+function say(text) {
+  const live = $('#live');
+  if (!live) return;
+  live.textContent = '';
+  setTimeout(() => { live.textContent = text; }, 60);
+}
+
+let rowMenuReturn = null;
+function closeRowMenu() {
+  const m = document.querySelector('.rowmenu');
+  if (!m) return;
+  m.remove();
+  // Back to the row it came from. Without this, dismissing the menu dropped
+  // focus to the top of the document and you tabbed the whole table again.
+  if (rowMenuReturn?.isConnected) rowMenuReturn.focus();
+  rowMenuReturn = null;
+}
 
 // Right-click on a row and Remove inside a profile are the same act, so they are
 // the same function -- including taking the row away before the recompute lands.
@@ -1315,9 +1358,12 @@ function archivePerson(id, name) {
 
 function rowMenu(ev, id, name) {
   closeRowMenu();
+  rowMenuReturn = ev.currentTarget instanceof HTMLElement ? ev.currentTarget : document.activeElement;
   const m = document.createElement('div');
   m.className = 'rowmenu';
-  m.innerHTML = `<button type="button">Archive ${esc(shortName(name))}</button>`;
+  m.setAttribute('role', 'menu');
+  m.setAttribute('aria-label', `Actions for ${shortName(name)}`);
+  m.innerHTML = `<button type="button" role="menuitem">Archive ${esc(shortName(name))}</button>`;
   m.style.left = Math.min(ev.clientX, innerWidth - 220) + 'px';
   m.style.top = Math.min(ev.clientY, innerHeight - 70) + 'px';
   m.querySelector('button').onclick = () => {
@@ -1326,9 +1372,14 @@ function rowMenu(ev, id, name) {
   };
   document.body.append(m);
   m.querySelector('button').focus();
+  const onKey = e => {
+    if (e.key !== 'Escape') return;
+    document.removeEventListener('keydown', onKey);
+    closeRowMenu();
+  };
   setTimeout(() => {
     document.addEventListener('pointerdown', closeRowMenu, { once: true });
-    document.addEventListener('keydown', e => e.key === 'Escape' && closeRowMenu(), { once: true });
+    document.addEventListener('keydown', onKey);
   });
 }
 
@@ -1404,6 +1455,10 @@ async function drawPhone() {
         Safari would only have to be done again.</li>
       <li>Press the button below and type the six digits into the phone.</li>
     </ol>
+    ${p.shut_by_guessing && !p.offering ? `<div class="notice"><div><b>Pairing shut itself.</b>
+      Five wrong codes were tried from your network, which is what should happen — but
+      nobody you meant to let in got through. Show a new code only when your phone is in
+      your hand.</div></div>` : ''}
     ${p.offering
       ? `<div class="paircode"><span class="code">${esc(p.code)}</span>
          <span class="left" id="pair-left">${p.seconds_left}s left</span>
@@ -1450,13 +1505,62 @@ async function refreshFoot() {
 }
 
 // ---------------------------------------------------------------- drawer
-function closeDrawer() { $('#drawer').classList.remove('on'); $('#scrim').classList.remove('on'); }
+// The drawer covers the page behind a scrim, which makes it a modal -- and it
+// used to say none of that. Assistive tech read it as part of the page, focus
+// stayed on the row behind it, Tab walked off into the hidden page, and closing
+// it dropped focus back to the top. Six callers set the two classes by hand;
+// now they call these.
+let drawerReturn = null;
+
+function openDrawer() {
+  const d = $('#drawer');
+  drawerReturn = document.activeElement;
+  d.classList.add('on');
+  $('#scrim').classList.add('on');
+  d.setAttribute('role', 'dialog');
+  d.setAttribute('aria-modal', 'true');
+  const title = d.querySelector('h3');
+  if (title) {
+    title.id = title.id || 'drawer-title';
+    d.setAttribute('aria-labelledby', 'drawer-title');
+  } else {
+    d.setAttribute('aria-label', 'Details');
+  }
+  (d.querySelector('.close') || d).focus();
+}
+
+function closeDrawer() {
+  const d = $('#drawer');
+  const was = d.classList.contains('on');
+  d.classList.remove('on');
+  $('#scrim').classList.remove('on');
+  d.removeAttribute('role');
+  d.removeAttribute('aria-modal');
+  // Back to whatever opened it, so Tab carries on from where you were rather
+  // than restarting at the top of the page.
+  if (was && drawerReturn?.isConnected) drawerReturn.focus();
+  drawerReturn = null;
+}
+
+// Tab stays inside while it is open; there is nothing behind it to reach.
+function trapTab(e) {
+  if (e.key !== 'Tab') return;
+  const d = $('#drawer');
+  if (!d.classList.contains('on')) return;
+  const items = [...d.querySelectorAll(
+    'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])')]
+    .filter(el => el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
 
 async function openPerson(id) {
   if (!id || !id.startsWith('p_')) return;
   const d = await api('/api/people/' + id), p = d.profile;
   $('#drawer').innerHTML = `
-    <span class="close">&times;</span>
+    <button type="button" class="close" aria-label="Close">&times;</button>
     <h3>${avatar(p.name, 'big')}<span id="pname">${esc(p.name)}</span>
       <button type="button" class="editname" id="edit-name"
         title="Change the name you have for them">edit</button>
@@ -1476,8 +1580,12 @@ async function openPerson(id) {
       <div class="metric"><div class="n">${p.warmth.toFixed(0)}</div><div class="l">warmth</div></div>
       <div class="metric"><div class="n">${p.importance.toFixed(0)}</div><div class="l">importance</div></div>
       <div class="metric"><div class="n">${p.depth.toFixed(0)}</div><div class="l">depth</div></div>
-      <div class="metric"><div class="n">${secs(p.their_median_reply_s)}</div><div class="l">${esc(shortName(p.name))} writes back in</div></div>
-      <div class="metric"><div class="n">${secs(p.my_median_reply_s)}</div><div class="l">you write back in</div></div>
+      <div class="metric"><div class="n">${secs(p.their_median_reply_s)}</div><div class="l">${
+        p.their_median_reply_s === null ? 'no reply of theirs to time yet'
+        : esc(shortName(p.name)) + ' writes back in'}</div></div>
+      <div class="metric"><div class="n">${secs(p.my_median_reply_s)}</div><div class="l">${
+        p.my_median_reply_s === null ? 'no reply of yours to time yet'
+        : 'you write back in'}</div></div>
     </div>
     ${p.confidence < .7 ? `<div class="empty">Only ${p.total_messages} messages here, so
       this is a sketch rather than a reading (confidence ${(p.confidence*100).toFixed(0)}%).</div>` : ''}
@@ -1509,7 +1617,7 @@ async function openPerson(id) {
       <button class="btn ghost hide-thread" data-tid="${esc(d.thread_id)}">Set it aside as automated</button>
       <span class="dnote" role="status"></span></div>` : ''}`;
   $('#drawer .close').onclick = closeDrawer;
-  $('#drawer').classList.add('on'); $('#scrim').classList.add('on');
+  openDrawer();
   $('#drawer').scrollTop = 0;
   $('#drawer').querySelectorAll('.mchip[data-person]').forEach(el =>
     el.onclick = () => openPerson(el.dataset.person));
@@ -1693,7 +1801,7 @@ async function openPlan(id) {
   const d = await api('/api/plans/' + encodeURIComponent(id));
   const drawer = $('#drawer');
   if (!d.id) {
-    drawer.innerHTML = `<span class="close">&times;</span>
+    drawer.innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
       <div class="empty">${esc(d.detail || "That plan couldn't be loaded.")}</div>`;
   } else {
     const c = STATE_COLOR[d.state] || PAINT.unclear;
@@ -1703,7 +1811,7 @@ async function openPlan(id) {
     const time = ts => new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
     const person = !d.is_group && d.people.length ? d.people[0] : null;
     drawer.innerHTML = `
-      <span class="close">&times;</span>
+      <button type="button" class="close" aria-label="Close">&times;</button>
       <h3>${esc(d.activity)} <span class="tag" style="background:${c}22;color:${c}">${d.state}</span></h3>
       <div class="headline">In <b>${esc(d.thread_name)}</b>${d.when_text ? ` · proposed for <b>${esc(d.when_text)}</b>` : ''}
         · last mentioned ${d.days_idle === 0 ? 'today' : d.days_idle === 1 ? 'yesterday' : d.days_idle + ' days ago'}</div>
@@ -1733,7 +1841,7 @@ async function openPlan(id) {
     if (op) op.onclick = () => openPerson(op.dataset.person);
   }
   drawer.querySelector('.close').onclick = closeDrawer;
-  drawer.classList.add('on'); $('#scrim').classList.add('on');
+  openDrawer();
   drawer.scrollTop = 0;
 }
 
@@ -1885,7 +1993,7 @@ function simulate(raw) {
     g.onpointerdown = ev => {
       ev.stopPropagation(); n.fixed = true; g.setPointerCapture(ev.pointerId);
       const move = e => {
-        const p = toLocal(e); n.x = p.x; n.y = p.y; n.vx = n.vy = 0; alpha = Math.max(alpha, .12);
+        const p = toLocal(e); n.x = p.x; n.y = p.y; n.vx = n.vy = 0; kick(.12);
       };
       const up = e => {
         n.fixed = false; g.releasePointerCapture(ev.pointerId);
@@ -1933,8 +2041,23 @@ function simulate(raw) {
 
   // force loop
   let alpha = 1;
+  // The loop used to floor alpha at .02 and schedule itself forever, so the graph
+  // kept nudging and the tab kept waking the CPU for as long as it was open. It
+  // settles and stops now, and anything that disturbs the layout -- a drag, a
+  // filter -- calls kick() to start it again.
+  const STILL = 0.05;            // px the busiest node moves in a frame: settled
+  let frame = null;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const kick = (to = .3) => {
+    alpha = Math.max(alpha, to);
+    if (frame === null) frame = requestAnimationFrame(run);
+  };
+  // tick() does one step and says whether there is more to do; run() is the only
+  // thing that schedules. Keeping those apart is what lets the reduced-motion
+  // path step the layout to rest without queueing a single frame.
+  const run = () => { frame = tick() ? requestAnimationFrame(run) : null; };
   const CHARGE = 2600, DAMP = .82;
-  function tick() {
+  function tick() {            // one step; true while there is more to settle
     if (!document.body.contains(svg)) return;
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i];
@@ -1971,21 +2094,36 @@ function simulate(raw) {
         if (!b.fixed) { b.x += dx; b.y += dy; }
       }
     }
+    let busiest = 0;
     for (const n of nodes) {
       n.vx += (W / 2 - n.x) * .0015; n.vy += (H / 2 - n.y) * .0019;
       if (n.fixed) { n.vx = n.vy = 0; continue; }
       n.vx *= DAMP; n.vy *= DAMP;
-      n.x += n.vx * alpha; n.y += n.vy * alpha;
+      const sx = n.vx * alpha, sy = n.vy * alpha;
+      n.x += sx; n.y += sy;
+      busiest = Math.max(busiest, Math.abs(sx), Math.abs(sy));
     }
     links.forEach((l, i) => {
       lineEls[i].setAttribute('x1', l.s.x); lineEls[i].setAttribute('y1', l.s.y);
       lineEls[i].setAttribute('x2', l.t.x); lineEls[i].setAttribute('y2', l.t.y);
     });
     nodes.forEach((n, i) => nodeEls[i].setAttribute('transform', `translate(${n.x},${n.y})`));
-    alpha = Math.max(.02, alpha * .995);
-    requestAnimationFrame(tick);
+    alpha *= .99;
+    // Nodes start at rest, so the first frames barely move and a displacement
+    // test on its own would call it finished before it began. Let the layout
+    // run while alpha is still meaningful, then stop once it stops moving.
+    return alpha > .12 || busiest > STILL;
   }
-  applyT(); tick();
+
+  applyT();
+  if (reduced.matches) {
+    // Someone who has asked for less motion should not be shown a layout finding
+    // itself. Step it to rest in one go and let the last step be what they see.
+    for (let i = 0; i < 400 && tick(); i++);
+    frame = null;
+  } else {
+    frame = requestAnimationFrame(run);
+  }
 }
 
 // ---------------------------------------------------------------- privacy
@@ -2011,9 +2149,12 @@ async function viewPrivacy() {
     <h2>Your phone</h2>
     <div id="phonebox"><span class="pempty">Loading…</span></div>
     <h2>What a Claude call would contain</h2>
-    <div class="sub">Pass 2 uses Claude to draft messages. This is the exact payload that would
-      be sent for ${esc(S.people[0].name)} — shown in full, before anything leaves, every time.</div>
-    <pre id="preview">select a person…</pre>
+    ${S.people.length ? `<div class="sub">Pass 2 uses Claude to draft messages. This is the exact
+      payload that would be sent for ${esc(S.people[0].name)} — shown in full, before anything
+      leaves, every time.</div>
+    <pre id="preview">select a person…</pre>`
+    : `<div class="sub">Nothing to show: everyone is archived, so there is nobody to draft to.
+      Bring someone back from the People tab and this fills in.</div>`}
 `;
   drawPhone();
 
@@ -2024,6 +2165,7 @@ async function viewPrivacy() {
       body: JSON.stringify(body) });
     S.overview = await api('/api/overview'); syncFoot(); viewPrivacy();
   });
+  if (!S.people.length) return;
   const pv = await api('/api/privacy/preview/' + S.people[0].contact_id);
   $('#preview').textContent = (pv.allowed ? '' :
     `[BLOCKED — ${pv.reason}]\n[redacted: ${pv.redactions.join(', ') || 'nothing matched'}]\n\n`)

@@ -22,7 +22,7 @@
 <div id="app">
   <aside>
     <div class="brand">messaging graph<small id="src">loading</small></div>
-    <nav>
+    <nav aria-label="Views">
       <button data-view="now" class="on">Now <span class="c" id="c-now"></span></button>
       <button data-view="graph">My brainstorm <span class="c" id="c-graph"></span></button>
       <button data-view="people">People <span class="c" id="c-people"></span></button>
@@ -45,6 +45,9 @@
   <div id="phonefoot" hidden></div>
 </div>
 <div class="scrim" id="scrim"></div>
+<!-- Anything the app says in passing -- "Priya archived", "Lisbon it is" -- goes
+     here too, or it is only ever said to people who can see the toast. -->
+<div id="live" class="sr-only" role="status" aria-live="polite"></div>
 <div class="drawer" id="drawer"></div>
 <script src="/static/app.js"></script>
 </body>
