@@ -130,21 +130,23 @@ nav button .c{font:11px var(--mono);color:var(--faint)}
   margin-right:6px;vertical-align:1px}
 
 /* main */
-main{overflow-y:auto;padding:26px 30px 60px}
-h1{font-size:19px;margin:0 0 3px;letter-spacing:-.3px}
-.sub{color:var(--dim);font-size:13px;margin-bottom:22px;max-width:78ch}
+main{overflow-y:auto;padding:30px 34px 64px}
+h1{font-size:23px;margin:0 0 5px;letter-spacing:-.5px;font-weight:650}
+.sub{color:var(--dim);font-size:13.5px;line-height:1.6;margin-bottom:24px;max-width:66ch}
 h2{font-size:14.5px;letter-spacing:-.15px;color:var(--dim);
   margin:30px 0 12px;font-weight:650}
 
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
-.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
-.stat .n{font:600 21px/1.2 var(--mono);letter-spacing:-.5px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));gap:11px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px;
+  box-shadow:0 1px 2px var(--shadow)}
+.stat .n{font:600 23px/1.2 var(--mono);letter-spacing:-.6px}
 .stat .l{color:var(--dim);font-size:11.5px;margin-top:3px}
 
 .cards{display:flex;flex-direction:column;gap:9px}
 .card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);
-  border-radius:10px;padding:13px 16px;cursor:pointer;transition:border-color .12s,background .12s}
-.card:hover{background:var(--panel2)}
+  border-radius:11px;padding:14px 16px;cursor:pointer;box-shadow:0 1px 2px var(--shadow);
+  transition:border-color .12s,background .12s,box-shadow .12s}
+.card:hover{background:var(--panel2);box-shadow:0 2px 7px var(--shadow)}
 .card.warm{border-left-color:var(--adds)}
 .card.nudge{border-left-color:var(--stale)}
 .card.reflect{border-left-color:var(--functional)}
@@ -321,8 +323,8 @@ pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;pad
 .empty{color:var(--faint);font-size:13px;padding:22px 0}
 
 /* charts */
-.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:11px;
-  padding:14px 16px 12px}
+.chartbox{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:16px 18px 13px;box-shadow:0 1px 2px var(--shadow)}
 .chead{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;
   margin-bottom:6px}
 .chead b{font-size:14.5px;font-weight:600;display:block}
@@ -509,6 +511,10 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   background:var(--wash-accent-soft);font-size:13px;color:var(--dim)}
 .notice b{color:var(--ink);font-weight:600}
 .notice.quiet{border-color:var(--line);background:var(--panel)}
+.notice.demo{border-color:var(--edge-stale);background:var(--wash-stale)}
+.notice.demo b{color:var(--ink)}
+.cmds{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0 7px}
+.cmds code{font-size:12.5px;padding:5px 10px;user-select:all}
 
 /* who's connected: sections */
 .netsec{margin-top:14px}
@@ -562,6 +568,12 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sinceline .dot-sep{color:var(--line-strong);margin:0 3px}
 .peoplebar{display:flex;align-items:center;gap:12px;margin:14px 0 6px}
 .peoplebar .exfind{margin-top:0}
+/* On a desktop the column headers are the sort control, so this is the phone's.
+   Hidden rather than absent so it is one markup for both. */
+.sortpick{display:none;align-items:center;gap:6px;font-size:11.5px;color:var(--faint)}
+.sortpick select{font:12.5px system-ui,sans-serif;color:var(--ink);background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:7px 8px}
+.sortpick select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .peoplebar .hint{margin-left:0;font-family:var(--mono)}
 /* A row sets no display of its own, but say it anyway so filtering can't be
    quietly overridden the way it was in the exclude list. */
@@ -655,14 +667,55 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
   #phonefoot .sidefoot .reload{margin:0}
 
   h1{font-size:21px}
-  .sub{font-size:13.5px;margin-bottom:18px}
+  .sub{font-size:13px;margin-bottom:14px;line-height:1.5}
+  /* A call to action should not be a wall before the thing it is about. */
+  .notice{padding:11px 13px;font-size:12.5px;gap:8px}
+
+  /* The People table is thirteen columns. On a 375px screen that was three
+     columns and a horizontal scrollbar hiding every number that matters, so
+     here the same markup lays out as a list of cards -- one source of truth,
+     still sortable, still filterable, still right-clickable. */
+  .tablewrap{overflow-x:visible}
+  thead{display:none}
+  table,tbody,tr,td{display:block}
+  tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:3px 11px;
+    padding:10px 12px;margin-bottom:7px;border:1px solid var(--line);
+    border-radius:13px;background:var(--panel);line-height:1.35}
+  tbody tr:hover{background:var(--panel)}
+  tbody tr:active{background:var(--panel2)}
+  td{border-bottom:0;padding:0}
+  td.c-name{flex:1 1 55%;font-size:14px}
+  td.c-name .av{width:24px;height:24px;font-size:9.5px}
+  td.c-name .pcell{gap:8px}
+  td.c-state{margin-left:auto}
+  td.c-vibe{flex-basis:100%}
+  td.c-vibe .vcol{white-space:normal;color:var(--dim);font-size:12.5px}
+  /* The numbers worth carrying in a pocket. Each says what it is, because
+     without the header row a bare "33.4" means nothing. */
+  td.c-msgs_per_week_recent,td.c-warmth,td.c-last_contact{
+    font-size:11px;color:var(--faint);display:flex;align-items:center;gap:4px}
+  td.c-msgs_per_week_recent::before,td.c-warmth::before,td.c-last_contact::before{
+    content:attr(data-label);color:var(--faint)}
+  td.c-msgs_per_week_recent .num,td.c-warmth .num,td.c-last_contact .num{
+    font-size:12px;color:var(--ink)}
+  td.c-warmth .bar{display:inline-block;width:38px;vertical-align:middle}
+  td.c-location,td.c-trend,td.c-importance,td.c-self_editing,td.c-open_plans,
+  td.c-their_median_reply_s,td.c-my_median_reply_s,td.c-spark{display:none}
+
+  .peoplebar{flex-wrap:wrap;gap:8px}
+  .peoplebar .exfind{flex:1 1 100%}
+  .sortpick{display:inline-flex}
   h2{margin:24px 0 10px}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .drawer{width:100%;border-left:0;padding:20px 18px calc(50px + env(safe-area-inset-bottom))}
+  /* There is no Escape key on a phone, so this is the only way out of a profile
+     and it has to be worth aiming a thumb at. */
+  .drawer .close{top:8px;right:8px;font-size:24px;padding:9px 15px;
+    background:var(--panel2);color:var(--dim)}
+  .drawer h3{margin-right:56px}
   .notice{flex-direction:column;align-items:flex-start;gap:9px}
-  .peoplebar{flex-wrap:wrap}
-  /* Thumbs, not pointers: the 24px rows and 11px chips of a desktop table are
-     under the 44pt Apple asks for, and this is a list you scroll and tap. */
-  td{padding:12px 10px}
-  nav button,.btn,.archchip button,.themepick button{min-height:38px}
+  /* Thumbs, not pointers. The row used to need padding of its own to be worth
+     tapping; now the whole card is the target, and padding on the cells only
+     made each person 200px tall. */
+  nav button,.btn,.archchip button,.themepick button,.sortpick select{min-height:38px}
 }
