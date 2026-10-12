@@ -52,6 +52,10 @@ class Pairing:
     _code: str | None = None
     _code_until: float = 0.0
     _attempts: int = 0
+    # Set when the lockout shut the door rather than you. Someone on your Wi-Fi
+    # guessing at your code is worth being told about, and without this the Mac
+    # just quietly stopped offering one and looked broken.
+    shut_by_guessing: bool = False
 
     # -- the code -------------------------------------------------------------
     def open(self) -> str:
@@ -59,6 +63,7 @@ class Pairing:
         self._code = f"{secrets.randbelow(1_000_000):06d}"
         self._code_until = time.monotonic() + CODE_TTL
         self._attempts = 0
+        self.shut_by_guessing = False
         return self._code
 
     def close(self) -> None:
@@ -83,6 +88,7 @@ class Pairing:
         self._attempts += 1
         if self._attempts > MAX_ATTEMPTS:
             self.close()
+            self.shut_by_guessing = True
             return None
         if not _eq(code.strip(), self._code):
             return None

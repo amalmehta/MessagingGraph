@@ -157,8 +157,11 @@ class RelationshipProfile:
     importance: float               # 0..100, "current importance to your life"
     reciprocity: float              # 0..1, 0.5 is balanced
     initiation_balance: float       # 0..1, share of conversations I start
-    my_median_reply_s: float
-    their_median_reply_s: float
+    # None when this pair has never actually replied to each other inside the
+    # window -- which is not the same as replying slowly, and must not be filled
+    # in from how fast everyone else answers.
+    my_median_reply_s: float | None
+    their_median_reply_s: float | None
     self_editing: float             # 0..100, relative to my own baseline
     depth: float                    # 0..100
     # Verdict

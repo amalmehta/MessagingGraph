@@ -160,7 +160,11 @@ h2{font-size:14.5px;letter-spacing:-.15px;color:var(--dim);
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;color:var(--faint);font-size:11.5px;
   font-weight:600;padding:0 10px 9px;border-bottom:1px solid var(--line);
-  cursor:pointer;user-select:none;white-space:nowrap}
+  user-select:none;white-space:nowrap}
+th .sortb{all:unset;cursor:pointer;display:inline-block;padding:2px 4px;margin:-2px -4px;
+  border-radius:5px;color:inherit;font:inherit}
+th .sortb:hover{color:var(--dim)}
+th .sortb:focus-visible{outline:2px solid var(--accent);outline-offset:1px;color:var(--ink)}
 th.nosort{cursor:default}
 tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 th:hover{color:var(--dim)}
@@ -168,6 +172,10 @@ td{padding:10px;border-bottom:1px solid var(--line)}
 tbody tr{cursor:pointer}
 tbody tr:hover{background:var(--panel)}
 .name{font-weight:550}
+/* Carries status text to a screen reader without taking up space. Not
+   display:none, which is exactly what stops it being announced. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .pcell{display:flex;align-items:center;gap:9px;min-width:0}
 .av{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
   width:27px;height:27px;border-radius:50%;font-size:10.5px;font-weight:700;
@@ -227,9 +235,10 @@ svg.drag{cursor:grabbing}
 .drawer.on{transform:none}
 .drawer h3{margin:0 34px 0 0;font-size:18px;letter-spacing:-.3px;
   display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.drawer .close{position:absolute;top:18px;right:20px;cursor:pointer;color:var(--faint);
-  font-size:20px;line-height:1}
-.drawer .close:hover{color:var(--ink)}
+.drawer .close{all:unset;position:absolute;top:14px;right:16px;cursor:pointer;
+  color:var(--faint);font-size:20px;line-height:1;padding:4px 9px;border-radius:7px}
+.drawer .close:hover{color:var(--ink);background:var(--panel2)}
+.drawer .close:focus-visible{outline:2px solid var(--accent);outline-offset:1px;color:var(--ink)}
 .headline{color:var(--dim);font-size:13.5px;margin:10px 0 18px;line-height:1.6}
 .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:8px}
 .metric{background:var(--panel2);border-radius:8px;padding:10px 12px}

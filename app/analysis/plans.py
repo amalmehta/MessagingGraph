@@ -30,6 +30,12 @@ ACTIVITIES = [
     "hang out", "hang", "visit", "call", "walk", "run", "beach", "camping",
 ]
 _ACT = re.compile(r"\b(" + "|".join(sorted(ACTIVITIES, key=len, reverse=True)) + r")\b", re.I)
+# The same alternation without IGNORECASE, for the one place that runs it over
+# every message in the store. Every activity is lower-case, so matching lowered
+# text is identical -- and about three times quicker, which on a real history is
+# the difference between a few seconds and most of a minute. Everywhere else
+# keeps _ACT, because they run on a handful of messages and clarity wins.
+_ACT_LOWER = re.compile(r"\b(" + "|".join(sorted(ACTIVITIES, key=len, reverse=True)) + r")\b")
 
 INTENT = re.compile(
     r"\b(?:we should|should we|let'?s|want to|wanna|when are we|are you (?:free|around|down)|"
@@ -197,11 +203,11 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
         for convo in _conversations(msgs):
             seeds: list[tuple[int, str]] = []
             for i, m in enumerate(convo):
-                act = _ACT.search(m.text)
+                act = _ACT_LOWER.search(m.text.lower())
                 if not act:
                     continue
                 if INTENT.search(m.text) or _wanted_day(m.text):
-                    seeds.append((i, act.group(1).lower()))
+                    seeds.append((i, act.group(1)))
 
             seen_acts: set[str] = set()
             seed_positions = [i for i, _ in seeds]

@@ -603,6 +603,7 @@ def phone_status(request: Request):
         "offering": pairing.offering,
         "code": pairing.code_on_offer(),
         "seconds_left": pairing.seconds_left(),
+        "shut_by_guessing": pairing.shut_by_guessing,
         "devices": sorted((d.public() for d in pairing.devices.values()),
                           key=lambda d: d["paired_at"], reverse=True),
     })

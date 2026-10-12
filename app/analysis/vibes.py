@@ -104,9 +104,15 @@ def _dimensions(dm: list[Message], p: RelationshipProfile, plans: list[Plan],
         convos[-1].append(m)
     burst = mean(len(c) for c in convos) if convos else 0.0
     exclaim = sum(1 for m in texted if _EXCLAIM.search(m.text)) / n
-    reply = (p.my_median_reply_s + p.their_median_reply_s) / 2
-    quick = 1.0 if reply < 600 else 0.0 if reply > 10800 else 1 - (reply - 600) / 10200
-    lively = 0.4 * burst / 10 + 0.3 * exclaim / 0.35 + 0.3 * quick
+    # Only the sides that exist. With neither, "lively" leans on the two signals
+    # that are real rather than scoring a speed nobody has.
+    speeds = [x for x in (p.my_median_reply_s, p.their_median_reply_s) if x is not None]
+    if speeds:
+        reply = sum(speeds) / len(speeds)
+        quick = 1.0 if reply < 600 else 0.0 if reply > 10800 else 1 - (reply - 600) / 10200
+        lively = 0.4 * burst / 10 + 0.3 * exclaim / 0.35 + 0.3 * quick
+    else:
+        lively = (0.4 * burst / 10 + 0.3 * exclaim / 0.35) / 0.7
 
     practical = sum(1 for m in texted if _PRACTICAL.search(m.text)) / n / 0.35
     opens = [c[0] for c in convos]
