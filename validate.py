@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 import sys
 import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import correlation
@@ -842,6 +843,56 @@ def main() -> int:
     check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
+
+    print("\nwhat the app remembers about you:")
+    _pf = TestClient(fastapi_app, base_url="http://127.0.0.1:8077")
+    _pf.cookies.set(COOKIE, guard.session)
+    _ORIG = {"origin": "http://127.0.0.1:8077"}
+    check("a fresh install has no theme set and nothing put away",
+          _pf.get("/api/prefs").json() == {"theme": "auto", "hidden": []})
+    _pf.post("/api/prefs", json={"theme": "dark"}, headers=_ORIG)
+    check("the theme you pick is kept by the server, not by the browser",
+          _pf.get("/api/prefs").json()["theme"] == "dark")
+    check("a theme nobody has heard of is refused",
+          _pf.post("/api/prefs", json={"theme": "chartreuse"},
+                   headers=_ORIG).status_code == 400
+          and _pf.get("/api/prefs").json()["theme"] == "dark")
+    _pf.post("/api/prefs", json={"hide_draft": "d_1", "hide_why": "skip"}, headers=_ORIG)
+    _pf.post("/api/prefs", json={"hide_draft": "d_2", "hide_why": "copied"}, headers=_ORIG)
+    check("drafts you wave away are remembered by id",
+          _pf.get("/api/prefs").json()["hidden"] == ["d_1", "d_2"])
+    # The whole point: a different origin is a different localStorage, and the
+    # Mac app used to arrive on a new port -- so this had to outlive the browser.
+    _other = TestClient(fastapi_app, base_url="http://localhost:8077")
+    _other.cookies.set(COOKIE, guard.session)
+    check("and a browser that has never been here before is told the same thing",
+          _other.get("/api/prefs").json() == {"theme": "dark", "hidden": ["d_1", "d_2"]})
+    _ov = app_state.overrides.load()
+    _ov.hidden["d_1"]["at"] = (time.time() - 8 * 86400) * 1000
+    app_state.overrides.save(_ov)
+    check("a skip runs out after its week rather than lasting for ever",
+          _pf.get("/api/prefs").json()["hidden"] == ["d_2"])
+    _pf.post("/api/prefs", json={"show_draft": "d_2"}, headers=_ORIG)
+    check("and one can be brought back on purpose",
+          _pf.get("/api/prefs").json()["hidden"] == [])
+    _pf.post("/api/prefs", json={"theme": "auto"}, headers=_ORIG)
+
+    # A vault written before these fields existed has to keep working: these are
+    # new keys in a document people already have on disk.
+    _oldroot = Path(tempfile.mkdtemp(prefix="mg-old-")) / "vault"
+    _oldv = Vault(_oldroot, MemoryKeyStore())
+    _oldv.write(corpus, {"messages": len(corpus.messages)})
+    from app.overrides import OVERRIDES_FILE as _OF, OverrideStore as _OS
+    _oldv.seal(_OF, {"names": {"p_a": "Sam"}, "real": [], "automated": [],
+                     "locations": {}, "location_unknown": []})
+    _back = _OS(_oldv).load()
+    check("an overrides file written before any of this still opens",
+          _back.names == {"p_a": "Sam"} and _back.theme == "auto" and _back.hidden == {})
+    shutil.rmtree(_oldroot.parent, ignore_errors=True)
+
+    from app.desktop import PREFERRED_PORT as _PP, _free_port as _fp
+    check("the Mac app asks for the same port every launch",
+          _fp() == _fp() == _PP, str(_PP))
 
     print("\nnumbers that aren't there:")
     # A pair who have never replied to each other inside the window. The medians

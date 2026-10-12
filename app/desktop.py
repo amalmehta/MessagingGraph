@@ -91,10 +91,22 @@ def project_dir() -> Path | None:
     return path if path and (path / ".venv" / "bin" / "python").exists() and (path / "mg").exists() else None
 
 
+# One port, kept, so the app is the same origin every time it opens. A browser
+# files everything it remembers -- the theme, which drafts you put away -- under
+# the origin, and a fresh random port each launch handed it an empty drawer. The
+# choices live on the server now, but there is still no reason to move.
+PREFERRED_PORT = 49201
+
+
 def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    for port in (PREFERRED_PORT, 0):
+        try:
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", port))
+                return s.getsockname()[1]
+        except OSError:
+            continue        # something else has it today; any free port will do
+    raise RuntimeError("No port to serve on.")
 
 
 # Shown before the real UI loads, so it follows the system the way the app does.

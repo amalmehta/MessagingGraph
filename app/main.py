@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,7 +30,7 @@ from .analysis.suggestions import build as build_suggestions
 from .analysis.voice import style_for
 from .graph import build_graph
 from .net import reachable_at
-from .overrides import clean_name, clean_place, is_unnamed
+from .overrides import HIDE_DAYS, THEMES, clean_name, clean_place, is_unnamed
 from .pairing import PairingStore
 from .security import DEVICE_COOKIE, DEVICE_MAX_AGE, Guard
 from .state import AppState
@@ -577,6 +578,51 @@ def preview_outbound(cid: str):
     msgs = state.corpus.messages_in(thread.id)[-24:] if thread else []
     payload = build_payload(DraftRequest(profile=prof, recent=msgs, intent="check in"))
     return enc(state.gate.preview("draft", payload))
+
+
+# --------------------------------------------------------------- what you chose
+# Theme and the drafts you waved away. These lived in localStorage, which is
+# scoped to an origin -- and the Mac app serves on a new random port every
+# launch, so every one of these choices was thrown away each time you opened it.
+class PrefsPatch(BaseModel):
+    theme: str | None = None
+    hide_draft: str | None = None          # draft id to put away
+    hide_why: str = "skip"                 # "skip" (7 days) or "copied" (3)
+    show_draft: str | None = None          # draft id to bring back
+
+
+def _prefs(o) -> dict:
+    """What the browser needs: the theme, and which drafts are still put away.
+    Expiry is settled here so the two ends can't disagree about the date."""
+    now = time.time()
+    live = {k: v for k, v in o.hidden.items()
+            if now - (v.get("at", 0) / 1000) < HIDE_DAYS.get(v.get("why"), 7) * 86400}
+    return {"theme": o.theme, "hidden": sorted(live)}
+
+
+@app.get("/api/prefs")
+def get_prefs():
+    return enc(_prefs(state.overrides.load()))
+
+
+@app.post("/api/prefs")
+def set_prefs(patch: PrefsPatch):
+    o = state.overrides.load()
+    if patch.theme is not None:
+        if patch.theme not in THEMES:
+            raise HTTPException(400, "Theme must be auto, light or dark.")
+        o.theme = patch.theme
+    if patch.hide_draft:
+        why = patch.hide_why if patch.hide_why in HIDE_DAYS else "skip"
+        o.hidden[patch.hide_draft[:200]] = {"why": why, "at": time.time() * 1000}
+    if patch.show_draft:
+        o.hidden.pop(patch.show_draft, None)
+    # Drop anything already expired rather than letting the list grow for ever.
+    now = time.time()
+    o.hidden = {k: v for k, v in o.hidden.items()
+                if now - (v.get("at", 0) / 1000) < HIDE_DAYS.get(v.get("why"), 7) * 86400}
+    state.overrides.save(o)
+    return enc(_prefs(o))
 
 
 # ------------------------------------------------------------------ the phone
