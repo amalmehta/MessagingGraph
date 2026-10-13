@@ -38,3 +38,23 @@ def rate(value: float, singular: str, plural: str | None = None) -> str:
     turns 2.5 into 2 -- the rounding is what produced "1 times a week".
     """
     return count(int(value + 0.5), singular, plural)
+
+
+def gap_words(days: int) -> str:
+    """How long it's been, the way you'd say it to the person themselves.
+
+    Reads after "it's been": "it's been the better part of a year."
+    """
+    if days < 21:
+        return count(days // 7 or 1, "week")
+    if days < 45:
+        return "a few weeks"
+    if days < 60:
+        return "over a month"
+    if days < 300:
+        return f"{max(2, round(days / 30.4))} months"
+    if days < 420:
+        return "the better part of a year"
+    # int() on 1.9 years gave "over 1 years". Anything short of two is a year.
+    years = int(days / 365.25)
+    return "over a year" if years < 2 else f"over {years} years"

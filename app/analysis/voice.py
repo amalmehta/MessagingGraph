@@ -296,10 +296,15 @@ def _case(text: str, style: Style) -> str:
     # sentence case: capital after line starts and sentence ends, never after a comma
     chars, cap = list(text), True
     for i, ch in enumerate(chars):
-        if cap and ch.isalpha():
-            chars[i], cap = ch.upper(), False
-        elif ch in ".!?\n":
+        if ch in ".!?\n":
             cap = True
+        elif cap and not ch.isspace():
+            # Anything that is not a space starts the sentence, digits included.
+            # Skipping over them left the flag set, so "6 months is far too long"
+            # came out as "6 Months is far too long".
+            if ch.isalpha():
+                chars[i] = ch.upper()
+            cap = False
     return re.sub(r"\bi\b", "I", "".join(chars))
 
 
@@ -360,11 +365,35 @@ def plan_parts(style: Style, activity: str, when: datetime, now: datetime, hour:
     return parts + options[seed % len(options)]
 
 
-def reconnect_parts(style: Style, name: str | None, seed: int) -> list[tuple[str, str]]:
-    options = [[("say", "it's been way too long"), ("ask", "how've you been")],
-               [("say", "you crossed my mind today"), ("ask", "how are things")],
-               [("ask", "how've you been"), ("say", "feels like forever")]]
-    return [greet(style, name)] + options[seed % len(options)]
+# Three of these, and every reconnect draft starting at the first one, meant a
+# real history came out with the same two lines under a dozen different names.
+# The ones with {gap} say how long it has actually been, which the app knows and
+# was throwing away -- "it's been 7 months" is a different message from "it's
+# been way too long", and it is the one that sounds like you meant it.
+RECONNECT = [
+    [("say", "it's been way too long"), ("ask", "how've you been")],
+    [("say", "you crossed my mind today"), ("ask", "how are things")],
+    [("ask", "how've you been"), ("say", "feels like forever")],
+    [("say", "just realised it's been {gap}"), ("ask", "how are you")],
+    [("say", "thinking of you"), ("ask", "what have you been up to")],
+    [("say", "can't believe it's been {gap}"), ("ask", "what's new with you")],
+    [("ask", "how have things been"), ("say", "been meaning to message for ages")],
+    [("say", "hope you're doing well"), ("ask", "how's everything going")],
+    [("say", "{gap} is far too long"), ("ask", "how are you doing")],
+    [("ask", "how are you"), ("say", "been thinking about you lately")],
+]
+# Without a gap to name, the ones built around one would read oddly.
+RECONNECT_PLAIN = [o for o in RECONNECT if not any("{gap}" in t for _, t in o)]
+
+
+def reconnect_options(gap: str) -> int:
+    return len(RECONNECT if gap else RECONNECT_PLAIN)
+
+
+def reconnect_parts(style: Style, name: str | None, seed: int, gap: str = "") -> list[tuple[str, str]]:
+    pool = RECONNECT if gap else RECONNECT_PLAIN
+    chosen = [(k, t.replace("{gap}", gap)) for k, t in pool[seed % len(pool)]]
+    return [greet(style, name)] + chosen
 
 
 def check_in_parts(style: Style, name: str | None, seed: int) -> list[tuple[str, str]]:

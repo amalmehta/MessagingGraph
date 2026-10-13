@@ -13,17 +13,20 @@ from a keyword.
 """
 from __future__ import annotations
 
+import hashlib
+
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from statistics import median
 
 from ..models import Corpus, Plan, RelationshipProfile
 from ..names import greeting_name, short_name
 from .circles import REVIVE_WINDOW
-from .phrasing import a_week, count
+from .phrasing import a_week, count, gap_words
 from .proposals import propose
-from .voice import (Style, check_in_parts, follow_up_parts, plan_parts, reconnect_parts, reply_parts,
+from .voice import (Style, check_in_parts, follow_up_parts, plan_parts, reconnect_options,
+                    reconnect_parts, reply_parts,
                     style_for, write)
 
 EVENT = re.compile(
@@ -52,11 +55,20 @@ def _voice_note(style: Style) -> dict:
     return {"window_days": style.window_days, "traits": style.describe()}
 
 
+def _offset(did: str) -> int:
+    """Stable per-draft starting point. blake2b rather than hash(), whose seed
+    changes between runs -- the draft for someone must not move about."""
+    return int.from_bytes(hashlib.blake2b(did.encode(), digest_size=4).digest(), "big")
+
+
 def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[Plan],
                    now: datetime, seeds: dict[str, int] | None = None,
                    limit: int = 8) -> list[Draft]:
     seeds = seeds or {}
     out: list[Draft] = []
+    # How to draw a given draft again at a different index, so two that land on
+    # the same wording can be pulled apart once we know which ones you will see.
+    redraw: dict[str, tuple] = {}
 
     for p in profiles:
         if p.state == "new":
@@ -72,9 +84,18 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
 
         def add(kind, why, make, variants, value, detail="", warm=False):
             did = f"{kind}:{p.contact_id}"
+            # The seed the page sends is a step: 0 on first sight, +1 each time
+            # you ask for another version. Everyone therefore started on the
+            # same option, and a hundred people got a hundred identical drafts.
+            # Offsetting by the person means they start in different places and
+            # "another version" still just moves one along.
             seed = seeds.get(did, 0)
+            start = _offset(did) + seed
+            redraw[did] = (lambda i, make=make, style=style, warm=warm:
+                           write(make(i), style, warm=warm), start, variants)
             candidates.append(Draft(did, kind, p.name, [p.contact_id], thread.id, why,
-                                    write(make(seed % variants), style, warm=warm), round(value, 1),
+                                    write(make(start % variants), style, warm=warm),
+                                    round(value, 1),
                                     detail, seed, variants, _voice_note(style)))
 
         last = dm[-1]
@@ -118,9 +139,10 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
                 50 + 0.35 * p.importance, detail=prop.when_label)
 
         if p.state == "quiet" and p.msgs_per_week > 1.2:
+            gap = gap_words(age)
             add("reconnect", f"You used to talk about {a_week(p.msgs_per_week)}. "
                 f"It's been {count(age, 'day')}.",
-                lambda s: reconnect_parts(style, name, s), 3,
+                lambda s: reconnect_parts(style, name, s, gap), reconnect_options(gap),
                 46 + 0.3 * p.warmth + min(15, age / 12), warm=True)
         elif p.state in ("close", "steady"):
             opens = [c for i, c in enumerate(dm) if i == 0 or c.ts - dm[i - 1].ts > timedelta(hours=6)]
@@ -160,4 +182,40 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
     out += group_drafts[:2]
 
     out.sort(key=lambda d: d.value, reverse=True)
-    return out[:limit]
+    return _spread(out[:limit], redraw)
+
+
+def _body(text: str) -> str:
+    """The draft without its greeting -- the greeting carries the name, so two
+    drafts can read identically underneath and still differ on the first line."""
+    rest = text.split("\n")[1:]
+    return "\n".join(rest) if rest else text
+
+
+def _spread(drafts: list[Draft], redraw: dict[str, tuple]) -> list[Draft]:
+    """No two drafts on screen saying the same thing.
+
+    Offsetting each person spreads them across the pool, but with more people
+    than wordings some still collide, and a pair that collides often lands
+    side by side. This is the last word on what you actually see: a repeat is
+    drawn again further along its own pool until it is not a repeat.
+    """
+    seen: set[str] = set()
+    for i, d in enumerate(drafts):
+        body = _body(d.draft)
+        if body not in seen:
+            seen.add(body)
+            continue
+        draw = redraw.get(d.id)
+        if not draw:                       # plans draw themselves; nothing to turn
+            seen.add(body)
+            continue
+        render, start, variants = draw
+        for step in range(1, variants):
+            text = render((start + step) % variants)
+            if _body(text) not in seen:
+                drafts[i] = replace(d, draft=text)
+                body = _body(text)
+                break
+        seen.add(body)                     # pool exhausted: keep it rather than drop it
+    return drafts
