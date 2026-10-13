@@ -12,6 +12,7 @@ that people can reply. Everything is computed locally, and the result is a draft
 for you to read, edit and send yourself. Nothing here can send a message.
 """
 from __future__ import annotations
+from .phrasing import count
 
 from collections import Counter
 from dataclasses import dataclass, field
@@ -122,7 +123,7 @@ def propose(corpus: Corpus, plans: list[Plan], member_ids: list[str],
         weekday, hits = worked.most_common(1)[0]
         total = sum(worked.values())
         day_reason = (f"{WEEKDAYS[weekday]}s have worked {'with ' + them if solo else 'for this group'} before "
-                      f"({hits} of {total} plans that happened).")
+                      f"({hits} of {count(total, 'plan')} that happened).")
     else:
         weekday, day_reason = 5, "Saturday, since there's no record yet of which days work."
     ahead = (weekday - now.weekday()) % 7

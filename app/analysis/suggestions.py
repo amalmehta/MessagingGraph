@@ -16,6 +16,7 @@ Three rules the copy here follows:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from .phrasing import a_week, count, rate
 from datetime import datetime
 
 from ..models import Plan, RelationshipProfile
@@ -49,7 +50,7 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
         if p.state == "quiet" and p.msgs_per_week > 1.2:
             out.append(Suggestion(
                 "reconnect", p.name, p.contact_id,
-                f"You used to talk about {p.msgs_per_week:.0f} times a week. "
+                f"You used to talk about {a_week(p.msgs_per_week)}. "
                 f"It's been {gap} days.",
                 f"No occasion needed — “hey, you crossed my mind” does the whole job.",
                 weight=88 + p.warmth / 5, tone="warm"))
@@ -85,9 +86,9 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
             fresh = age < 180
             out.append(Suggestion(
                 "growing", p.name, p.contact_id,
-                (f"Six months in and already {p.msgs_per_week_recent:.0f} messages a week, "
+                (f"Six months in and already {rate(p.msgs_per_week_recent, 'message')} a week, "
                  f"warm both ways." if fresh else
-                 f"This one's picked up lately — {p.msgs_per_week_recent:.0f} messages a "
+                 f"This one's picked up lately — {rate(p.msgs_per_week_recent, 'message')} a "
                  f"week, warm both ways."),
                 (f"Worth noticing. A new friendship taking root like this is rarer than "
                  f"it feels at the time." if fresh else
@@ -122,7 +123,7 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
         what = pl.title.split(" with ")[0].lower()
         out.append(Suggestion(
             "revive_plan", pl.thread_name, pl.id,
-            f"You both wanted to do {what} — it came up {idle} days ago and never "
+            f"You both wanted to do {what} — it came up {count(idle, 'day')} ago and never "
             f"got a date.",
             f"Naming a specific day is usually the whole blocker. “{what.capitalize()} "
             f"next week?” is enough.",
