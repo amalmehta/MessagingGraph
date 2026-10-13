@@ -26,14 +26,43 @@ from ..names import greeting_name, looks_like_handle, short_name
 from .circles import REVIVE_WINDOW
 from .phrasing import a_week, count, gap_words
 from .proposals import propose
-from .voice import (Style, check_in_parts, follow_up_parts, plan_parts, reconnect_options,
+from .voice import (INTEREST_LINE, Style, check_in_parts, follow_up_options,
+                    follow_up_parts, plan_parts,
+                    reconnect_options,
                     reconnect_parts, reply_parts,
                     style_for, write)
 
-EVENT = re.compile(
-    r"\b(?:my|the|our|a|an)\s+(job interview|interview|presentation|exam|finals?|big move|move|"
-    r"trip|flight|first day|race|marathon|recital|audition|launch|wedding|birthday|defense|"
-    r"show|gig|half marathon)\b", re.I)
+_THING = (r"(job interview|interview|presentation|exam|finals?|big move|move|"
+          r"trip|flight|first day|race|marathon|recital|audition|launch|wedding|birthday|"
+          r"defense|show|gig|half marathon)")
+# The article is the whole question of whose it is, so it gets captured too.
+EVENT = re.compile(r"\b(my|your|ur|the|our|a|an)\s+" + _THING, re.I)
+# Second person anywhere in the message: they are talking to me about it.
+AT_ME = re.compile(r"\b(you|u|your|ur|yours|youre|you're)\b", re.I)
+
+
+def whose(text: str) -> tuple[str, str] | None:
+    """Who the thing in a message from them belongs to, if it can be told.
+
+    "my interview" is theirs and "your interview" is mine, but "the interview"
+    says nothing -- and the draft was reading every one of those as theirs.
+    On this Mac's history that made one follow-up in two wrong: "how do u feel
+    about the interview" is them asking about mine, and the app answered by
+    telling me they had an interview I'd failed to ask about.
+    """
+    hit = EVENT.search(text)
+    if not hit:
+        return None
+    article, thing = hit.group(1).lower(), hit.group(2).lower()
+    if article == "my":
+        return "theirs", thing
+    if article in ("your", "ur"):
+        return "mine", thing                  # they are asking me about mine
+    if article == "our":
+        return "ours", thing
+    # No possessive. If the sentence is addressed to me it is probably mine;
+    # otherwise they are narrating their own week.
+    return ("mine" if AT_ME.search(text) else "theirs?"), thing
 
 
 @dataclass
@@ -62,9 +91,28 @@ def _offset(did: str) -> int:
     return int.from_bytes(hashlib.blake2b(did.encode(), digest_size=4).digest(), "big")
 
 
+# Enough mentions that "are you still running" is a fair thing to say. The
+# interest map already drops anything not distinctive to this person and floors
+# at 3; this asks for a little more before the draft states it as fact.
+TOPIC_EVIDENCE = 4
+
+
+def topic_lines(imap: dict[str, dict[str, int]]) -> dict[str, str]:
+    """contact id -> one thing to ask them about, where there is one worth asking."""
+    out = {}
+    for cid, scores in (imap or {}).items():
+        if not scores:
+            continue
+        label, hits = max(scores.items(), key=lambda kv: (kv[1], kv[0]))
+        line = INTEREST_LINE.get(label)
+        if line and hits >= TOPIC_EVIDENCE:
+            out[cid] = line
+    return out
+
+
 def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[Plan],
                    now: datetime, seeds: dict[str, int] | None = None,
-                   limit: int = 8) -> list[Draft]:
+                   limit: int = 8, topics: dict[str, str] | None = None) -> list[Draft]:
     seeds = seeds or {}
     out: list[Draft] = []
     # How to draw a given draft again at a different index, so two that land on
@@ -116,20 +164,34 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
         for msg in reversed(dm):
             if msg.ts < cut or msg.is_from_me or (now - msg.ts).days < 3:
                 continue
-            hit = EVENT.search(msg.text)
-            if not hit:
+            owner = whose(msg.text)
+            if not owner:
                 continue
-            event = hit.group(1).lower()
+            side, event = owner
+            # Theirs to ask about, or nobody's. "How do u feel about the
+            # interview" is them asking about mine, and a draft saying "how did
+            # the interview go" sent back to them is the wrong way round.
+            if side == "mine":
+                continue
             # "How'd the interview go?" is a follow-up to "my job interview", so match
             # on the head noun, not the exact phrase they happened to use.
             key = event if event == "first day" else event.split()[-1].rstrip("s")
             if any(x.is_from_me and x.ts > msg.ts and key in x.text.lower() for x in dm):
                 break
             days = (now - msg.ts).days
-            add("follow_up", f"{first} mentioned their {event} {count(days, 'day')} ago, and you haven't "
+            # Only "my X" earns "their X". Without a possessive the app knows a
+            # thing came up, not whose it was, and the line says only that.
+            whosen = {"theirs": f"their {event}", "ours": f"the {event} you two mentioned",
+                      "theirs?": f"a {event}"}[side]
+            # Only "my X" lets the draft say "your X" back.
+            sure = side == "theirs"
+            add("follow_up", f"{first} mentioned {whosen} {count(days, 'day')} ago, and you haven't "
                 "asked about it since.",
-                lambda s, event=event: follow_up_parts(style, name, event, s), 2,
-                58 + 0.32 * p.importance, detail=msg.text[:180])
+                lambda s, event=event, sure=sure: follow_up_parts(style, name, event, s, sure),
+                follow_up_options(sure),
+                # A guess about whose it is is worth less than knowing.
+                (58 if side != "theirs?" else 50) + 0.32 * p.importance,
+                detail=msg.text[:180])
             break
 
         stale = [pl for pl in plans if pl.state == "stale" and pl.thread_id == thread.id
@@ -147,10 +209,13 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
 
         if p.state == "quiet" and p.msgs_per_week > 1.2:
             gap = gap_words(age)
+            topic = (topics or {}).get(p.contact_id, "")
             add("reconnect", f"You used to talk about {a_week(p.msgs_per_week)}. "
                 f"It's been {count(age, 'day')}.",
-                lambda s: reconnect_parts(style, name, s, gap), reconnect_options(gap),
-                46 + 0.3 * p.warmth + min(15, age / 12), warm=True)
+                lambda s: reconnect_parts(style, name, s, gap, topic),
+                reconnect_options(gap, topic),
+                # Something only true of them beats something true of anyone.
+                (52 if topic else 46) + 0.3 * p.warmth + min(15, age / 12), warm=True)
         elif p.state in ("close", "steady"):
             opens = [c for i, c in enumerate(dm) if i == 0 or c.ts - dm[i - 1].ts > timedelta(hours=6)]
             gaps = [(b.ts - a.ts).days for a, b in zip(opens, opens[1:])]
@@ -189,7 +254,10 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
     out += group_drafts[:2]
 
     out.sort(key=lambda d: d.value, reverse=True)
-    return _spread(_mix(out, limit), redraw)
+    # Pull duplicates apart across every candidate, then choose: a duplicate
+    # that cannot be reworded is dropped, and the next-best draft takes the
+    # slot instead of the page showing the same words twice.
+    return _mix(_spread(out, redraw), limit)
 
 
 # Five of the eight drafts were reconnects. Varying the wording stopped them
@@ -227,29 +295,32 @@ def _body(text: str) -> str:
 
 
 def _spread(drafts: list[Draft], redraw: dict[str, tuple]) -> list[Draft]:
-    """No two drafts on screen saying the same thing.
+    """No two drafts saying the same thing, in the same words.
 
     Offsetting each person spreads them across the pool, but with more people
-    than wordings some still collide, and a pair that collides often lands
-    side by side. This is the last word on what you actually see: a repeat is
-    drawn again further along its own pool until it is not a repeat.
+    than wordings some still collide, and a pair that collides often lands side
+    by side. A repeat is drawn again further along its own pool until it is not
+    one -- and a repeat that cannot be redrawn is dropped rather than shown
+    twice. The first version of this skipped those instead of dropping them,
+    which left a plan and a group plan offering word-for-word the same message.
     """
     seen: set[str] = set()
-    for i, d in enumerate(drafts):
+    kept: list[Draft] = []
+    for d in drafts:
         body = _body(d.draft)
         if body not in seen:
             seen.add(body)
+            kept.append(d)
             continue
-        draw = redraw.get(d.id)
-        if not draw:                       # plans draw themselves; nothing to turn
-            seen.add(body)
-            continue
-        render, start, variants = draw
+        render, start, variants = redraw.get(d.id, (None, 0, 0))
+        fixed = None
         for step in range(1, variants):
             text = render((start + step) % variants)
             if _body(text) not in seen:
-                drafts[i] = replace(d, draft=text)
-                body = _body(text)
+                fixed = replace(d, draft=text)
                 break
-        seen.add(body)                     # pool exhausted: keep it rather than drop it
-    return drafts
+        if fixed is None:
+            continue                      # nothing else it can say; let it go
+        seen.add(_body(fixed.draft))
+        kept.append(fixed)
+    return kept
