@@ -851,6 +851,89 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nwords that were never mine:")
+    from app.analysis.quoted import my_name as _mn, is_quoted as _iq, MIN_GREETINGS as _MG
+    from app.analysis.gratitude import _clean_what as _cw, _when as _wn
+    from app.analysis.phrasing import when_words as _ww
+    # People paste things into chats, and iMessage files every one as sent by
+    # me. One was an appraisal notice; it became "still really grateful for you
+    # submitting your vehicle's details".
+    class _C:
+        def __init__(self, msgs): self.threads = {"t": self}; self.id = "t"; self._m = msgs
+        def messages_in(self, _): return self._m
+    class _M:
+        def __init__(self, me, text): self.is_from_me, self.text = me, text
+    _greets = [_M(False, f"hi amal, you around?") for _ in range(_MG)]
+    _corpus = _C(_greets + [_M(True, "Hi Amal. Thank you for submitting your details.")])
+    check("the app works out what people call me, from how they greet me",
+          _mn(_corpus) == "amal")
+    check("and a message of mine that greets me is one I pasted",
+          _iq("Hi Amal. Thank you for submitting your details.", "amal")
+          and not _iq("hey, you around?", "amal"))
+    check("a word that merely follows \"hey\" never becomes my name",
+          _mn(_C([_M(False, "hey man you good") for _ in range(30)])) is None)
+    check("and nothing is assumed from a handful of greetings",
+          _mn(_C([_M(False, "hi amal") for _ in range(_MG - 1)])) is None)
+    for _mod, _what in (("gratitude", "a thank-you note"), ("voice", "how the app learns to write")):
+        check(f"{_what} leaves pasted text out",
+              "is_quoted" in Path(f"app/analysis/{_mod}.py").read_text())
+    # "still really grateful for you getting me this" asks the reader to
+    # remember what "this" was.
+    check("a thank-you has to name the thing it is for",
+          _cw("getting me this") is None and _cw("planning this one") is None
+          and _cw("doing that") is None
+          and _cw("sticking by me during shitty times") == "sticking by me during shitty times")
+    check("and the name you call someone is not the thing",
+          _cw("planning a baller trip brother") == "planning a baller trip"
+          and _cw("helping me bro") == "helping me")
+    # 330 days called November 2025 "back in November", from October 2026.
+    _now = datetime(2026, 10, 13)
+    check("last November is last November, not back in November",
+          _ww(_now - timedelta(days=330), _now) == "last November"
+          and _ww(_now - timedelta(days=200), _now) == "back in March")
+    check("and the app describes a gap the same way wherever it says it",
+          _wn(_now - timedelta(days=330), _now) == _ww(_now - timedelta(days=330), _now))
+
+    print("\nnumbers nobody should quote:")
+    from app.analysis.relationships import THIN_READING as _TR
+    from dataclasses import replace as _rp2
+    # Built here rather than hoped for: the demo has no thread this thin, so
+    # reading the check off this data alone would prove nothing.
+    from app.analysis.relationships import profile_all as _pa
+    _one = app_state.corpus.contacts and list(app_state.corpus.contacts)[0]
+    _tiny_t = next(t for t in app_state.corpus.threads.values() if not t.is_group)
+    _keep = [m for m in app_state.corpus.messages if m.thread_id == _tiny_t.id][:3]
+    _tiny = _rp2(app_state.corpus, messages=tuple(_keep),
+                 threads={_tiny_t.id: _tiny_t},
+                 contacts={c: v for c, v in app_state.corpus.contacts.items()
+                           if c in _tiny_t.participant_ids})
+    _thinp = [q for q in _pa(_tiny, now=app_state.now) if q.confidence < _TR]
+    check("a thread of three messages publishes no percentages",
+          _thinp and not [sg for q in _thinp for sg in q.signals
+                          if re.search(r"\d+%", sg.display or "")],
+          f"{len(_thinp)} built for this check")
+    check("it says how little there is instead",
+          all(any("too little to tell" in (sg.display or "") for sg in q.signals)
+              for q in _thinp))
+    _real_thin = [q for q in app_state.profiles if q.confidence < _TR]
+    check("and nothing in this data slips past either",
+          not [sg for q in _real_thin for sg in q.signals
+               if re.search(r"\d+%", sg.display or "")],
+          f"{len(_real_thin)} thin threads in the demo")
+    # The bar is capped at 100 and the sentence was not, so one message from me
+    # read "1678% more than your usual" beside a bar already full.
+    _pcts = [int(m.group(1)) for q in app_state.profiles for sg in q.signals
+             for m in [re.match(r"(?:well over )?(\d+)% (?:more|less)", sg.display or "")] if m]
+    check("and no figure runs past the bar it belongs to",
+          not [x for x in _pcts if x > 200], f"largest is {max(_pcts, default=0)}%")
+    _js3 = Path("app/static/app.js").read_text()
+    check("the mood line holds to the same rule as the signals above it",
+          "thin ? 'too little to tell'" in _js3)
+    # Folding 47 threads away made the search lie: a name in them returned
+    # "0 of 57" and nothing said where they had gone.
+    check("a search that finds nobody says where they went",
+          "among the folded-away threads" in _js3 and "more folded away" in _js3)
+
     print("\nwhose thing is it anyway:")
     from app.analysis.messages import whose as _wh, topic_lines as _tl, TOPIC_EVIDENCE as _TE
     from app.analysis.voice import (INTEREST_LINE as _IL, follow_up_parts as _fp,

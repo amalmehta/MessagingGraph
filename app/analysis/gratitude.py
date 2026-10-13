@@ -26,6 +26,8 @@ from ..models import Corpus, Plan, RelationshipProfile
 from ..names import greeting_name, short_name
 from .circles import activity_of
 from .messages import Draft
+from .quoted import is_quoted, my_name
+from .phrasing import when_words
 from .voice import style_for, thanks_parts, write
 
 THANKS = re.compile(r"\b(?:thank you|thanks|thank u|thx|ty)(?:\s+(?:so much|again|a ton|a lot|so so much))?,?"
@@ -53,25 +55,42 @@ MONTHS = ["January", "February", "March", "April", "May", "June", "July", "Augus
           "October", "November", "December"]
 
 
+# "thanks for getting me this" leaves nothing behind once the thread is gone,
+# and the note it produced -- "still really grateful for you getting me this" --
+# asks the reader to remember what "this" was.
+DANGLING = {"this", "that", "these", "those", "it", "one", "them", "stuff", "everything"}
+# Names you call someone, tacked on the end and not part of the thing.
+VOCATIVE = {"brother", "bro", "man", "dude", "buddy", "mate", "sis", "fam", "bruh", "friend"}
+
+
 def _clean_what(raw: str) -> str | None:
     what = re.sub(r"[\U0001F300-\U0001FAFF☀-➿]+", "", raw).strip(" ,;:-")
     what = CUT.sub("", what).strip(" ,;:-")
     words = what.split()
     if len(words) < 2 or len(words) > 9 or TRIVIAL.match(what) or SENSITIVE.search(what):
         return None
+    if words[-1].lower().strip(".,!?") in DANGLING:
+        return None
+    # "thanks for planning this brother" is not gratitude for a brother.
+    while words and words[-1].lower().strip(".,!?") in VOCATIVE:
+        words.pop()
+    what = " ".join(words)
+    if len(words) < 2:
+        return None
     return what
 
 
 def _when(ts: datetime, now: datetime) -> str:
-    days = (now - ts).days
-    if days < 45:
-        return "a few weeks ago"
-    return f"back in {MONTHS[ts.month - 1]}" if days < 330 else f"last {MONTHS[ts.month - 1]}"
+    # The shared one, so the app does not describe the same gap two ways -- and
+    # so the year comes off the calendar: at 330 days the old rule called
+    # November 2025 "back in November" while standing in October 2026.
+    return when_words(ts, now)
 
 
 def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[Plan],
                     now: datetime, seeds: dict[str, int] | None = None, limit: int = 6) -> list[Draft]:
     seeds = seeds or {}
+    me = my_name(corpus)
     history_start = corpus.messages[0].ts if corpus.messages else now
     out: list[Draft] = []
     used: Counter = Counter()                  # (kind, wording) already shown higher in the list
@@ -107,6 +126,8 @@ def build_gratitude(corpus: Corpus, profiles: list[RelationshipProfile], plans: 
             age = (now - m.ts).days
             if not m.is_from_me or age < 21 or age > 400:
                 continue
+            if is_quoted(m.text, me):
+                continue            # pasted into the chat, not written by me
             hit = THANKS.search(m.text)
             what = _clean_what(hit.group("what")) if hit else None
             if not what:

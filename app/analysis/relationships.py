@@ -19,6 +19,8 @@ good manners rather than a warning sign.
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import math
 import statistics
 from collections import defaultdict
@@ -321,7 +323,9 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     signals.append(Signal(
         "self_editing", "How much you edit yourself", self_editing,
         ("about your usual" if abs(edit_dev) < 0.25 else
-         f"{abs(edit_dev) * 100:.0f}% {'more' if edit_dev > 0 else 'less'} than your usual"),
+         f"{'well over' if abs(edit_dev) > 2 else ''}"
+         f"{min(abs(edit_dev), 2.0) * 100:.0f}% "
+         f"{'more' if edit_dev > 0 else 'less'} than your usual").replace("  ", " "),
         _clamp(-edit_dev / 1.2), 0.19,
         "How much you hedge, soften, and apologise here, against how you write to "
         "everyone else.",
@@ -371,6 +375,14 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
         state = "practical"
     else:
         state = "steady"
+
+    # Percentages off three messages are arithmetic, not evidence. The page
+    # says as much in words -- "not enough back-and-forth to say anything
+    # meaningful" -- and then printed "100% you / 0% them" below it. Where the
+    # reading is this thin the numbers keep their bars and lose their claims.
+    if confidence < THIN_READING:
+        signals = [replace(sig, display=_too_thin(sig, len(mine), len(theirs)))
+                   for sig in signals]
 
     return RelationshipProfile(
         contact_id=contact_id, name=contact.name,
@@ -444,6 +456,16 @@ def _headline(name: str, state: str, signals: list[Signal], trend: str,
                 + (" \u2014 and it's growing." if trend == "rising" else "."))
     return (f"Comfortable and holding. {best.label} is working well ({best.display}); "
             f"{worst.label.lower()} is the quieter side of it ({worst.display}).")
+
+
+# Below this the app already calls a thread "too early" and refuses it a state.
+THIN_READING = 0.2
+
+
+def _too_thin(sig: "Signal", mine: int, theirs: int) -> str:
+    """What to say instead of a percentage, when there is nothing behind it."""
+    total = mine + theirs
+    return f"too little to tell \u2014 {total} message{'' if total == 1 else 's'} between you"
 
 
 def profile_all(corpus: Corpus, now: datetime | None = None,

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from statistics import median
 
+from .quoted import is_quoted, my_name
 from ..models import Corpus, Message
 
 WINDOWS = (10, 30, 90, None)
@@ -157,7 +158,11 @@ def _baseline(corpus: Corpus, now: datetime) -> _Baseline:
     key = (id(corpus), len(corpus.messages), now)
     if key in _BASELINE:
         return _BASELINE[key]
-    mine_all = [m for m in corpus.messages if m.is_from_me and m.text]
+    # Text pasted into a chat is recorded as sent by me. It is not how I write,
+    # and this is what decides how every draft is worded, so it stays out.
+    me = my_name(corpus)
+    mine_all = [m for m in corpus.messages
+                if m.is_from_me and m.text and not is_quoted(m.text, me)]
     days, recent = None, mine_all
     for days in WINDOWS:
         recent = mine_all if days is None else [m for m in mine_all if now - m.ts <= timedelta(days=days)]
@@ -170,7 +175,8 @@ def _baseline(corpus: Corpus, now: datetime) -> _Baseline:
     doubles: Counter = Counter()
     for m in corpus.messages:                                  # chronological
         prev = last.get(m.thread_id)
-        if m.is_from_me and m.text and (cutoff is None or m.ts >= cutoff):
+        if (m.is_from_me and m.text and not is_quoted(m.text, me)
+                and (cutoff is None or m.ts >= cutoff)):
             if prev is None or m.ts - prev.ts > timedelta(hours=6):
                 openers.append(m)
             elif prev.is_from_me and m.ts - prev.ts <= timedelta(minutes=2):

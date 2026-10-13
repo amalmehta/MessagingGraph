@@ -1253,6 +1253,7 @@ const COLS = [
   [null, 'Last 20 weeks', p => spark(p.spark), 'Messages a week, drawn as a shape.'],
 ];
 const THIN = 0.35;        // the app's own confidence, below which it is guessing
+const THIN_READING = 0.2; // and below this it says so in words, as the server does
 const bar = (v, c, p) => (p && p.confidence < THIN)
   ? `<span class="num dim" title="Too little between you to read — ${
       p.total_messages} message${p.total_messages === 1 ? '' : 's'} in all">·</span>`
@@ -1355,12 +1356,12 @@ function viewPeople() {
   drawOverall();
   // The sortable headers go with the thead on a phone, so sorting gets its own
   // control there rather than quietly disappearing.
-  const thinBtn = $('#t-thin');
-  if (thinBtn) thinBtn.onclick = () => { S.showThin = !S.showThin; viewPeople(); };
   const pick = $('#people-sort');
   if (pick) pick.onchange = () => { S.sort = pick.value; S.sortDir = 1; viewPeople(); };
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
   const find = $('#people-find'), count = $('#people-count');
+  const thinBtn = $('#t-thin');
+  if (thinBtn) thinBtn.onclick = () => { S.showThin = !S.showThin; viewPeople(); };
   const applyFind = () => {
     const q = find.value.trim().toLowerCase();
     const trs = [...document.querySelectorAll('tbody tr')];
@@ -1372,7 +1373,15 @@ function viewPeople() {
       tr.hidden = !hit;
       shown += hit;
     }
-    count.textContent = q ? `${shown} of ${trs.length}` : '';
+    // Folding the unreadable threads away made the search lie: typing a name
+    // that is in those 47 returned "0 of 57" and nothing said where they went.
+    const alsoHidden = q && !S.showThin
+      ? thin.filter(p => p.name.toLowerCase().includes(q)).length : 0;
+    count.textContent = !q ? ''
+      : alsoHidden && !shown ? `not here — ${n(alsoHidden, 'match', 'matches')} among the folded-away threads`
+      : alsoHidden ? `${shown} of ${trs.length} · ${alsoHidden} more folded away`
+      : `${shown} of ${trs.length}`;
+    if (thinBtn) thinBtn.classList.toggle('nudge', !!alsoHidden);
   };
   find.oninput = applyFind;
   if (S.peopleQ) { find.value = S.peopleQ; applyFind(); }
@@ -1680,7 +1689,7 @@ async function openPerson(id) {
       <span class="dot-sep">·</span> last message ${esc(ago(p.last_contact))}</div>
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
-    ${p.vibe ? vibeCard(p.vibe) : ''}
+    ${p.vibe ? vibeCard(p.vibe, p) : ''}
     <div class="thankbox" id="thankbox"><button class="btn ghost" id="thank-btn">Draft a thank-you</button></div>
     <div class="metrics">
       <div class="metric"><div class="n">${p.msgs_per_week_recent.toFixed(1)}</div><div class="l">messages a week</div></div>
@@ -1882,8 +1891,13 @@ const DIM_LABEL = {
 // shared, and the note under the card says so.
 const moodWord = m => m >= 35 ? 'upbeat' : m >= 15 ? 'warm' : m > -10 ? 'even-keeled' : 'heavy-hearted';
 
-function vibeCard(v) {
+function vibeCard(v, p) {
   const signed = n => (n > 0 ? '+' : '') + Math.round(n);
+  // The signals above this already refuse to quote a percentage off a handful
+  // of messages. This line was still doing it: "20% upbeat · 0% heavy" from a
+  // five-message thread, directly under the sentence saying there is not
+  // enough here to read.
+  const thin = p && p.confidence < THIN_READING;
   const dims = Object.keys(DIM_LABEL).map(k => `
     <div class="vd ${v.top.includes(k) ? 'top' : ''}"><span>${DIM_LABEL[k]}</span>
       <i><b style="width:${Math.max(2, v.dimensions[k] || 0)}%"></b></i></div>`).join('');
@@ -1897,7 +1911,8 @@ function vibeCard(v) {
       <div class="gauge vg"><div class="mid"></div><i class="${v.mood >= 0 ? 'pos' : 'neg'}"
         style="${v.mood >= 0 ? 'left:50%' : 'right:50%'};width:${Math.min(50, Math.abs(v.mood) / 2)}%"></i></div>
       <span>theirs ${signed(v.mood_theirs)} · yours ${signed(v.mood_mine)}</span>
-      <span>${Math.round(v.positive_share * 100)}% upbeat · ${Math.round(v.heavy_share * 100)}% heavy</span>
+      <span>${thin ? 'too little to tell'
+        : `${Math.round(v.positive_share * 100)}% upbeat · ${Math.round(v.heavy_share * 100)}% heavy`}</span>
       <span class="shift">${esc(v.mood_shift)}</span>
     </div>
     <div class="benign">${esc(v.mood_note)}</div>
