@@ -21,6 +21,10 @@ async function postJSON(path, body) {
   return { ok: r.ok, data, error: r.ok ? '' : (data.detail || 'Something went wrong. Try again.') };
 }
 
+// n with its noun, agreeing: n(1, 'plan') -> "1 plan". Written out by hand in
+// a few places already, and missing in the places this fixes.
+const n = (k, singular, plural) => `${k} ${k === 1 ? singular : (plural || singular + 's')}`;
+
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -592,7 +596,7 @@ async function drawDrafts() {
   api('/api/voice').then(v => {
     const note = $('#voice-note');
     if (!note || !v.traits) return;
-    const span = v.window_days ? `your last ${v.window_days} days of messages` : 'all your messages';
+    const span = v.window_days ? `your last ${n(v.window_days, 'day')} of messages` : 'all your messages';
     note.textContent = `Your style, from ${span}: ${v.traits.join(' · ')}`;
   }).catch(() => {});
   const all = await api('/api/messages');
@@ -814,7 +818,7 @@ async function drawCircles() {
     <div class="circle">
       <div class="ctop"><b>${esc(c.name)}</b><span class="cmeta">${ago(c.days_idle)}</span></div>
       <div class="cmembers">${c.members.map(m => person(m.id, m.name)).join('')}</div>
-      <div class="cfoot"><span>${c.messages.toLocaleString()} messages · ${c.plans_done} plans happened${
+      <div class="cfoot"><span>${c.messages.toLocaleString()} messages · ${n(c.plans_done, 'plan')} happened${
         c.plans_open ? ` · ${c.plans_open} live` : ''}</span>
         <button class="btn primary propose" data-thread="${esc(c.thread_id)}">Propose a plan</button></div>
     </div>`).join('');
@@ -2020,7 +2024,7 @@ function simulate(raw) {
     const all = raw.nodes.filter(n => n.type === 'person').length;
     note.textContent = S.focus === 'everyone'
       ? 'node size = importance \u00b7 line = shared thread'
-      : `${shown} of ${all} people \u00b7 ${data.links.length} of ${raw.links.length} connections`;
+      : `${shown} of ${n(all, 'person', 'people')} \u00b7 ${data.links.length} of ${n(raw.links.length, 'connection')}`;
   }
   const svg = $('#g'), W = svg.clientWidth || 900, H = svg.clientHeight || 560;
   const NS = 'http://www.w3.org/2000/svg';

@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from ..models import Corpus, Message, RelationshipProfile, Signal, SELF_ID
 from ..names import short_name
 from . import lexicon
+from .phrasing import a_week
 
 CONVO_GAP = timedelta(hours=6)      # silence long enough to count as a new conversation
 REPLY_CAP = 48 * 3600               # ignore "replies" slower than this as latency outliers
@@ -416,7 +417,7 @@ def _headline(name: str, state: str, signals: list[Signal], trend: str,
                 f"to say anything meaningful, which is exactly what a new thread "
                 f"looks like.")
     if state == "quiet":
-        return (f"You and {first} used to talk about {per_week:.0f} times a week and "
+        return (f"You and {first} used to talk about {a_week(per_week)} and "
                 f"it's gone quiet. Threads drift for all sorts of reasons that have "
                 f"nothing to do with how either of you feels about the other.")
     if state == "uneven":

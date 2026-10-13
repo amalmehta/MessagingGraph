@@ -21,6 +21,7 @@ from statistics import median
 from ..models import Corpus, Plan, RelationshipProfile
 from ..names import greeting_name, short_name
 from .circles import REVIVE_WINDOW
+from .phrasing import a_week, count
 from .proposals import propose
 from .voice import (Style, check_in_parts, follow_up_parts, plan_parts, reconnect_parts, reply_parts,
                     style_for, write)
@@ -97,7 +98,7 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
             if any(x.is_from_me and x.ts > msg.ts and key in x.text.lower() for x in dm):
                 break
             days = (now - msg.ts).days
-            add("follow_up", f"{first} mentioned their {event} {days} days ago, and you haven't "
+            add("follow_up", f"{first} mentioned their {event} {count(days, 'day')} ago, and you haven't "
                 "asked about it since.",
                 lambda s, event=event: follow_up_parts(style, name, event, s), 2,
                 58 + 0.32 * p.importance, detail=msg.text[:180])
@@ -117,8 +118,8 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
                 50 + 0.35 * p.importance, detail=prop.when_label)
 
         if p.state == "quiet" and p.msgs_per_week > 1.2:
-            add("reconnect", f"You used to talk about {p.msgs_per_week:.0f} times a week. "
-                f"It's been {age} days.",
+            add("reconnect", f"You used to talk about {a_week(p.msgs_per_week)}. "
+                f"It's been {count(age, 'day')}.",
                 lambda s: reconnect_parts(style, name, s), 3,
                 46 + 0.3 * p.warmth + min(15, age / 12), warm=True)
         elif p.state in ("close", "steady"):
@@ -126,7 +127,7 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
             gaps = [(b.ts - a.ts).days for a, b in zip(opens, opens[1:])]
             usual = median(gaps) if gaps else 7
             if age >= max(10, 2.5 * usual):
-                add("check_in", f"One of your closer threads, and it's been {age} days "
+                add("check_in", f"One of your closer threads, and it's been {count(age, 'day')} "
                     f"when you'd usually talk every {max(1, round(usual))}.",
                     lambda s: check_in_parts(style, name, s), 3, 40 + 0.35 * p.importance)
 

@@ -845,6 +845,36 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nsaying numbers out loud:")
+    from app.analysis.phrasing import a_week as _aw, count as _ct, rate as _rt
+    # The one that shipped. Both call sites are guarded by rate > 1.2, so the
+    # synthetic people -- who all talk plenty -- never landed on it, and it took
+    # a real history to show "You used to talk about 1 times a week".
+    check("the rate that shipped as \"1 times a week\" reads as once",
+          _aw(1.3) == "once a week" and _aw(1.2) == "once a week")
+    check("no weekly rate says 0, 1 or 2 times",
+          not [r for r in (x / 20 for x in range(400))
+               if _aw(r).startswith(("0 ", "1 ", "2 "))])
+    check("a rate under half a message says so rather than rounding to none",
+          _aw(0.3) == "every couple of weeks")
+    # :.0f rounds halves to even, which is what produced the bug in the first
+    # place: 2.5 came back as "2", contradicting the branch above it.
+    check("and a half rounds up, so 2.5 is not \"2 times a week\"",
+          _aw(2.5) == "3 times a week" and _rt(2.5, "message") == "3 messages")
+    check("a count agrees with its noun",
+          (_ct(1, "day"), _ct(2, "day"), _ct(1, "person", "people")) ==
+          ("1 day", "2 days", "1 person"))
+    _src = "".join(Path(f"app/analysis/{m}.py").read_text()
+                   for m in ("suggestions", "messages", "relationships", "proposals"))
+    check("and no sentence formats a number straight onto a plural any more",
+          not re.search(r":\.[0-9]f\}[^\"]{0,3}(days|times|weeks|messages|plans)", _src)
+          and "{idle} days" not in _src and "{days} days" not in _src
+          and "{age} days" not in _src and "{total} plans" not in _src)
+    _appjs = Path("app/static/app.js").read_text()
+    check("nor does the page that draws the circles and the graph",
+          "${c.plans_done} plans" not in _appjs and "${all} people" not in _appjs
+          and "raw.links.length} connections" not in _appjs)
+
     print("\nthe page you land on:")
     _js = Path("app/static/app.js").read_text()
     _now = _js[_js.index("function viewNow()"):_js.index("function wireJumps()")]
