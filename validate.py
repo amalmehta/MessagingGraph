@@ -845,6 +845,48 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\ndrafts that don't all say the same thing:")
+    from app.analysis.messages import build_messages as _bm
+    from app.analysis.phrasing import gap_words as _gw
+    from app.analysis.voice import RECONNECT as _RC, _case as _cs
+    _shown = _bm(app_state.corpus, app_state.profiles, app_state.plans, app_state.now)
+    _rec = [d for d in _shown if d.kind == "reconnect"]
+    _body = lambda t: "\n".join(t.split("\n")[1:]) or t
+    # The seed the page sends is a step, 0 until you ask for another version, so
+    # every person started on the same option and a real history came out with
+    # one wording under a dozen names.
+    check("no two drafts on screen say the same thing",
+          len({_body(d.draft) for d in _shown}) == len(_shown),
+          f"{len(_shown)} drafts, {len(_rec)} of them reconnect")
+    check("and the same is true across every reconnect there is",
+          len({_body(d.draft) for d in _bm(app_state.corpus, app_state.profiles,
+                                           app_state.plans, app_state.now, limit=500)
+               if d.kind == "reconnect"}) > 1)
+    _a = _bm(app_state.corpus, app_state.profiles, app_state.plans, app_state.now)
+    check("a draft reads the same every time you open the app",
+          [d.draft for d in _a] == [d.draft for d in _shown])
+    if _rec:
+        _one = _rec[0]
+        _nxt = next(d.draft for d in _bm(app_state.corpus, app_state.profiles, app_state.plans,
+                                         app_state.now, seeds={_one.id: 1}) if d.id == _one.id)
+        check("and another version really is another one",
+              _nxt != _one.draft)
+    check("there is more than a handful of ways to say it",
+          len(_RC) >= 10)
+    # How long it has been is something the app knows and was throwing away.
+    check("the gap gets named rather than called 'too long'",
+          (_gw(14), _gw(30), _gw(210), _gw(400), _gw(1200)) ==
+          ("2 weeks", "a few weeks", "7 months", "the better part of a year", "over 3 years"))
+    check("and no gap says \"1 weeks\" or \"over 1 years\"",
+          not [d for d in range(1, 4000) if re.search(r"\b1 (weeks|months|years)\b", _gw(d))])
+    # A line starting with a digit had its first word capitalised instead:
+    # "6 months is far too long" came out "6 Months is far too long".
+    class _Plain:
+        lowercase = False
+    check("a sentence that opens with a number keeps its lower case",
+          _cs("6 months is far too long", _Plain()) == "6 months is far too long"
+          and _cs("hi. how are you", _Plain()) == "Hi. How are you")
+
     print("\nsaying numbers out loud:")
     from app.analysis.phrasing import a_week as _aw, count as _ct, rate as _rt
     # The one that shipped. Both call sites are guarded by rate > 1.2, so the
