@@ -476,7 +476,9 @@ function go(v, push = true) {
 function greeting() {
   const h = new Date().getHours();
   const part = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  return `${part}. Here's how everyone's doing.`;
+  // The page used to promise a status report on everyone and then hand you five
+  // counters. It answers one question now, so it says which one.
+  return `${part}. Here's who to write to.`;
 }
 
 const SOURCE_LABEL = { synthetic: 'demo data', imessage: 'your messages' };
@@ -496,79 +498,74 @@ function demoBanner(o) {
 
 function viewNow() {
   const o = S.overview, v = o.states, pc = o.plans;
-  const noticing = o.suggestions.filter(a => !['reconnect', 'revive_plan', 'check_in'].includes(a.kind));
   $('#main').innerHTML = `
     <h1>${greeting()}</h1>
-    <div class="sub">Computed on this machine from ${o.messages.toLocaleString()}
-      messages across ${o.threads} threads. Nothing has left your computer — and
-      nothing here knows what kind of year anyone is having, so treat it as a
-      prompt to think, not a scoreboard.</div>
+    <div class="sub tight">Who's worth a message, and something to say. Copy one into
+      Messages or skip it — nothing sends from here.</div>
     ${demoBanner(o)}
-    <div class="stats">
-      <button class="stat jump" data-jump="plans-confirmed"><div class="n" style="color:var(--adds)">${pc.confirmed}</div>
-        <div class="l">plans confirmed</div></button>
-      <button class="stat jump" data-jump="plans-motion"><div class="n" style="color:var(--accent)">${pc.in_motion}</div>
-        <div class="l">still being discussed</div></button>
-      <button class="stat jump" data-jump="plans-revive"><div class="n" style="color:var(--stale)">${pc.revive}</div>
-        <div class="l">worth reviving <span class="hint">· last 90 days</span></div></button>
-      <div class="stat"><div class="n" style="color:var(--adds)">${v.close}</div><div class="l">close right now</div></div>
-      <div class="stat"><div class="n" style="color:var(--unclear)">${v.quiet}</div><div class="l">gone quiet</div></div>
-    </div>
-    ${o.unnamed ? `<div class="notice"><div><b>${o.unnamed} ${o.unnamed === 1 ? 'person you talk to has' : 'people you talk to have'} no name yet.</b>
-      Name them so their profiles and drafts make sense.</div>
-      <button class="btn primary name-them">Name them</button></div>` : ''}
-    ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
-      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div></div>` : ''}
-    ${locationNotice(o)}
-    <h2>Messaging rate</h2>
-    <div class="chartbox"><div class="chead">
-      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
-      <div class="ranges">${[20, 40, 80].map(w =>
-        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
-    </div><div class="plot" id="rate"></div></div>
-    <h2>Messages worth sending</h2>
-    <div class="sub tight">Drafted from your history and written the way you've been texting lately.
-      Copy one into Messages, ask for another version, or skip it. Nothing sends from here.</div>
     <div class="voicenote" id="voice-note"></div>
     <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
     <h2>Say thanks</h2>
-    <div class="sub tight">Thank-you notes tied to something that actually happened: a favour you thanked
-      someone for, a year of texting, something you did together. Copy one, or write your own.</div>
+    <div class="sub tight">Tied to something that actually happened — a favour, a year of
+      texting, something you did together.</div>
     <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
-    <h2>Get a crew together</h2>
-    <div class="sub tight">For something that needs more than one person — a league, a trip, a
-      standing game night. Say what it is and this picks who to ask, based on who talks about it,
-      who's actually done it with you, and who already knows each other.</div>
-    <div id="crew-panel"><div class="empty">Loading…</div></div>
-    <h2>Plans</h2>
-    <div id="plans-panel"><div class="empty">Loading plans…</div></div>
-    <h2>Who's connected</h2>
-    <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
-      the other. Interests come from what you talk about and actually do together.</div>
-    <div id="circles-panel"><div class="empty">Loading…</div></div>
-    ${noticing.length ? `<h2>Worth noticing</h2>
-    <div class="cards">${noticing.map(a => `
-      <div class="card ${a.tone}" data-id="${esc(a.target_id)}" data-kind="${a.kind}">
-        <div class="top"><span class="who">${esc(a.who)}</span>
-          <span class="kind">${a.kind.replace('_', ' ')}</span></div>
-        <div class="note">${esc(a.observation)}</div>
-        <div class="act">${esc(a.action)}</div>
-      </div>`).join('')}</div>` : ''}
-    <div class="foot-note">None of this is a to-do list. Skipping all of it is a
-      perfectly good week.</div>`;
+    ${notices(o)}
+    <div class="statline">
+      <button class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>
+      <button class="jump" data-goto="graph" data-jump="plans-motion"><b>${pc.in_motion}</b> being discussed</button>
+      <button class="jump" data-goto="graph" data-jump="plans-revive"><b>${pc.revive}</b> worth reviving</button>
+      <span><b>${v.close}</b> close right now</span>
+      <span><b>${v.quiet}</b> gone quiet</span>
+    </div>
+    <div class="foot-note">From ${o.messages.toLocaleString()} messages across ${o.threads}
+      threads on this Mac. None of it is a to-do list — skipping all of it is a perfectly
+      good week.</div>`;
   document.querySelectorAll('.card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
-  document.querySelectorAll('.stat.jump').forEach(b => b.onclick = () =>
-    document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  document.querySelectorAll('.ranges .chip').forEach(c =>
-    c.onclick = () => { S.weeks = +c.dataset.w; viewNow(); });
+  wireJumps();
   drawDrafts();
   drawThanks();
-  drawCrew();
-  drawPlans();
-  drawCircles();
-  drawOverall();
+}
+
+// The three plan counts live on Now but the plans themselves are on the
+// brainstorm, so the jump has to switch view first and scroll afterwards. It
+// waits to be told the panel has rendered rather than polling for it: the first
+// attempt gave up after two seconds and the plans routinely take longer.
+function wireJumps() {
+  document.querySelectorAll('.jump[data-goto]').forEach(b => b.onclick = () => {
+    S.pendingJump = b.dataset.jump;
+    if (S.view !== b.dataset.goto) go(b.dataset.goto);
+    else settleJump();
+  });
+}
+
+// Called by each panel once it has drawn. Whoever renders the element the jump
+// was aiming for is the one that scrolls to it.
+function settleJump() {
+  if (!S.pendingJump) return;
+  const id = S.pendingJump;
+  const el = document.getElementById(id);
+  if (!el) return;
+  S.pendingJump = null;
+  // Not smooth. The two panels below this one are still filling in, and every
+  // insertion cancelled the animation, so the page sat at the top instead. A
+  // jump that crosses views should land anyway, and instantly is the right feel
+  // for one: re-asserted on the next frame to absorb whatever lands late.
+  el.scrollIntoView({ block: 'start' });
+  requestAnimationFrame(() =>
+    document.getElementById(id)?.scrollIntoView({ block: 'start' }));
+}
+
+// Both the Now page and People open with the same two corrections to offer, and
+// a third that is only ever an aside. One place decides how they are worded.
+function notices(o) {
+  return `${o.unnamed ? `<div class="notice"><div><b>${o.unnamed} ${o.unnamed === 1 ? 'person you talk to has' : 'people you talk to have'} no name yet.</b>
+      Name them so their profiles and drafts make sense.</div>
+      <button class="btn primary name-them">Name them</button></div>` : ''}
+    ${locationNotice(o)}
+    ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
+      ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div></div>` : ''}`;
 }
 
 // ---------------------------------------------------------------- drafts
@@ -1182,6 +1179,7 @@ async function drawPlans() {
   });
   const more = host.querySelector('.more-revive');
   if (more) more.onclick = () => { S.showAllRevive = !S.showAllRevive; drawPlans(); };
+  settleJump();              // a count on Now may have been aiming at one of these
 }
 
 async function drawOverall() {
@@ -1241,6 +1239,8 @@ const bar = (v, c) => `<span class="num">${v.toFixed(0)}</span>
   <div class="bar"><i style="width:${Math.min(100, v)}%;background:${c}"></i></div>`;
 
 function viewPeople() {
+  const noticing = (S.overview.suggestions || []).filter(
+    a => !['reconnect', 'revive_plan', 'check_in'].includes(a.kind));
   const rows = [...S.people].sort((a, b) => {
     const k = S.sort;
     const key = p => k === 'vibe' ? (p.vibe?.name ?? '') : k === 'location' ? (p.location?.place ?? '') : p[k];
@@ -1257,6 +1257,21 @@ function viewPeople() {
     ${S.overview.unnamed ? `<div class="notice"><div><b>${S.overview.unnamed} without a name.</b>
       Name them so you can tell who's who.</div><button class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(S.overview)}
+    <div class="chartbox"><div class="chead">
+      <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
+      <div class="ranges">${[20, 40, 80].map(w =>
+        `<span class="chip sm ${S.weeks === w ? 'on' : ''}" data-w="${w}">${w}w</span>`).join('')}</div>
+    </div><div class="plot" id="rate"></div></div>
+    ${noticing.length ? `<h2>Worth noticing</h2>
+    <div class="sub tight">Where the pattern is worth a second look rather than a message.</div>
+    <div class="cards">${noticing.map(a => `
+      <div class="card ${a.tone}" data-id="${esc(a.target_id)}" data-kind="${a.kind}">
+        <div class="top"><span class="who">${esc(a.who)}</span>
+          <span class="kind">${a.kind.replace('_', ' ')}</span></div>
+        <div class="note">${esc(a.observation)}</div>
+        <div class="act">${esc(a.action)}</div>
+      </div>`).join('')}</div>` : ''}
+    <h2>Everyone</h2>
     <div class="peoplebar">
       <input type="search" id="people-find" class="exfind" autocomplete="off"
         placeholder="Find someone…" aria-label="Filter these people">
@@ -1307,6 +1322,10 @@ function viewPeople() {
     };
   });
   paintArchBar();
+  document.querySelectorAll('.cards .card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
+  document.querySelectorAll('.ranges .chip').forEach(c =>
+    c.onclick = () => { S.weeks = +c.dataset.w; viewPeople(); });
+  drawOverall();
   // The sortable headers go with the thead on a phone, so sorting gets its own
   // control there rather than quietly disappearing.
   const pick = $('#people-sort');
@@ -1926,7 +1945,20 @@ async function viewGraph() {
         <b style="margin-top:4px">connection</b>
         ${['close', 'steady', 'practical', 'uneven', 'quiet'].map(k =>
           `<span><i style="background:${STATE_COLOR_PERSON[k]}"></i>${STATE_LABEL[k]}</span>`).join('')}
-      </div></div>`;
+      </div></div>
+    <h2>Plans</h2>
+    <div class="sub tight">Pulled out of message text, and the same plans the graph
+      draws between people.</div>
+    <div id="plans-panel"><div class="empty">Loading plans…</div></div>
+    <h2>Get a crew together</h2>
+    <div class="sub tight">For something that needs more than one person — a league, a trip, a
+      standing game night. Say what it is and this picks who to ask, based on who talks about it,
+      who's actually done it with you, and who already knows each other.</div>
+    <div id="crew-panel"><div class="empty">Loading…</div></div>
+    <h2>Who's connected</h2>
+    <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
+      the other. Interests come from what you talk about and actually do together.</div>
+    <div id="circles-panel"><div class="empty">Loading…</div></div>`;
   $('#t-stale').onclick = () => { S.includeStale = !S.includeStale; viewGraph(); };
   document.querySelectorAll('[data-focus]').forEach(c => c.onclick = () => {
     S.focus = c.dataset.focus;
@@ -1934,6 +1966,9 @@ async function viewGraph() {
       o.classList.toggle('on', o.dataset.focus === S.focus));
     if (S.graph) simulate(S.graph);
   });
+  drawPlans();
+  drawCrew();
+  drawCircles();
   S.graph = await api('/api/graph?include_stale=' + S.includeStale);
   if (S.view === 'graph') simulate(S.graph);
 }
