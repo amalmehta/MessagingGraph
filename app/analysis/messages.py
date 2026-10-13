@@ -14,6 +14,7 @@ from a keyword.
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 
 import re
 from dataclasses import dataclass, field, replace
@@ -21,7 +22,7 @@ from datetime import datetime, timedelta
 from statistics import median
 
 from ..models import Corpus, Plan, RelationshipProfile
-from ..names import greeting_name, short_name
+from ..names import greeting_name, looks_like_handle, short_name
 from .circles import REVIVE_WINDOW
 from .phrasing import a_week, count, gap_words
 from .proposals import propose
@@ -91,6 +92,12 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
             # "another version" still just moves one along.
             seed = seeds.get(did, 0)
             start = _offset(did) + seed
+            # A draft you cannot tell the recipient of is worth less than one
+            # you can: 7 of the 8 on this history were addressed to a bare
+            # phone number. Nudged down, not dropped -- you may well know who
+            # that number is, and naming them puts it straight back.
+            if looks_like_handle(p.name):
+                value *= 0.8
             redraw[did] = (lambda i, make=make, style=style, warm=warm:
                            write(make(i), style, warm=warm), start, variants)
             candidates.append(Draft(did, kind, p.name, [p.contact_id], thread.id, why,
@@ -182,7 +189,34 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
     out += group_drafts[:2]
 
     out.sort(key=lambda d: d.value, reverse=True)
-    return _spread(out[:limit], redraw)
+    return _spread(_mix(out, limit), redraw)
+
+
+# Five of the eight drafts were reconnects. Varying the wording stopped them
+# reading as one message; this stops them reading as one idea. A list that
+# offers four different reasons to write is worth more than the eight
+# best-scoring instances of the same reason.
+MAX_PER_KIND = 3
+
+
+def _mix(drafts: list[Draft], limit: int) -> list[Draft]:
+    """The best drafts, without letting any one reason crowd out the rest."""
+    picked, held, seen = [], [], Counter()
+    for d in drafts:
+        if len(picked) == limit:
+            break
+        if seen[d.kind] < MAX_PER_KIND:
+            picked.append(d)
+            seen[d.kind] += 1
+        else:
+            held.append(d)
+    # Better a fourth reconnect than an empty slot, if nothing else is left.
+    for d in held:
+        if len(picked) == limit:
+            break
+        picked.append(d)
+    picked.sort(key=lambda d: d.value, reverse=True)
+    return picked
 
 
 def _body(text: str) -> str:

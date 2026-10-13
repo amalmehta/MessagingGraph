@@ -117,10 +117,10 @@ const STATE_LABEL = {
 };
 
 const S = { view: 'now', overview: null, people: null, graph: null, theme: null,
-  includeStale: false, sort: 'importance', weeks: 40, focus: 'everyone',
+  includeStale: false, sort: 'importance', weeks: 40, focus: 'connected',
   // Which kinds of conversation put a line on the graph. Independent, because
   // they answer different questions: who you talk to, and who knows whom.
-  ties: { direct: true, group: true } };
+  ties: { direct: false, group: true } };
 
 // ---------------------------------------------------------------- charts
 // The two series are --series-you / --series-them, set per theme in styles.css
@@ -518,11 +518,11 @@ function viewNow() {
     <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
     ${notices(o)}
     <div class="statline">
-      <button class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>
-      <button class="jump" data-goto="graph" data-jump="plans-motion"><b>${pc.in_motion}</b> being discussed</button>
-      <button class="jump" data-goto="graph" data-jump="plans-revive"><b>${pc.revive}</b> worth reviving</button>
-      <span><b>${v.close}</b> close right now</span>
-      <span><b>${v.quiet}</b> gone quiet</span>
+      ${pc.confirmed ? `<button class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>` : ''}
+      ${pc.in_motion ? `<button class="jump" data-goto="graph" data-jump="plans-motion"><b>${pc.in_motion}</b> being discussed</button>` : ''}
+      ${pc.revive ? `<button class="jump" data-goto="graph" data-jump="plans-revive"><b>${pc.revive}</b> worth reviving</button>` : ''}
+      ${v.close ? `<span><b>${v.close}</b> close right now</span>` : ''}
+      ${v.quiet ? `<span><b>${v.quiet}</b> gone quiet</span>` : ''}
     </div>
     <div class="foot-note">From ${o.messages.toLocaleString()} messages across ${o.threads}
       threads on this Mac. None of it is a to-do list — skipping all of it is a perfectly
@@ -567,8 +567,18 @@ function settleJump() {
 // Both the Now page and People open with the same two corrections to offer, and
 // a third that is only ever an aside. One place decides how they are worded.
 function notices(o) {
-  return `${o.unnamed ? `<div class="notice"><div><b>${o.unnamed} ${o.unnamed === 1 ? 'person you talk to has' : 'people you talk to have'} no name yet.</b>
-      Name them so their profiles and drafts make sense.</div>
+  // When most of the address book is still digits, this is not one chore among
+  // several -- it is the thing holding everything else back, and the notice
+  // should say which. 91 of 104 here, and it showed: the drafts and the
+  // observations were mostly addressed to phone numbers.
+  const total = (S.people || []).length;
+  const most = total && o.unnamed / total > 0.5;
+  return `${o.unnamed ? `<div class="notice"><div><b>${n(o.unnamed, 'person', 'people')} you talk to ${
+      o.unnamed === 1 ? 'is' : 'are'} still just a number.</b>
+      ${most ? `That's most of them, and it is why the drafts and the observations
+      keep going to digits instead of names — everything here reads better once
+      the app knows who is who.`
+      : 'Name them so their profiles and drafts make sense.'}</div>
       <button class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(o)}
     ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
@@ -1218,11 +1228,11 @@ const COLS = [
     'Whether you have been talking more or less than usual lately.'],
   ['msgs_per_week_recent', 'Msgs/wk', p => `<span class="num">${p.msgs_per_week_recent.toFixed(1)}</span>`,
     'Messages a week between you, recently.'],
-  ['warmth', 'Warmth', p => bar(p.warmth, PAINT.adds),
+  ['warmth', 'Warmth', p => bar(p.warmth, PAINT.adds, p),
     'Affection, laughter, reactions, and them asking how you are. 0–100.'],
-  ['importance', 'Importance', p => bar(p.importance, PAINT.accent),
+  ['importance', 'Importance', p => bar(p.importance, PAINT.accent, p),
     'How much of your messaging life this thread is at the moment. 0–100.'],
-  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim),
+  ['self_editing', 'Your care level', p => bar(p.self_editing, p.self_editing > 55 ? PAINT.neutral : PAINT.dim, p),
     'How much more carefully you write to them than you do to everyone else.'],
   ['open_plans', 'Plans', p => `<span class="num">${p.open_plans || '·'}</span>`,
     'Things the two of you have talked about doing that have not happened yet.'],
@@ -1242,13 +1252,21 @@ const COLS = [
   // clicking the second reverse the first instead of sorting by itself.
   [null, 'Last 20 weeks', p => spark(p.spark), 'Messages a week, drawn as a shape.'],
 ];
-const bar = (v, c) => `<span class="num">${v.toFixed(0)}</span>
+const THIN = 0.35;        // the app's own confidence, below which it is guessing
+const bar = (v, c, p) => (p && p.confidence < THIN)
+  ? `<span class="num dim" title="Too little between you to read — ${
+      p.total_messages} message${p.total_messages === 1 ? '' : 's'} in all">·</span>`
+  : `<span class="num">${v.toFixed(0)}</span>
   <div class="bar"><i style="width:${Math.min(100, v)}%;background:${c}"></i></div>`;
 
 function viewPeople() {
   const noticing = (S.overview.suggestions || []).filter(
     a => !['reconnect', 'revive_plan', 'check_in'].includes(a.kind));
-  const rows = [...S.people].sort((a, b) => {
+  // Almost half these rows are threads with too little in them to say anything
+  // about. Still here, one click away, but not in front of the ones that read.
+  const thin = S.people.filter(p => p.confidence < THIN);
+  const rows = [...(S.showThin ? S.people : S.people.filter(p => p.confidence >= THIN))]
+    .sort((a, b) => {
     const k = S.sort;
     const key = p => k === 'vibe' ? (p.vibe?.name ?? '') : k === 'location' ? (p.location?.place ?? '') : p[k];
     const x = key(a), y = key(b);
@@ -1287,6 +1305,8 @@ function viewPeople() {
           `<option value="${c[0]}"${S.sort === c[0] ? ' selected' : ''}>${esc(c[1])}</option>`
         ).join('')}</select></label>
       <span class="hint" id="people-count"></span>
+      ${thin.length ? `<button class="btn ghost sm" id="t-thin">${S.showThin ? 'Hide' : 'Show'} ${
+        n(thin.length, 'thread')} with too little to read</button>` : ''}
     </div>
     <div id="archwrap"></div>
     ${rows.length ? '' : `<div class="notice quiet"><div><b>Nobody here.</b>
@@ -1335,6 +1355,8 @@ function viewPeople() {
   drawOverall();
   // The sortable headers go with the thead on a phone, so sorting gets its own
   // control there rather than quietly disappearing.
+  const thinBtn = $('#t-thin');
+  if (thinBtn) thinBtn.onclick = () => { S.showThin = !S.showThin; viewPeople(); };
   const pick = $('#people-sort');
   if (pick) pick.onchange = () => { S.sort = pick.value; S.sortDir = 1; viewPeople(); };
   // Filtering hides rows rather than re-rendering, so what you have typed keeps focus.
