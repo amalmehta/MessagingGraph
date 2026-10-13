@@ -374,25 +374,59 @@ RECONNECT = [
     [("say", "it's been way too long"), ("ask", "how've you been")],
     [("say", "you crossed my mind today"), ("ask", "how are things")],
     [("ask", "how've you been"), ("say", "feels like forever")],
-    [("say", "just realised it's been {gap}"), ("ask", "how are you")],
     [("say", "thinking of you"), ("ask", "what have you been up to")],
-    [("say", "can't believe it's been {gap}"), ("ask", "what's new with you")],
     [("ask", "how have things been"), ("say", "been meaning to message for ages")],
     [("say", "hope you're doing well"), ("ask", "how's everything going")],
-    [("say", "{gap} is far too long"), ("ask", "how are you doing")],
     [("ask", "how are you"), ("say", "been thinking about you lately")],
 ]
-# Without a gap to name, the ones built around one would read oddly.
-RECONNECT_PLAIN = [o for o in RECONNECT if not any("{gap}" in t for _, t in o)]
+RECONNECT_GAP = [
+    [("say", "just realised it's been {gap}"), ("ask", "how are you")],
+    [("say", "can't believe it's been {gap}"), ("ask", "what's new with you")],
+    [("say", "{gap} is far too long"), ("ask", "how are you doing")],
+]
+# Something only true of them. Written out one interest at a time rather than
+# templated, because "still film & tv?" is not a thing anyone says -- and the
+# three with no line that reads right without knowing more (pets, sports,
+# coffee) simply don't get one, and fall back to the general pool.
+INTEREST_LINE = {
+    "climbing": "are you still climbing much",
+    "hiking & outdoors": "been getting outside much lately",
+    "running": "are you still running",
+    "cycling": "are you still riding",
+    "food": "been anywhere good to eat lately",
+    "music": "heard anything good lately",
+    "film & tv": "seen anything good lately",
+    "games": "still playing anything good",
+    "books": "read anything good lately",
+    "art & making": "still making things",
+    "travel": "been anywhere good lately",
+}
+RECONNECT_TOPIC = [
+    [("say", "it's been {gap}"), ("ask", "{topic}")],
+    [("ask", "{topic}"), ("say", "been way too long")],
+    [("say", "you crossed my mind the other day"), ("ask", "{topic}")],
+]
 
 
-def reconnect_options(gap: str) -> int:
-    return len(RECONNECT if gap else RECONNECT_PLAIN)
+def _reconnect_pool(gap: str, topic: str) -> list:
+    pool = list(RECONNECT)
+    if gap:
+        pool += RECONNECT_GAP
+    if topic:
+        # Needs the gap too, and one of the three says so.
+        pool += RECONNECT_TOPIC if gap else RECONNECT_TOPIC[1:]
+    return pool
 
 
-def reconnect_parts(style: Style, name: str | None, seed: int, gap: str = "") -> list[tuple[str, str]]:
-    pool = RECONNECT if gap else RECONNECT_PLAIN
-    chosen = [(k, t.replace("{gap}", gap)) for k, t in pool[seed % len(pool)]]
+def reconnect_options(gap: str = "", topic: str = "") -> int:
+    return len(_reconnect_pool(gap, topic))
+
+
+def reconnect_parts(style: Style, name: str | None, seed: int,
+                    gap: str = "", topic: str = "") -> list[tuple[str, str]]:
+    pool = _reconnect_pool(gap, topic)
+    chosen = [(k, t.replace("{gap}", gap).replace("{topic}", topic))
+              for k, t in pool[seed % len(pool)]]
     return [greet(style, name)] + chosen
 
 
@@ -401,9 +435,22 @@ def check_in_parts(style: Style, name: str | None, seed: int) -> list[tuple[str,
     return [greet(style, name)] + options[seed % len(options)]
 
 
-def follow_up_parts(style: Style, name: str | None, event: str, seed: int) -> list[tuple[str, str]]:
-    options = [[("ask", f"how did the {event} go")],
-               [("say", f"been thinking about your {event}"), ("ask", "how'd it go")]]
+def follow_up_options(sure: bool) -> int:
+    return 2 if sure else 1
+
+
+def follow_up_parts(style: Style, name: str | None, event: str, seed: int,
+                    sure: bool = True) -> list[tuple[str, str]]:
+    """`sure` is whether the thing is known to be theirs.
+
+    "Been thinking about your wedding" is only safe when they said "my wedding".
+    Off the back of a bare "had a wedding" the app knows one came up and not
+    whose it was, and the neutral line is the only honest one -- the page was
+    already careful to say "a wedding" and then the draft said "your".
+    """
+    options = [[("ask", f"how did the {event} go")]]
+    if sure:
+        options.append([("say", f"been thinking about your {event}"), ("ask", "how'd it go")])
     return [greet(style, name)] + options[seed % len(options)]
 
 

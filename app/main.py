@@ -21,8 +21,8 @@ from pydantic import BaseModel
 from .analysis.circles import activity_of, connections, plans_overview
 from .analysis.crews import build_crew, suggest_activities
 from .analysis.gratitude import build_gratitude
-from .analysis.messages import build_messages
-from .analysis.network import enrich
+from .analysis.messages import build_messages, topic_lines
+from .analysis.network import enrich, interests
 from .analysis.plans import OPEN_STATES
 from .analysis.proposals import propose
 from .analysis.series import contact_series, overall_series, sparkline_points
@@ -119,6 +119,19 @@ def network() -> dict:
         _network.update(version=state.version,
                         value=enrich(base, state.corpus, state.plans, state.profiles))
     return _network["value"]
+
+
+_topics: dict = {}
+
+
+def topics() -> dict[str, str]:
+    """One thing worth asking each person about. Cached with the data: scanning
+    every message for interests takes half a second, and a draft gets rebuilt
+    every time you press "another version"."""
+    if _topics.get("version") != state.version:
+        _topics.update(version=state.version,
+                       value=topic_lines(interests(state.corpus, state.plans)))
+    return _topics["value"]
 
 
 def enc_suggestions() -> list[dict]:
@@ -350,7 +363,8 @@ def messages_worth_sending(redraft: str | None = None, seed: int = 0):
     """Drafts ranked by how much they'd likely mean. `redraft` asks for another
     version of one draft; nothing is stored and nothing is sent."""
     seeds = {redraft: max(0, seed)} if redraft else None
-    return enc(build_messages(state.corpus, state.profiles, state.plans, state.now, seeds))
+    return enc(build_messages(state.corpus, state.profiles, state.plans, state.now, seeds,
+                              topics=topics()))
 
 
 @app.get("/api/voice")

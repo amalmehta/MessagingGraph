@@ -131,6 +131,12 @@ def corr(name: str, xs: list[float], ys: list[float], floor: float) -> None:
     check(f"{name} correlates with ground truth (r >= {floor})", r >= floor, f"r = {r:.2f}")
 
 
+class _Plain2:
+    """Only the fields the phrasing helpers read."""
+    lowercase = False
+    greeting = ""
+
+
 def main() -> int:
     corpus = SyntheticSource().load()
     plans = extract_plans(corpus)
@@ -845,6 +851,59 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nwhose thing is it anyway:")
+    from app.analysis.messages import whose as _wh, topic_lines as _tl, TOPIC_EVIDENCE as _TE
+    from app.analysis.voice import (INTEREST_LINE as _IL, follow_up_parts as _fp,
+                                    follow_up_options as _fo, reconnect_parts as _rp,
+                                    reconnect_options as _ro, _reconnect_pool as _pool)
+    # The one that was wrong on this Mac: them asking about MY interview, read
+    # as them having had one, and answered with "how did the interview go".
+    check("them asking about mine is not them telling me about theirs",
+          _wh("How do u feel about the interview") == ("mine", "interview")
+          and _wh("how did your interview go") == ("mine", "interview"))
+    check("only \"my X\" makes it theirs",
+          _wh("my interview is tomorrow") == ("theirs", "interview"))
+    check("\"our X\" is neither of ours alone",
+          _wh("our trip is booked") == ("ours", "trip"))
+    check("and a bare \"a X\" they are narrating is a guess, marked as one",
+          _wh("had a wedding and work stuff") == ("theirs?", "wedding"))
+    # The page said "a wedding" and the draft said "your wedding".
+    _sure = _fp(_Plain2(), None, "wedding", 1, True)
+    _unsure = [_fp(_Plain2(), None, "wedding", i, False) for i in range(3)]
+    check("a draft only says \"your X\" when they said \"my X\"",
+          any("your wedding" in t for _, t in _sure)
+          and not any("your" in t for parts in _unsure for _, t in parts))
+    check("and another version can't walk into it either",
+          _fo(False) == 1 and _fo(True) == 2)
+    from app.analysis.messages import build_messages as _bmA
+    _d2 = _bmA(app_state.corpus, app_state.profiles, app_state.plans, app_state.now, limit=500)
+    # Always reported, never skipped: the demo may contain no follow-ups at all,
+    # and a check that quietly does not run is not a check.
+    _fu = [x for x in _d2 if x.kind == "follow_up"]
+    check("what each draft claims matches what its reason claims",
+          all(("your " in x.draft.lower()) == ("their " in x.why.lower()) for x in _fu),
+          f"{len(_fu)} follow-ups here" if _fu else "none in this data")
+
+    print("\nsomething only true of them:")
+    _tops = _tl({"a": {"running": 9}, "b": {"running": 2}, "c": {"pets": 9}, "d": {}})
+    check("a person with enough said about one thing gets asked about it",
+          _tops.get("a") == _IL["running"])
+    check("one mention in passing does not",
+          "b" not in _tops, f"needs {_TE}")
+    check("nor does an interest with no line that reads right",
+          "c" not in _tops and "d" not in _tops)
+    check("the topic lines are all real sentences, not templates",
+          all(l == l.strip() and "{" not in l and len(l.split()) >= 3
+              for l in _IL.values()))
+    # A line that needs a gap must never be offered when there isn't one.
+    _rendered = [t.replace("{gap}", g).replace("{topic}", tp)
+                 for g, tp in (("", "are you still running"), ("", ""))
+                 for o in _pool(g, tp) for _, t in o]
+    check("and no draft goes out with a hole in it",
+          not [r for r in _rendered if "{" in r or "  " in r])
+    check("a topic gives you more ways to say it, not fewer",
+          _ro("7 months", _IL["running"]) > _ro("7 months") > _ro())
+
     print("\nless noise, more signal:")
     from app.analysis.messages import MAX_PER_KIND as _MK, build_messages as _bm2
     from app.analysis.suggestions import build as _sb
@@ -911,6 +970,15 @@ def main() -> int:
     # The seed the page sends is a step, 0 until you ask for another version, so
     # every person started on the same option and a real history came out with
     # one wording under a dozen names.
+    # A plan and a group plan came out word for word the same, because the
+    # first pass skipped anything it could not reword instead of dropping it,
+    # and plans are built outside the part that knows how to reword.
+    from app.analysis.messages import _spread as _sp, _body as _bd
+    class _D:
+        def __init__(self, i, t): self.id, self.draft, self.kind, self.value = i, t, "plan", 1
+    _dup = _sp([_D("a", "same words"), _D("b", "same words"), _D("c", "other")], {})
+    check("a duplicate that can't be reworded is dropped, not shown twice",
+          [x.draft for x in _dup] == ["same words", "other"])
     check("no two drafts on screen say the same thing",
           len({_body(d.draft) for d in _shown}) == len(_shown),
           f"{len(_shown)} drafts, {len(_rec)} of them reconnect")
@@ -927,8 +995,11 @@ def main() -> int:
                                          app_state.now, seeds={_one.id: 1}) if d.id == _one.id)
         check("and another version really is another one",
               _nxt != _one.draft)
+    # Counts the pool that is actually drawn from, not one list inside it:
+    # splitting it into general, gap-aware and topic-aware broke the old check.
+    from app.analysis.voice import reconnect_options as _ro2
     check("there is more than a handful of ways to say it",
-          len(_RC) >= 10)
+          _ro2("7 months") >= 10, f"{_ro2()} plain, {_ro2('7 months')} with the gap")
     # How long it has been is something the app knows and was throwing away.
     check("the gap gets named rather than called 'too long'",
           (_gw(14), _gw(30), _gw(210), _gw(400), _gw(1200)) ==
