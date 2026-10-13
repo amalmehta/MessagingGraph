@@ -845,6 +845,36 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nthe page you land on:")
+    _js = Path("app/static/app.js").read_text()
+    _now = _js[_js.index("function viewNow()"):_js.index("function wireJumps()")]
+    _graph = _js[_js.index("async function viewGraph()"):]
+    _graph = _graph[:_graph.index("\n}")]
+    _ppl = _js[_js.index("function viewPeople()"):]
+    _ppl = _ppl[:_ppl.index("\nasync function drawArchived")]
+    # Now exists to answer one question: who to write to, and what to say. The
+    # drafts have to come before anything else, or it is a dashboard again.
+    check("the drafts are the first thing on the page, ahead of every heading",
+          _now.index('id="drafts"') < (_now.index("<h2>") if "<h2>" in _now else len(_now)))
+    check("nothing on it asks you to do housekeeping before you get there",
+          _now.index('id="drafts"') < _now.index("${notices(o)}"))
+    check("and the heading says what the page is for",
+          "who to write to" in _js)
+    for _name, _panel in (("plans", 'id="plans-panel"'), ("crews", 'id="crew-panel"'),
+                          ("connections", 'id="circles-panel"')):
+        check(f"{_name} moved off it, to the brainstorm that already draws them",
+              _panel not in _now and _panel in _graph)
+    check("the rate chart and the observations moved to People",
+          'id="rate"' not in _now and 'id="rate"' in _ppl
+          and "Worth noticing" not in _now and "Worth noticing" in _ppl)
+    check("the five counts are one quiet line, not five cards",
+          'class="statline"' in _now and 'class="stats"' not in _now)
+    # A count that points at another view has to survive the trip: smooth
+    # scrolling never landed, because the panels below kept cancelling it.
+    check("a count that jumps to another view lands instantly rather than smoothly",
+          "function settleJump" in _js and "behavior: 'smooth'" not in
+          _js[_js.index("function settleJump"):_js.index("function settleJump") + 700])
+
     print("\nwhat the app remembers about you:")
     _pf = TestClient(fastapi_app, base_url="http://127.0.0.1:8077")
     _pf.cookies.set(COOKIE, guard.session)
@@ -891,18 +921,36 @@ def main() -> int:
           _back.names == {"p_a": "Sam"} and _back.theme == "auto" and _back.hidden == {})
     shutil.rmtree(_oldroot.parent, ignore_errors=True)
 
-    from app.desktop import PREFERRED_PORT as _PP, _free_port as _fp
-    check("the Mac app asks for the same port every launch",
-          _fp() == _fp() == _PP, str(_PP))
-    # A port you just served on sits in TIME_WAIT. uvicorn sets SO_REUSEADDR and
-    # would bind it anyway, so a probe that refuses it sends every quick restart
-    # to a random port -- which is the whole thing this is meant to stop.
-    _s = socket.socket(); _s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    _s.bind(("127.0.0.1", _PP)); _s.listen(1)
-    _c = socket.create_connection(("127.0.0.1", _PP)); _a, _ = _s.accept()
-    _c.close(); _a.close(); _s.close()
-    check("and still asks for it right after serving on it",
-          _fp() == _PP, "survives TIME_WAIT")
+    import app.desktop as _dt
+    # Against a port picked here, not the real one: the Mac app may well be
+    # running while this suite is, and then it legitimately holds 49201 and the
+    # fallback is correct behaviour. The check is about the preference, so it
+    # supplies a port it knows is free.
+    with socket.socket() as _probe:
+        _probe.bind(("127.0.0.1", 0))
+        _PP = _probe.getsockname()[1]
+    _real_pp, _dt.PREFERRED_PORT = _dt.PREFERRED_PORT, _PP
+    try:
+        check("the Mac app asks for the same port every launch",
+              _dt._free_port() == _dt._free_port() == _PP, str(_real_pp))
+        # A port you just served on sits in TIME_WAIT. uvicorn sets SO_REUSEADDR
+        # and would bind it anyway, so a probe that refuses it sends every quick
+        # restart to a random port -- the whole thing this is meant to stop.
+        _s = socket.socket(); _s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _s.bind(("127.0.0.1", _PP)); _s.listen(1)
+        _c = socket.create_connection(("127.0.0.1", _PP)); _a, _ = _s.accept()
+        _c.close(); _a.close(); _s.close()
+        check("and still asks for it right after serving on it",
+              _dt._free_port() == _PP, "survives TIME_WAIT")
+        # And when something really does hold it, it still serves.
+        _held = socket.socket(); _held.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        _held.bind(("127.0.0.1", _PP)); _held.listen(1)
+        _other = _dt._free_port()
+        _held.close()
+        check("but takes any free port when that one is genuinely taken",
+              _other and _other != _PP)
+    finally:
+        _dt.PREFERRED_PORT = _real_pp
 
     print("\nnumbers that aren't there:")
     # A pair who have never replied to each other inside the window. The medians

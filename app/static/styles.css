@@ -617,7 +617,10 @@ button.stat:hover{border-color:var(--hover-edge)}
 .thankbox .draft{margin-top:2px}
 
 /* what the drafts learned about how you text */
-.voicenote{color:var(--faint);font-size:11.5px;margin:-6px 0 12px;line-height:1.5}
+/* No negative pull: this used to tuck under a paragraph, and now it follows a
+   bordered notice, where -6px read as the two boxes colliding. */
+.voicenote{color:var(--faint);font-size:11.5px;margin:4px 0 12px;line-height:1.5}
+.voicenote:empty{margin:0}
 
 /* Pairing a phone, from the Privacy screen. */
 .steps{margin:14px 0 16px;padding-left:22px;color:var(--dim);font-size:13px;line-height:1.65}
@@ -719,3 +722,16 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
      made each person 200px tall. */
   nav button,.btn,.archchip button,.themepick button,.sortpick select{min-height:38px}
 }
+
+/* The five counts, as one quiet line under the drafts instead of five cards
+   above them. They are context for the page, not the point of it: a number you
+   can act on is a draft, and those are at the top now. */
+.statline{display:flex;flex-wrap:wrap;gap:4px 18px;align-items:baseline;margin-top:22px;
+  padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px}
+.statline b{font:600 13px/1 var(--mono);color:var(--ink);margin-right:5px;letter-spacing:-.2px}
+.statline > *{display:inline-flex;align-items:baseline;padding:0;border:0;background:none;
+  color:inherit;font:inherit}
+.statline button{cursor:pointer;border-radius:5px;transition:color .12s}
+.statline button:hover{color:var(--ink)}
+.statline button:hover b{color:var(--accent)}
+.statline button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
