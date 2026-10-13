@@ -1461,6 +1461,45 @@ def main() -> int:
     check("every link joins two nodes that exist",
           all(l["source"] in ids and l["target"] in ids for l in g["links"]),
           f"{len(g['nodes'])} nodes, {len(g['links'])} links")
+    # You, and the one-to-one threads. Without these, anyone you only ever text
+    # directly sat in the graph as a loose dot with no edges -- which read as
+    # "unconnected" when it only meant the chat had nobody else in it.
+    from app.models import SELF_ID as _ME
+    _direct = [l for l in g["links"] if l["kind"] == "direct"]
+    _one_to_one = [t for t in app_state.corpus.threads.values() if not t.is_group]
+    _known = {pr.contact_id for pr in app_state.profiles}
+    _want = sum(1 for t in _one_to_one for c in t.participant_ids if c in _known)
+    check("a line from you for every one-to-one thread",
+          len(_direct) == _want and _want > 0, f"{len(_direct)} of them")
+    check("and all of them start at you",
+          all(l["source"] == _ME for l in _direct))
+    check("you are in the graph exactly once",
+          [n["type"] for n in g["nodes"]].count("self") == 1)
+    check("a group chat never produces one",
+          not [l for l in _direct
+               if app_state.corpus.threads[
+                   next(t.id for t in _one_to_one if t.name == l["thread"])].is_group])
+    # No direct threads at all means no node for you: a lone dot labelled You,
+    # joined to nothing, is clutter.
+    from dataclasses import replace as _rp
+    _solo = _rp(app_state.corpus, threads={
+        tid: t for tid, t in app_state.corpus.threads.items() if t.is_group})
+    _g2 = build_graph(_solo, app_state.plans, app_state.profiles, False, app_state.now)
+    check("but no node for you when there are none to draw",
+          not [n for n in _g2["nodes"] if n["type"] == "self"]
+          and not [l for l in _g2["links"] if l["kind"] == "direct"])
+
+    _js = Path("app/static/app.js").read_text()
+    check("the page can turn each kind off on its own",
+          "data-tie=" in _js and "ties: { direct: true, group: true }" in _js
+          and "function tieGraph" in _js)
+    check("turning one-to-one off takes the node for you with it",
+          "S.ties.direct ? data.nodes : data.nodes.filter(n => n.type !== 'self')" in _js)
+    # Everyone has a line to you, so counting it made "connected" keep the lot.
+    check("and narrowing the view still measures ties between other people",
+          "if (l.kind === 'direct') continue;" in
+          _js[_js.index("function focusGraph"):_js.index("function simulate")])
+
     sh = [l for l in g["links"] if l["kind"] == "shared_thread"]
     pairs = [tuple(sorted((l["source"], l["target"]))) for l in sh]
     check("two people share one edge however many groups they're both in",

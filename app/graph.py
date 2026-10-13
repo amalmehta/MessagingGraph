@@ -4,12 +4,20 @@ Nodes are people and live plans; edges connect a person to each plan they are in
 plus person-to-person edges for people who share group threads. The result is the
 "what is actually going on right now" view: clusters of people around plans, and
 the plans hanging off no one because they stalled.
+
+There is also a node for you, joined to everyone you have a one-to-one thread
+with. Group chats are the only thing that can put an edge between two *other*
+people, so without it anyone you only ever text directly sat in the graph as a
+loose dot -- which said they were unconnected when it only meant the chat had
+nobody else in it. The page decides which of the two kinds to draw.
 """
 from __future__ import annotations
 
 from datetime import datetime
 
-from .models import Corpus, Plan, RelationshipProfile
+from collections import Counter
+
+from .models import SELF_ID, Corpus, Plan, RelationshipProfile
 
 LIVE_STATES = {"floated", "proposed", "confirmed", "scheduled", "stale"}
 
@@ -78,6 +86,25 @@ def build_graph(corpus: Corpus, plans: list[Plan],
         links.append({"source": a, "target": b, "kind": "shared_thread",
                       "thread": names[0], "threads": names, "weight": len(names)})
 
+    # You, and the threads that are just the two of you. Weighted by how much is
+    # actually said in them, so the line to someone you text daily is not the
+    # same line as the one to a thread with nine messages in it.
+    per_thread = Counter(m.thread_id for m in corpus.messages)
+    direct = 0
+    for thread in corpus.threads.values():
+        if thread.is_group:
+            continue
+        for cid in thread.participant_ids:
+            if cid not in by_id:
+                continue
+            links.append({"source": SELF_ID, "target": cid, "kind": "direct",
+                          "thread": thread.name,
+                          "messages": per_thread.get(thread.id, 0)})
+            direct += 1
+    if direct:
+        nodes.append({"id": SELF_ID, "type": "self", "label": "You",
+                      "threads": direct})
+
     return {"nodes": nodes, "links": links,
             "counts": {"people": len(by_id), "plans": len(live),
-                       "links": len(links)}}
+                       "links": len(links), "direct": direct}}
