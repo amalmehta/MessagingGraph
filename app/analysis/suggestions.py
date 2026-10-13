@@ -15,12 +15,13 @@ Three rules the copy here follows:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from .phrasing import a_week, count, rate
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from ..models import Plan, RelationshipProfile
-from ..names import short_name
+from ..names import looks_like_handle, short_name
+from .phrasing import a_week, count, rate
 
 
 @dataclass
@@ -36,6 +37,9 @@ class Suggestion:
 
 def _days(now: datetime, then: datetime | None) -> int:
     return (now - then).days if then else 0
+
+
+MAX_PER_KIND = 3
 
 
 def build(profiles: list[RelationshipProfile], plans: list[Plan],
@@ -131,6 +135,13 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
 
     out.sort(key=lambda s: s.weight, reverse=True)
 
+    # An observation about someone the app can only call "(415) 555-0199" is
+    # worth less than one about a name: 7 of the 8 here were the former. Nudged
+    # down rather than dropped, and naming them puts it straight back.
+    out = [replace(s, weight=s.weight * 0.8) if looks_like_handle(s.who) else s
+           for s in out]
+    out.sort(key=lambda s: s.weight, reverse=True)
+
     # Don't pile several items onto one person -- a list that mentions the same
     # friend four times reads as a case being built against them.
     seen: dict[str, int] = {}
@@ -141,4 +152,16 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
             continue
         seen[s.who] = n + 1
         kept.append(s)
-    return kept[:limit]
+    # Nor should one kind of observation fill the panel. Every one of the eight
+    # was a "reconnect", which reads as a single complaint repeated rather than
+    # a handful of different things worth noticing.
+    picked, held, by_kind = [], [], Counter()
+    for s in kept:
+        if by_kind[s.kind] < MAX_PER_KIND:
+            picked.append(s)
+            by_kind[s.kind] += 1
+        else:
+            held.append(s)
+    picked = (picked + held)[:limit]
+    picked.sort(key=lambda s: s.weight, reverse=True)
+    return picked

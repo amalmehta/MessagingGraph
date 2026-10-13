@@ -744,3 +744,8 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
   align-self:center}
 .legend i.ln.dash{border-top:2px dashed var(--line)}
 .legend i.ln.thin{border-top:1px solid var(--line-strong)}
+
+/* The People bar's "show the threads with too little to read" switch. Quieter
+   than the buttons that do something to your data, because it only changes
+   what is on screen. */
+.btn.sm{padding:4px 10px;font-size:11.5px}

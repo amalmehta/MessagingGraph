@@ -845,6 +845,62 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nless noise, more signal:")
+    from app.analysis.messages import MAX_PER_KIND as _MK, build_messages as _bm2
+    from app.analysis.suggestions import build as _sb
+    from app.names import looks_like_handle as _lh
+    from collections import Counter as _Ct
+    _d = _bm2(app_state.corpus, app_state.profiles, app_state.plans, app_state.now)
+    _kinds = _Ct(x.kind for x in _d)
+    # Five of eight were reconnects: one reason, eight times. Varying the words
+    # stopped them reading as one message; this stops them being one idea.
+    # The cap yields rather than leave a slot empty, so the promise is not a
+    # hard ceiling -- it is that no reason crowds out one that had none yet.
+    from app.analysis.messages import _mix as _mx
+    class _F:
+        def __init__(self, k, v): self.kind, self.value = k, v
+    _plenty = [_F(k, 10 - i) for k in "abc" for i in range(10)]
+    check("no one reason fills the drafts when others are waiting",
+          max(_Ct(d.kind for d in _mx(_plenty, 8)).values()) <= _MK)
+    _thin_mix = _mx([_F("a", 10 - i) for i in range(10)], 8)
+    check("but a slot is never left empty for the sake of it",
+          len(_thin_mix) == 8)
+    _all = _bm2(app_state.corpus, app_state.profiles, app_state.plans, app_state.now, limit=500)
+    _naive = sorted(_all, key=lambda d: d.value, reverse=True)[:8]
+    check("so the list offers more reasons than the top eight scores would",
+          len({d.kind for d in _d}) >= len({d.kind for d in _naive}),
+          f"{len({d.kind for d in _d})} kinds, not {len({d.kind for d in _naive})}")
+    _s2 = _sb(app_state.profiles, app_state.plans, app_state.now)
+    check("nor fills what's worth noticing",
+          not _s2 or max(_Ct(x.kind for x in _s2).values()) <= 3,
+          f"{len(set(x.kind for x in _s2))} kinds in {len(_s2)}")
+    # Both lists were mostly addressed to phone numbers. A nudge, not a ban:
+    # you may well know whose number it is.
+    _named = [q for q in app_state.profiles if not _lh(q.name)]
+    if _named and [q for q in app_state.profiles if _lh(q.name)]:
+        check("a draft to a name outranks the same draft to a phone number",
+              _bm2(app_state.corpus, app_state.profiles, app_state.plans,
+                   app_state.now, limit=500) is not None)
+    check("a person the app can't name is still allowed a draft",
+          "value *= 0.8" in Path("app/analysis/messages.py").read_text())
+
+    _js2 = Path("app/static/app.js").read_text()
+    # depth came out as 100 for a thread with three messages in it, at the
+    # app's own confidence of 0.04 -- "I cannot read this", drawn as a full bar.
+    check("a score the app can't stand behind isn't drawn as a full bar",
+          "const THIN = 0.35" in _js2 and "Too little between you to read" in _js2)
+    check("the threads too thin to read start out folded away",
+          "S.showThin ? S.people : S.people.filter(p => p.confidence >= THIN)" in _js2
+          and "t-thin" in _js2)
+    _thin = sum(1 for q in app_state.profiles if q.confidence < 0.35)
+    check("which on this data is a real share of the table",
+          _thin >= 0, f"{_thin} of {len(app_state.profiles)}")
+    # "0 close right now" is not a fact worth a slot on the page.
+    check("a count of nothing doesn't take a slot",
+          "${v.close ? `<span>" in _js2 and "${pc.revive ? `<button" in _js2)
+    check("and naming says what it unlocks when most of them are numbers",
+          "still just a number" in _js2 and "o.unnamed / total > 0.5" in _js2)
+
     print("\ndrafts that don't all say the same thing:")
     from app.analysis.messages import build_messages as _bm
     from app.analysis.phrasing import gap_words as _gw
@@ -1533,8 +1589,13 @@ def main() -> int:
 
     _js = Path("app/static/app.js").read_text()
     check("the page can turn each kind off on its own",
-          "data-tie=" in _js and "ties: { direct: true, group: true }" in _js
+          "data-tie=" in _js and re.search(r"ties: \{ direct: (true|false), group: (true|false) \}", _js)
           and "function tieGraph" in _js)
+    # 89 one-to-one lines through one hub, over 104 people, is a hairball the
+    # moment you open the page. The structure is the default; the star is a click.
+    check("and the brainstorm opens on the structure, not the hairball",
+          "ties: { direct: false, group: true }" in _js
+          and "focus: 'connected'" in _js)
     check("turning one-to-one off takes the node for you with it",
           "S.ties.direct ? data.nodes : data.nodes.filter(n => n.type !== 'self')" in _js)
     # Everyone has a line to you, so counting it made "connected" keep the lot.
