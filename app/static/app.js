@@ -117,7 +117,10 @@ const STATE_LABEL = {
 };
 
 const S = { view: 'now', overview: null, people: null, graph: null, theme: null,
-  includeStale: false, sort: 'importance', weeks: 40, focus: 'everyone' };
+  includeStale: false, sort: 'importance', weeks: 40, focus: 'everyone',
+  // Which kinds of conversation put a line on the graph. Independent, because
+  // they answer different questions: who you talk to, and who knows whom.
+  ties: { direct: true, group: true } };
 
 // ---------------------------------------------------------------- charts
 // The two series are --series-you / --series-them, set per theme in styles.css
@@ -1936,19 +1939,27 @@ async function viewGraph() {
       scroll to zoom, hover to isolate, click anything for detail.</div>
     <div class="controls">
       <span class="chip ${S.includeStale ? 'on' : ''}" id="t-stale">show stale plans</span>
+      <span class="focus" role="group" aria-label="Which conversations to draw">${
+        [['direct', 'one-to-one'], ['group', 'group chats']].map(([k, label]) =>
+          `<span class="chip ${S.ties[k] ? 'on' : ''}" data-tie="${k}"
+            role="checkbox" tabindex="0" aria-checked="${!!S.ties[k]}">${label}</span>`).join('')}</span>
       <span class="focus" role="group" aria-label="How much of the graph to show">${
         [['everyone', 'everyone'], ['connected', 'connected'], ['strongest', 'strongest ties']]
           .map(([k, label]) => `<span class="chip ${S.focus === k ? 'on' : ''}"
             data-focus="${k}">${label}</span>`).join('')}</span>
-      <span class="hint" id="g-count">node size = importance · line = shared thread</span>
+      <span class="hint" id="g-count">node size = importance · thicker line = more of it</span>
     </div>
     <div class="gwrap"><svg id="g"></svg>
       <div class="legend"><b>plan state</b>
         ${['scheduled', 'confirmed', 'proposed', 'floated', 'stale'].map(k =>
           `<span><i style="background:${STATE_COLOR[k]}"></i>${k}</span>`).join('')}
-        <b style="margin-top:4px">connection</b>
+        <b style="margin-top:4px">how a person is doing</b>
         ${['close', 'steady', 'practical', 'uneven', 'quiet'].map(k =>
           `<span><i style="background:${STATE_COLOR_PERSON[k]}"></i>${STATE_LABEL[k]}</span>`).join('')}
+        <b style="margin-top:4px">lines</b>
+        <span><i class="ln solid"></i>just the two of you</span>
+        <span><i class="ln dash"></i>a group chat you share</span>
+        <span><i class="ln thin"></i>in this plan</span>
       </div></div>
     <h2>Plans</h2>
     <div class="sub tight">Pulled out of message text, and the same plans the graph
@@ -1964,6 +1975,16 @@ async function viewGraph() {
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>`;
   $('#t-stale').onclick = () => { S.includeStale = !S.includeStale; viewGraph(); };
+  document.querySelectorAll('[data-tie]').forEach(c => {
+    const flip = () => {
+      S.ties[c.dataset.tie] = !S.ties[c.dataset.tie];
+      c.classList.toggle('on', S.ties[c.dataset.tie]);
+      c.setAttribute('aria-checked', String(!!S.ties[c.dataset.tie]));
+      if (S.graph) simulate(S.graph);
+    };
+    c.onclick = flip;
+    c.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+  });
   document.querySelectorAll('[data-focus]').forEach(c => c.onclick = () => {
     S.focus = c.dataset.focus;
     document.querySelectorAll('[data-focus]').forEach(o =>
@@ -1982,11 +2003,24 @@ async function viewGraph() {
 // the hardest thing to see. These narrow it: "connected" drops anyone with no edge at
 // all, "strongest" keeps the busiest quarter of what's left and the ties between them.
 // Nothing is deleted -- it's a view, and "everyone" puts it all back.
+// Turning a kind off removes its lines, and the "you" node with the last of
+// them -- a lone dot labelled You, joined to nothing, is just clutter.
+function tieGraph(data) {
+  const want = k => k === 'in_plan' || S.ties[k === 'direct' ? 'direct' : 'group'];
+  const links = data.links.filter(l => want(l.kind));
+  const nodes = S.ties.direct ? data.nodes : data.nodes.filter(n => n.type !== 'self');
+  return { ...data, nodes, links };
+}
+
 function focusGraph(data, mode) {
   if (mode === 'everyone') return data;
   const strength = new Map(data.nodes.map(n => [n.id, 0]));
   const planMates = new Map();                 // plan id -> the people in it
   for (const l of data.links) {
+    // Your own thread with someone does not make them connected -- this asks
+    // how people relate to each other. Counting it made "connected" keep
+    // everybody, because everybody has a line to you.
+    if (l.kind === 'direct') continue;
     const w = l.weight || 1;
     for (const end of [l.source, l.target]) {
       if (strength.has(end)) strength.set(end, strength.get(end) + w);
@@ -2010,20 +2044,21 @@ function focusGraph(data, mode) {
   for (const [plan, mates] of planMates) {
     if (mates.some(m => people.has(m))) plans.add(plan);
   }
-  const keep = new Set([...people, ...plans]);
+  const keep = new Set([...people, ...plans,
+    ...data.nodes.filter(n => n.type === 'self').map(n => n.id)]);
   return { ...data,
            nodes: data.nodes.filter(n => keep.has(n.id)),
            links: data.links.filter(l => keep.has(l.source) && keep.has(l.target)) };
 }
 
 function simulate(raw) {
-  const data = focusGraph(raw, S.focus);
+  const data = focusGraph(tieGraph(raw), S.focus);
   const note = $('#g-count');
   if (note) {
     const shown = data.nodes.filter(n => n.type === 'person').length;
     const all = raw.nodes.filter(n => n.type === 'person').length;
     note.textContent = S.focus === 'everyone'
-      ? 'node size = importance \u00b7 line = shared thread'
+      ? 'node size = importance \u00b7 thicker line = more of it'
       : `${shown} of ${n(all, 'person', 'people')} \u00b7 ${data.links.length} of ${n(raw.links.length, 'connection')}`;
   }
   const svg = $('#g'), W = svg.clientWidth || 900, H = svg.clientHeight || 560;
@@ -2033,7 +2068,7 @@ function simulate(raw) {
     x: W / 2 + Math.cos(i * 2.4) * (60 + (i % 17) * 14),
     y: H / 2 + Math.sin(i * 2.4) * (60 + (i % 13) * 16),
     vx: 0, vy: 0,
-    r: n.type === 'person' ? 9 + n.importance / 7 : 3.5 + n.size * 1.5,
+    r: n.type === 'self' ? 13 : n.type === 'person' ? 9 + n.importance / 7 : 3.5 + n.size * 1.5,
   }));
   const idx = new Map(nodes.map(n => [n.id, n]));
   const links = data.links
@@ -2050,11 +2085,19 @@ function simulate(raw) {
 
   const lineEls = links.map(l => {
     const e = document.createElementNS(NS, 'line');
-    const shared = l.kind === 'shared_thread';
+    // Three kinds of line, and they have to be told apart at a glance: a
+    // one-to-one line was coming out identical to a person-to-plan line.
+    //   dashed, by how many chats shared  -- a group chat
+    //   solid, by how much you say        -- just the two of you
+    //   thin solid                        -- someone is in this plan
+    const shared = l.kind === 'shared_thread', direct = l.kind === 'direct';
     e.setAttribute('stroke', shared ? PAINT.line : PAINT['line-strong']);
-    // Sharing four group chats should look like more than sharing one.
-    e.setAttribute('stroke-width', shared ? Math.min(3.5, 1 + ((l.weight || 1) - 1) * 0.8) : 1.4);
+    e.setAttribute('stroke-width',
+      shared ? Math.min(3.5, 1 + ((l.weight || 1) - 1) * 0.8)
+      : direct ? Math.min(3.2, 0.9 + Math.log10(1 + (l.messages || 0)))
+      : 1.4);
     if (shared) e.setAttribute('stroke-dasharray', '3 4');
+    if (direct) e.setAttribute('stroke-opacity', .75);
     gl.append(e); return e;
   });
 
@@ -2063,16 +2106,16 @@ function simulate(raw) {
     g.style.cursor = 'pointer';
     const c = document.createElementNS(NS, 'circle');
     c.setAttribute('r', n.r);
-    c.setAttribute('fill', n.type === 'person'
-      ? STATE_COLOR_PERSON[n.state] : STATE_COLOR[n.state]);
-    c.setAttribute('fill-opacity', n.type === 'person' ? .9 : .78);
+    c.setAttribute('fill', n.type === 'self' ? PAINT.ink      // nothing else is ink, so you are unmistakable
+      : n.type === 'person' ? STATE_COLOR_PERSON[n.state] : STATE_COLOR[n.state]);
+    c.setAttribute('fill-opacity', n.type === 'plan' ? .78 : .9);
     c.setAttribute('stroke', PAINT.bg);
     c.setAttribute('stroke-width', 1.5);
     g.append(c);
-    const person = n.type === 'person';
+    const person = n.type === 'person' || n.type === 'self';
     if (person || n.state !== 'stale') {
       const t = document.createElementNS(NS, 'text');
-      t.textContent = person ? shortName(n.label) : n.label;
+      t.textContent = n.type === 'person' ? shortName(n.label) : n.label;
       t.setAttribute('y', n.r + 12);
       t.setAttribute('text-anchor', 'middle');
       t.setAttribute('fill', person ? PAINT.ink : PAINT.dim);
@@ -2085,7 +2128,9 @@ function simulate(raw) {
       t.style.pointerEvents = 'none';
       g.append(t);
     }
-    g.onclick = () => n.type === 'person' ? openPerson(n.id) : openPlan(n.id);
+    if (n.type === 'self') g.style.cursor = 'grab';
+    g.onclick = () => n.type === 'self' ? null
+      : n.type === 'person' ? openPerson(n.id) : openPlan(n.id);
     g.onpointerenter = () => highlight(n.id);
     g.onpointerleave = () => highlight(null);
     g.onpointerdown = ev => {
@@ -2181,7 +2226,7 @@ function simulate(raw) {
       const a = nodes[i];
       for (let j = i + 1; j < nodes.length; j++) {
         const b = nodes[j];
-        const pad = (a.type === 'person' || b.type === 'person') ? 18 : 8;
+        const pad = (a.type === 'plan' && b.type === 'plan') ? 8 : 18;
         const min = a.r + b.r + pad;
         let dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.hypot(dx, dy) || .01;
