@@ -102,10 +102,16 @@ def _free_port() -> int:
     for port in (PREFERRED_PORT, 0):
         try:
             with socket.socket() as s:
+                # SO_REUSEADDR, because uvicorn sets it on the socket it will
+                # actually listen on. Without it here the probe refuses a port
+                # uvicorn would take: quit the app and reopen it, and the one
+                # you just closed is still in TIME_WAIT, so every quick restart
+                # fell back to a random port and moved the origin after all.
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 s.bind(("127.0.0.1", port))
                 return s.getsockname()[1]
         except OSError:
-            continue        # something else has it today; any free port will do
+            continue        # genuinely taken by something else; any port will do
     raise RuntimeError("No port to serve on.")
 
 

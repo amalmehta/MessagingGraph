@@ -15,6 +15,7 @@ import math
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -893,6 +894,15 @@ def main() -> int:
     from app.desktop import PREFERRED_PORT as _PP, _free_port as _fp
     check("the Mac app asks for the same port every launch",
           _fp() == _fp() == _PP, str(_PP))
+    # A port you just served on sits in TIME_WAIT. uvicorn sets SO_REUSEADDR and
+    # would bind it anyway, so a probe that refuses it sends every quick restart
+    # to a random port -- which is the whole thing this is meant to stop.
+    _s = socket.socket(); _s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _s.bind(("127.0.0.1", _PP)); _s.listen(1)
+    _c = socket.create_connection(("127.0.0.1", _PP)); _a, _ = _s.accept()
+    _c.close(); _a.close(); _s.close()
+    check("and still asks for it right after serving on it",
+          _fp() == _PP, "survives TIME_WAIT")
 
     print("\nnumbers that aren't there:")
     # A pair who have never replied to each other inside the window. The medians
