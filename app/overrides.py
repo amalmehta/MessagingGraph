@@ -14,6 +14,8 @@ from .models import Contact, Corpus, Thread
 from .names import group_label, legacy_group_label, looks_like_handle
 
 OVERRIDES_FILE = "overrides.v1.enc"
+THEMES = ("auto", "light", "dark")
+HIDE_DAYS = {"skip": 7, "copied": 3}
 UNNAMED = re.compile(r"^\(\d{3}\) \d{3}-\d{4}$|^\+?[\d\s().-]{7,}$|^[^\s@]+@[^\s@]+$")
 MAX_NAME = 60
 
@@ -25,15 +27,26 @@ class Overrides:
     automated: set[str] = field(default_factory=set)          # thread ids you hid
     locations: dict[str, str] = field(default_factory=dict)   # contact id -> place you gave
     location_unknown: set[str] = field(default_factory=set)   # contact ids you said you don't know
+    # Choices the browser used to keep to itself. The Mac app serves on a new
+    # random port every launch, so localStorage -- which is scoped to an origin
+    # -- was a fresh empty box each time: every "Not now" and every theme choice
+    # was forgotten the moment you quit. They belong with the other corrections.
+    theme: str = "auto"                                       # auto | light | dark
+    hidden: dict[str, dict] = field(default_factory=dict)     # draft id -> {why, at}
 
     def to_dict(self) -> dict:
         return {"names": self.names, "real": sorted(self.real), "automated": sorted(self.automated),
-                "locations": self.locations, "location_unknown": sorted(self.location_unknown)}
+                "locations": self.locations, "location_unknown": sorted(self.location_unknown),
+                "theme": self.theme, "hidden": self.hidden}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Overrides":
+        theme = d.get("theme", "auto")
+        hidden = d.get("hidden", {})
         return cls(dict(d.get("names", {})), set(d.get("real", [])), set(d.get("automated", [])),
-                   dict(d.get("locations", {})), set(d.get("location_unknown", [])))
+                   dict(d.get("locations", {})), set(d.get("location_unknown", [])),
+                   theme if theme in THEMES else "auto",
+                   {k: v for k, v in hidden.items() if isinstance(v, dict)})
 
 
 class OverrideStore:

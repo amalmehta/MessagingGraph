@@ -112,7 +112,7 @@ const STATE_LABEL = {
   uneven: 'uneven', quiet: 'quiet', new: 'too early', group: 'groups only',
 };
 
-const S = { view: 'now', overview: null, people: null, graph: null,
+const S = { view: 'now', overview: null, people: null, graph: null, theme: null,
   includeStale: false, sort: 'importance', weeks: 40, focus: 'everyone' };
 
 // ---------------------------------------------------------------- charts
@@ -303,6 +303,12 @@ function spark(values, w = 78, h = 20) {
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  // Before anything draws, so a draft you put away yesterday doesn't flash up.
+  try {
+    const prefs = await api('/api/prefs');
+    hiddenIds = new Set(prefs.hidden || []);
+    S.theme = prefs.theme;
+  } catch { /* a fresh server with nothing saved yet */ }
   wireTheme();
   wireReload();
   wirePhoneLayout();
@@ -386,9 +392,17 @@ function wireReload() {
 }
 
 function wireTheme() {
-  let saved = null;
-  try { saved = localStorage.getItem('mg-theme'); } catch { /* private window */ }
+  // The server is the authority; localStorage only got there first, to avoid a
+  // flash of the wrong colours before this script ran.
+  let saved = S.theme;
+  if (!saved) { try { saved = localStorage.getItem('mg-theme'); } catch { /* private window */ } }
   const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
+  // Put the server's answer in the box the pre-paint script reads, so the next
+  // load on this origin starts in the right colours.
+  try {
+    if (mode === 'auto') localStorage.removeItem('mg-theme');
+    else localStorage.setItem('mg-theme', mode);
+  } catch { /* nothing to cache into */ }
   const system = window.matchMedia('(prefers-color-scheme: dark)');
 
   const apply = (m, repaint) => {
@@ -403,10 +417,15 @@ function wireTheme() {
   document.querySelectorAll('[data-theme-set]').forEach(b => {
     b.onclick = () => {
       const m = b.dataset.themeSet;
+      // localStorage is still written, but only so theme.js can paint the right
+      // colours before the first byte of script runs. The Mac moved to a new
+      // port each launch and took this box with it, so the server is where the
+      // choice actually lives now -- and it reaches your phone too.
       try {
         if (m === 'auto') localStorage.removeItem('mg-theme');
         else localStorage.setItem('mg-theme', m);
-      } catch { /* the theme still applies, it just won't be remembered */ }
+      } catch { /* the theme still applies, it just won't be remembered here */ }
+      postJSON('/api/prefs', { theme: m }).catch(() => {});
       apply(m, true);
     };
   });
@@ -558,18 +577,16 @@ const DRAFT_KIND = {
   group_plan: 'group plan', reconnect: 'reconnect', check_in: 'check in',
   thanked: 'thank you', anniversary: 'anniversary', together: 'thank you', appreciation: 'appreciation',
 };
-const HIDE_KEY = 'mg-drafts-hidden';
-const HIDE_DAYS = { skip: 7, copied: 3 };
-function hiddenDrafts() {
-  try { return JSON.parse(localStorage.getItem(HIDE_KEY) || '{}'); } catch { return {}; }
-}
+// Which drafts you have waved away, and until when, is the server's to keep.
+// It used to be localStorage: scoped to an origin, and the Mac app hands out a
+// new port every launch, so "Not now" lasted exactly as long as the window did.
+let hiddenIds = new Set();
+function isHidden(id) { return hiddenIds.has(id); }
 function hideDraft(id, why) {
-  const h = hiddenDrafts(); h[id] = { why, at: Date.now() };
-  try { localStorage.setItem(HIDE_KEY, JSON.stringify(h)); } catch { /* private window */ }
-}
-function isHidden(id) {
-  const e = hiddenDrafts()[id];
-  return !!e && Date.now() - e.at < (HIDE_DAYS[e.why] || 7) * 86400000;
+  hiddenIds.add(id);                      // the card goes now; the save follows
+  postJSON('/api/prefs', { hide_draft: id, hide_why: why })
+    .then(r => { if (r?.data?.hidden) hiddenIds = new Set(r.data.hidden); })
+    .catch(() => {});
 }
 
 async function drawDrafts() {
