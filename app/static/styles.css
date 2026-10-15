@@ -756,3 +756,8 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 
 /* The import button sits where the two Terminal commands used to. */
 .cmds.one{margin:10px 0 4px}
+
+/* Reading something the phone kept, because the Mac could not be reached. */
+.stalebar{position:sticky;top:0;z-index:40;padding:7px 16px;text-align:center;
+  background:var(--wash-accent);color:var(--accent);font-size:12.5px;
+  border-bottom:1px solid var(--edge-accent)}

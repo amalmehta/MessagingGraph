@@ -139,6 +139,18 @@ def cmd_serve(a) -> int:
             return 1
         os.environ["MG_PHONE"] = "1"
         host = "0.0.0.0"          # noqa: S104 -- deliberate, and only with --phone
+        # https, not http. Everything to the phone crossed the Wi-Fi in the
+        # clear, and a page served over http is refused service workers,
+        # caches and most of what lets it behave like an app at all.
+        from .tls import ensure as ensure_cert
+        from .vault import Vault
+        from .net import bonjour_name
+        names = [w.split(":")[0] for w in where]
+        if bonjour_name() and bonjour_name() not in names:
+            names.append(bonjour_name())
+        names.append("127.0.0.1")
+        cert_path, key_path = ensure_cert(Vault().root, names)
+        ssl = {"ssl_certfile": str(cert_path), "ssl_keyfile": str(key_path)}
 
     import uvicorn
     print(f"Loading {source.split(':')[0]} data…", flush=True)
@@ -149,12 +161,15 @@ def cmd_serve(a) -> int:
         _line(WARN, "Answering on your local network. Anyone on this Wi-Fi can reach "
                     "the pairing page; only a phone with a code gets past it.")
         print("      On the phone, open:  "
-              f"http://{where[0]}/pair", flush=True)
+              f"https://{where[0]}/pair", flush=True)
         for extra in where[1:]:
-            print(f"                     or:  http://{extra}/pair", flush=True)
+            print(f"                     or:  https://{extra}/pair", flush=True)
+        print("      The first time, the phone will warn you about the certificate: it is "
+              "this Mac's own,\n      made here and trusted nowhere else. The pairing page "
+              "explains how to accept it.", flush=True)
         print("      Then open Privacy on this Mac and press Show a pairing code.\n", flush=True)
     uvicorn.run(main.app, host=host, port=a.port, access_log=False,
-                server_header=False, log_level="warning")
+                server_header=False, log_level="warning", **(ssl if a.phone else {}))
     return 0
 
 

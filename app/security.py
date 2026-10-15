@@ -38,7 +38,10 @@ DEVICE_COOKIE = "mg_device"
 DEVICE_MAX_AGE = 60 * 60 * 24 * 365        # a phone pairs once, not every week
 
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+       # worker-src, or the service worker that lets the phone open without the
+       # Mac is refused: script-src does not cover it in every browser.
        "img-src 'self' data:; connect-src 'self'; font-src 'self'; manifest-src 'self'; "
+       "worker-src 'self'; "
        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 
 # Served before there is a session, so it can't pull in styles.css. It follows the
@@ -92,7 +95,11 @@ class Guard:
 
     @property
     def launch_url(self) -> str:
-        return f"http://127.0.0.1:{self.port}/?token={self.token}"
+        # https whenever the phone is being served, because then that is the
+        # only thing the server speaks -- printing http:// sent this Mac's own
+        # browser to a port that would not talk to it.
+        scheme = "https" if self.on_lan else "http"
+        return f"{scheme}://127.0.0.1:{self.port}/?token={self.token}"
 
     @property
     def on_lan(self) -> bool:

@@ -715,6 +715,14 @@ def pair_page():
     return FileResponse(STATIC / "pair.html")
 
 
+# Served from the root, not from /static, because a worker only controls the
+# path it is served from -- at /static/sw.js it could not have cached the app
+# or a single API call.
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(STATIC / "sw.js", media_type="application/javascript")
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
