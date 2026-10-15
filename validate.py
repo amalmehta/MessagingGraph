@@ -18,6 +18,7 @@ import shutil
 import socket
 import sqlite3
 import sys
+import subprocess
 import tempfile
 import time
 from datetime import datetime, timedelta
@@ -850,6 +851,31 @@ def main() -> int:
     check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
+
+    print("\na signature that stops moving:")
+    import macapp.build as _mb
+    # Ad hoc means no identity, so macOS pins Full Disk Access to the binary's
+    # hash -- and every rebuild changes it. The permission was granted, the
+    # switch showed on, and the app still could not read chat.db.
+    check("the build signs with an identity rather than ad hoc",
+          "--sign\", \"-\"" not in Path("macapp/build.py").read_text().split("def sign(")[0]
+          and "def signing_identity" in Path("macapp/build.py").read_text())
+    check("and falls back to ad hoc rather than failing the build",
+          '"-"' in Path("macapp/build.py").read_text().split("def sign(")[1])
+    check("exactly one basicConstraints, or macOS reads none of the extensions",
+          Path("macapp/build.py").read_text().count('"-addext", "basicConstraints') == 0)
+    check("the PKCS#12 is written in a form macOS can read",
+          '"-macalg", "sha1"' in Path("macapp/build.py").read_text())
+    _installed = Path("/Applications/Messaging Graph.app")
+    if _installed.exists():
+        _done = subprocess.run(["codesign", "-d", "-r-", str(_installed)],
+                               capture_output=True, text=True)
+        _req = _done.stdout + _done.stderr      # codesign splits this across both
+        check("and the installed app is pinned to its certificate, not its bytes",
+              "certificate leaf" in _req and "cdhash" not in _req,
+              "survives a rebuild")
+    check("the build says which it used, so this is never silent again",
+          "permissions you grant survive a rebuild" in Path("macapp/build.py").read_text())
 
     print("\nimporting without a terminal:")
     from app import importer as _imp
