@@ -130,9 +130,79 @@ def build_bundle(icns: Path) -> Path:
            for folder in ("Desktop", "Documents", "Downloads")},
     })
     info_path.write_bytes(plistlib.dumps(info))
-    # Editing Info.plist invalidates the signature; sign again (ad hoc, for this Mac).
-    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(bundle)], check=True, capture_output=True)
+    # Editing Info.plist invalidates the signature; sign again.
+    sign(bundle)
     return bundle
+
+
+IDENTITY = "Messaging Graph Dev"
+
+
+def signing_identity() -> str | None:
+    """The app's own signing identity, if this Mac has one."""
+    out = subprocess.run(["security", "find-identity", "-v", "-p", "codesigning"],
+                         capture_output=True, text=True).stdout
+    return IDENTITY if f'"{IDENTITY}"' in out else None
+
+
+def make_identity() -> str | None:
+    """Create one, once, so the signature stops moving.
+
+    An ad-hoc signature has no identity behind it, so macOS pins a permission
+    to the binary's hash -- and every rebuild changes the hash. Full Disk
+    Access, granted properly, stopped working the next time the app was built,
+    with the switch still showing as on. A self-signed certificate gives the
+    app one identity to be, and the grant survives.
+
+    macOS asks you to approve the new certificate; nothing here can do that
+    for you, so a refusal just falls back to ad hoc.
+    """
+    import tempfile
+    home = Path.home() / "Library" / "Keychains" / "login.keychain-db"
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        cert, key, p12 = d / "cert.pem", d / "key.pem", d / "id.p12"
+        made = subprocess.run(
+            ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+             "-keyout", str(key), "-out", str(cert), "-days", "3650",
+             "-subj", f"/CN={IDENTITY}",
+             # Exactly one basicConstraints: -x509 writes its own, and adding a
+             # second made every critical extension unreadable to macOS.
+             "-addext", "keyUsage=critical,digitalSignature,keyCertSign",
+             "-addext", "extendedKeyUsage=codeSigning"],
+            capture_output=True)
+        if made.returncode:
+            return None
+        # SHA-1 MAC and 3DES: macOS cannot read the PKCS#12 OpenSSL 3 writes by default.
+        if subprocess.run(["openssl", "pkcs12", "-export", "-out", str(p12),
+                           "-inkey", str(key), "-in", str(cert), "-passout", "pass:mg",
+                           "-name", IDENTITY, "-macalg", "sha1",
+                           "-certpbe", "PBE-SHA1-3DES", "-keypbe", "PBE-SHA1-3DES"],
+                          capture_output=True).returncode:
+            return None
+        if subprocess.run(["security", "import", str(p12), "-k", str(home),
+                           "-P", "mg", "-T", "/usr/bin/codesign", "-A"],
+                          capture_output=True).returncode:
+            return None
+        # Needs your approval, and without it the identity is not usable.
+        subprocess.run(["security", "add-trusted-cert", "-r", "trustRoot",
+                        "-p", "codeSign", "-k", str(home), str(cert)],
+                       capture_output=True)
+    return signing_identity()
+
+
+def sign(bundle: Path) -> str:
+    """Sign with the app's own identity where there is one, ad hoc otherwise."""
+    who = signing_identity() or make_identity()
+    args = ["codesign", "--force", "--deep", "--sign", who or "-", str(bundle)]
+    done = subprocess.run(args, capture_output=True, text=True)
+    if done.returncode and who:                   # a broken identity should not stop the build
+        subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(bundle)],
+                       check=True, capture_output=True)
+        return "ad hoc"
+    if done.returncode:
+        raise RuntimeError(done.stderr.strip() or "codesign failed")
+    return who or "ad hoc"
 
 
 def install(bundle: Path) -> Path:
@@ -178,6 +248,15 @@ def main(login: bool = True) -> int:
     bundle = build_bundle(icns)
     target = install(bundle)
     print(f"  ok  Installed {target}")
+    # Worth saying out loud: it decides whether the permissions you granted
+    # are still yours after this build.
+    who = signing_identity()
+    if who:
+        print(f"  ok  Signed as {who} — permissions you grant survive a rebuild")
+    else:
+        print("  !!  Signed ad hoc. macOS ties Full Disk Access to the exact binary, so "
+              "this build has lost any you granted: remove Messaging Graph from that list "
+              "and add it again.")
     from app.desktop import set_login_item
     set_login_item(login, target)
     print("  ok  Starts at login" if login else "  ok  Won't start at login")
