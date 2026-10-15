@@ -2,15 +2,28 @@
 const $ = (s, r = document) => r.querySelector(s);
 const api = (p) => fetch(p).then(r => {
   if (r.status === 401) { signedOut(); throw new Error('signed out'); }
+  // Set by the service worker when the Mac could not be reached and this came
+  // off the phone instead. Saying so beats letting you read last week's
+  // drafts believing they are today's.
+  markStale(r.headers.get('x-mg-from-cache') === '1');
   return r.json();
 });
 
 // The session cookie is only valid for one run of the server. After a restart the
 // old tab would otherwise fail silently on every click.
 function signedOut() {
-  document.body.innerHTML = `<div class="signedout"><h2>This session has ended</h2>
-    <p>The server was restarted, so the link it printed earlier no longer works.
-    Open the new link from your terminal.</p></div>`;
+  // A phone has no terminal to open a link from, and its pairing lasts far
+  // longer than one run of the server -- so it is told the truth for a phone,
+  // which is that the Mac restarted and it should try again.
+  const paired = document.body.classList.contains('phone') ||
+    matchMedia('(display-mode: standalone)').matches;
+  document.body.innerHTML = paired
+    ? `<div class="signedout"><h2>Lost the Mac</h2>
+       <p>Messaging Graph isn't answering. It may be asleep, off this Wi-Fi, or
+       restarting.</p><button class="btn primary" onclick="location.reload()">Try again</button></div>`
+    : `<div class="signedout"><h2>This session has ended</h2>
+       <p>The server was restarted, so the link it printed earlier no longer works.
+       Open the new link from your terminal.</p></div>`;
 }
 // JSON POST that surfaces the server's own error message instead of failing silently.
 async function postJSON(path, body) {
@@ -309,7 +322,28 @@ function spark(values, w = 78, h = 20) {
 }
 
 // ---------------------------------------------------------------- boot
+// Only where the browser will have it: on this Mac it changes nothing, and on
+// a phone it is the difference between the app opening and a blank screen.
+function keepOffline() {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return;
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+}
+
+// Shown when what you are reading came off the phone rather than the Mac.
+function markStale(stale) {
+  document.body.classList.toggle('stale', stale);
+  let bar = $('#stale');
+  if (!stale) { bar?.remove(); return; }
+  if (bar) return;
+  bar = document.createElement('div');
+  bar.id = 'stale';
+  bar.className = 'stalebar';
+  bar.textContent = "Can't reach your Mac — showing what you last saw.";
+  document.body.prepend(bar);
+}
+
 async function boot() {
+  keepOffline();
   // Before anything draws, so a draft you put away yesterday doesn't flash up.
   try {
     const prefs = await api('/api/prefs');

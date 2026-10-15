@@ -852,6 +852,49 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nthe phone, over a link that can be an app:")
+    from app.tls import ensure as _tls, paths as _tlsp
+    _troot = Path(tempfile.mkdtemp()) / "vault"
+    _names = ["some-mac.local", "192.168.1.50", "127.0.0.1"]
+    _c, _k = _tls(_troot, _names)
+    check("a certificate is made for this Mac's own names", _c.exists() and _k.exists())
+    _txt = subprocess.run(["openssl", "x509", "-in", str(_c), "-noout", "-text"],
+                          capture_output=True, text=True).stdout
+    check("covering every address the phone might type",
+          all(nm in _txt for nm in _names))
+    check("and the key is readable only by you",
+          oct(_k.stat().st_mode)[-3:] == "600")
+    _first = _c.read_bytes()
+    _tls(_troot, _names)
+    check("made once, not on every start", _c.read_bytes() == _first)
+    _tls(_troot, _names + ["10.0.0.9"])
+    check("but made again when this Mac gains an address",
+          _c.read_bytes() != _first)
+    # Measured on the network before any of this: isSecureContext false,
+    # serviceWorker undefined, caches undefined. http could not be fixed in JS.
+    check("the phone is told https, since http cannot run a service worker at all",
+          'f"https://{where[0]}/pair"' in Path("app/cli.py").read_text())
+    check("and the link for this Mac matches what the server actually speaks",
+          '"https" if self.on_lan else "http"' in Path("app/security.py").read_text())
+    _js4 = Path("app/static/app.js").read_text()
+    check("the worker is served from the root, or it governs nothing",
+          '@app.get("/sw.js")' in Path("app/main.py").read_text()
+          and "register('/sw.js', { scope: '/' })" in _js4)
+    check("the policy lets it run",
+          "worker-src 'self'" in Path("app/security.py").read_text())
+    _sw = Path("app/static/sw.js").read_text()
+    check("it never replays a write, and never caches the pairing door",
+          "req.method !== 'GET'" in _sw and "/api/pair" in _sw)
+    check("a phone that is no longer paired is not answered from when it was",
+          "status === 401" in _sw and "cache.delete(req)" in _sw)
+    check("unpairing can throw away everything it kept",
+          "'forget'" in _sw and "caches.delete" in _sw)
+    check("and the page says so when what you are reading is not fresh",
+          "x-mg-from-cache" in _sw and "x-mg-from-cache" in _js4
+          and "showing what you last saw" in _js4)
+    check("a phone is not told to go and open a terminal",
+          "Lost the Mac" in _js4)
+
     print("\na signature that stops moving:")
     import macapp.build as _mb
     # Ad hoc means no identity, so macOS pins Full Disk Access to the binary's
