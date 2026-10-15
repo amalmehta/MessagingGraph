@@ -753,3 +753,6 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 /* When what you searched for is in the folded-away rows, the switch that brings
    them back says so rather than leaving you with an empty table. */
 .btn.sm.nudge{border-color:var(--edge-accent);background:var(--wash-accent);color:var(--accent)}
+
+/* The import button sits where the two Terminal commands used to. */
+.cmds.one{margin:10px 0 4px}

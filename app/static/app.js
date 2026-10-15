@@ -492,14 +492,23 @@ const SOURCE_LABEL = { synthetic: 'demo data', imessage: 'your messages' };
 
 // Fourteen invented people, in an app whose whole premise is that these are
 // yours. Say so at the top, and say what to type to change it.
+// Inside the Mac app the import is a button: the app is what macOS grants the
+// permission to, so it is the only thing that can do the reading. In a browser,
+// or on a phone over the Wi-Fi, mg:// means nothing and the commands stand.
+const inDesktopApp = () => / MessagingGraph\/desktop\b/.test(navigator.userAgent);
+
 function demoBanner(o) {
   if (o.source !== 'synthetic') return '';
+  const how = inDesktopApp()
+    ? `<div class="cmds one"><a class="btn primary" href="mg://import">Import my messages</a></div>
+       macOS will ask you to allow it the first time. Nothing is read until you do.`
+    : `To read your own, quit this and run two commands in Terminal — the first asks
+       macOS for permission to read Messages once, the second starts the app again.
+       <div class="cmds"><code>./mg import</code><code>./mg serve</code></div>`;
   return `<div class="notice demo"><div><b>These people aren't real.</b>
-    You're looking at a made-up history so the app has something to show. To read
-    your own, quit this and run two commands in Terminal — the first asks macOS for
-    permission to read Messages once, the second starts the app again.
-    <div class="cmds"><code>./mg import</code><code>./mg serve</code></div>
-    Nothing is uploaded by either: the import writes an encrypted copy on this Mac
+    You're looking at a made-up history so the app has something to show.
+    ${how}
+    Nothing is uploaded either way: the import writes an encrypted copy on this Mac
     and the key goes in your Keychain.</div></div>`;
 }
 
@@ -2326,6 +2335,18 @@ async function viewPrivacy() {
         'Derived numbers may cross the boundary; raw message bodies may not.')}
     ${T('redact_on_send', s.redact_on_send, 'Redact identifiers',
         'Strips phone numbers, emails, addresses, URLs, and card-shaped digits before anything is sent.')}
+    <h2>Your messages</h2>
+    <div class="sub tight">${S.overview.source === 'synthetic'
+      ? 'This is the made-up history. Importing replaces it with your own.'
+      : `Imported from Messages on this Mac — ${n(S.overview.messages, 'message')} across
+         ${n(S.overview.threads, 'thread')}. Import again whenever you want fresher data;
+         your names, locations and other corrections are kept.`}</div>
+    ${inDesktopApp()
+      ? `<div class="cmds one"><a class="btn primary" href="mg://import">${
+          S.overview.source === 'synthetic' ? 'Import my messages' : 'Import again'}</a></div>`
+      : `<div class="sub tight">In a browser this is a terminal command:
+         <div class="cmds"><code>./mg import</code></div>
+         Open the Mac app and it is a button.</div>`}
     <h2>Your phone</h2>
     <div id="phonebox"><span class="pempty">Loading…</span></div>
     <h2>What a Claude call would contain</h2>
