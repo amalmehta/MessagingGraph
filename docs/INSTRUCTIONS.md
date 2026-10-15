@@ -44,6 +44,16 @@ your own messages.
 
 ## Use it with your own messages
 
+### In the Mac app
+
+Press **Import my messages**. macOS asks you to allow Messaging Graph to read them the first
+time: the app opens the right settings pane, you switch it on, and press **Reopen**. Nothing is
+read until you do.
+
+Build the app with `./mg build-app` if you haven't.
+
+### Or from a terminal
+
 1. Open **System Settings → Privacy & Security → Full Disk Access**, turn it on for **Terminal**,
    then quit and reopen Terminal.
 2. Import your messages:
@@ -56,8 +66,12 @@ your own messages.
    ./mg serve
    ```
 
-Run `./mg import` again whenever you want fresher data. Your names, locations and other
-corrections are kept.
+Import again whenever you want fresher data. Your names, locations and other corrections are
+kept either way.
+
+**Which app holds the permission.** Importing in the Mac app means Messaging Graph holds Full
+Disk Access rather than Terminal. It only reads `chat.db` during an import — serving your data
+never touches it — and you can switch it back off in the same settings pane whenever you like.
 
 ## Mac app
 

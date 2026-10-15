@@ -36,6 +36,8 @@ from AppKit import (
 )
 from Foundation import NSURL, NSObject, NSURLRequest
 from PyObjCTools import AppHelper
+
+from app import importer
 from WebKit import WKWebView, WKWebViewConfiguration
 
 APP_NAME = "Messaging Graph"
@@ -139,12 +141,56 @@ def _page(title: str, body: str) -> str:
     return PAGE.replace("{title}", title).replace("{body}", body)
 
 
+# The one screen that used to be two Terminal commands and a trip through
+# System Settings. It can't flip the switch for you -- macOS reserves that --
+# but it can open the right pane and wait, rather than describing where to click.
+PERMISSION = """<!doctype html><meta charset="utf-8"><style>
+:root{color-scheme:light dark;--page:#f6f5f2;--text:#4a4f55;--head:#1c1e21;
+--line:#dcd9d2;--card:#fffefb;--accent:#3c6ea5}
+@media (prefers-color-scheme:dark){:root{--page:#191b1f;--text:#b3bac2;--head:#edeff2;
+--line:#2f3339;--card:#1f2228;--accent:#7aa9d8}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--page);
+color:var(--text);font:15px/1.6 -apple-system,system-ui,sans-serif}
+.w{max-width:470px;padding:32px 26px}
+h1{color:var(--head);font-size:21px;margin:0 0 10px}
+ol{padding-left:20px;margin:18px 0}li{margin:7px 0}
+b{color:var(--head)}
+.row{display:flex;gap:10px;margin-top:20px;flex-wrap:wrap}
+a.btn{display:inline-block;padding:9px 15px;border-radius:9px;text-decoration:none;
+border:1px solid var(--line);color:var(--head);background:var(--card)}
+a.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.note{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);font-size:13px}
+</style><body><div class="w">
+<h1>Messaging Graph needs permission to read your messages</h1>
+<p>macOS keeps <b>~/Library/Messages</b> behind Full Disk Access. Nothing is read
+until you grant it, and nothing leaves this Mac afterwards — the import writes
+an encrypted copy here and the key goes in your Keychain.</p>
+<ol>
+<li>Open the settings pane below.</li>
+<li>Switch on <b>Messaging Graph</b>.</li>
+<li>Come back and press <b>Reopen</b> — a permission granted now only reaches
+this app once it has started again.</li>
+</ol>
+<div class="row">
+<a class="btn primary" href="mg://settings">Open Full Disk Access</a>
+<a class="btn" href="mg://relaunch">Reopen Messaging Graph</a>
+</div>
+<div class="note">You can switch it back off whenever you like. The app only
+reads chat.db during an import; serving your data never touches it.</div>
+</div></body>"""
+
+
+def _permission_page() -> str:
+    return PERMISSION
+
+
 class Controller(NSObject):
 
     @objc.python_method
     def setup(self, background: bool) -> None:
         self.server = None                   # in-process server module, when not using the project's Python
         self.child = None                    # `mg serve` process, when using it
+        self.importing = False               # one import at a time
         self.launch_url = None
         self.background = background
         self._build_main_menu()
@@ -205,6 +251,11 @@ class Controller(NSObject):
         self.webview = WKWebView.alloc().initWithFrame_configuration_(
             self.window.contentView().bounds(), WKWebViewConfiguration.alloc().init())
         self.webview.setAutoresizingMask_(18)          # width + height
+        # So the page can tell it is inside this app and offer the import as a
+        # button. The same server answers a browser and a phone on the Wi-Fi,
+        # where mg:// means nothing, so this has to be per-client.
+        self.webview.setCustomUserAgent_(
+            "Mozilla/5.0 (Macintosh) MessagingGraph/desktop")
         self.webview.setNavigationDelegate_(self)
         self.window.setContentView_(self.webview)
         self.webview.loadHTMLString_baseURL_(
@@ -225,7 +276,7 @@ class Controller(NSObject):
         self._item(menu, "Open " + APP_NAME, "show:", target=self)
         self._item(menu, "Reload data", "reloadData:", target=self)
         menu.addItem_(NSMenuItem.separatorItem())
-        self._item(menu, "Import messages in Terminal…", "importMessages:", target=self)
+        self._item(menu, "Import my messages…", "importMessages:", target=self)
         self._item(menu, "Check privacy in Terminal…", "checkPrivacy:", target=self)
         menu.addItem_(NSMenuItem.separatorItem())
         self.login_item = self._item(menu, "Start at login", "toggleLogin:", target=self)
@@ -386,7 +437,7 @@ class Controller(NSObject):
         threading.Thread(target=work, daemon=True).start()
 
     def importMessages_(self, sender):
-        run_in_terminal("import")
+        self.beginImport()
 
     def checkPrivacy_(self, sender):
         run_in_terminal("doctor")
@@ -415,11 +466,83 @@ class Controller(NSObject):
     # -- navigation: only this app's own pages load inside the window ---------
     def webView_decidePolicyForNavigationAction_decisionHandler_(self, webview, action, handler):
         url = action.request().URL()
+        if url is not None and url.scheme() == "mg":
+            # The page's way of asking the app for something only the app can do.
+            # Reading chat.db is granted to Messaging Graph, not to the Python
+            # running the data server, so the import has to happen in here.
+            handler(0)
+            what = (url.host() or "").lower()
+            if what == "import":
+                AppHelper.callAfter(self.beginImport)
+            elif what == "settings":
+                NSWorkspace.sharedWorkspace().openURL_(
+                    NSURL.URLWithString_(importer.SETTINGS_URL))
+            elif what == "relaunch":
+                AppHelper.callAfter(self.relaunch)
+            return
         if url is None or url.scheme() in ("about", "data") or url.host() in ("127.0.0.1", "localhost"):
             handler(1)                                  # allow
         else:
             NSWorkspace.sharedWorkspace().openURL_(url)  # anything else opens in your browser
             handler(0)
+
+    # -- importing, without a terminal ---------------------------------------
+    @objc.python_method
+    def beginImport(self) -> None:
+        """Ask once whether we can read, then do the slow part off the main thread."""
+        if self.importing:
+            return
+        got = importer.access()
+        if not got.ok:
+            self._show_permission(got)
+            return
+        self.importing = True
+        self._show_busy("Importing your messages", "Starting…")
+        threading.Thread(target=self._import_work, daemon=True).start()
+
+    @objc.python_method
+    def _import_work(self) -> None:
+        try:
+            result = importer.run_import(
+                on_step=lambda line: AppHelper.callAfter(
+                    self._show_busy, "Importing your messages", line))
+        except Exception as e:                           # a broken read, not a crash
+            self.importing = False
+            self._show_error("The import stopped", str(e) or type(e).__name__)
+            return
+        self.importing = False
+        if not result.ok:
+            self._show_error("Nothing was imported", result.note)
+            return
+        AppHelper.callAfter(self._import_done, result)
+
+    @objc.python_method
+    def _import_done(self, result) -> None:
+        # The server was started against the demo corpus, or an older vault, so
+        # it has to come back up before the window shows what just landed.
+        self._show_busy("Imported", f"{result.messages:,} messages from "
+                                    f"{result.people:,} people. Reopening…")
+        self.reloadData_(None)
+
+    @objc.python_method
+    def _show_permission(self, got) -> None:
+        if got.missing:
+            self._show_error("No messages to read", got.reason)
+            return
+        self.webview.loadHTMLString_baseURL_(_permission_page(), None)
+
+    @objc.python_method
+    def _show_busy(self, title: str, line: str) -> None:
+        self.webview.loadHTMLString_baseURL_(_page(title, html.escape(line)), None)
+
+    @objc.python_method
+    def relaunch(self) -> None:
+        """Quit and come back, because a permission granted now reaches this
+        process only once it has started again."""
+        path = str(app_bundle() or "")
+        if path:
+            subprocess.Popen(["/usr/bin/open", "-n", "-a", path])
+        NSApp.terminate_(None)
 
 
 def main(argv: list[str] | None = None) -> int:

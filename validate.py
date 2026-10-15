@@ -851,6 +851,52 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nimporting without a terminal:")
+    from app import importer as _imp
+    _dt = Path("app/desktop.py").read_text()
+    _ajs = Path("app/static/app.js").read_text()
+    # The import used to be two commands and a trip through System Settings,
+    # which is where most people stopped.
+    check("the app can import on its own, without Terminal",
+          hasattr(_imp, "run_import") and "def beginImport" in _dt
+          and 'run_in_terminal("import")' not in _dt)
+    # Asked before trying, so a refusal is a sentence on screen.
+    _miss = _imp.access(str(Path(tempfile.mkdtemp()) / "nope.db"))
+    check("a Mac with no messages says so, rather than blaming permissions",
+          not _miss.ok and _miss.missing and "permission" not in _miss.reason.lower())
+    _locked = Path(tempfile.mkdtemp()) / "chat.db"
+    _locked.write_bytes(b"x" * 32)
+    _locked.chmod(0o000)
+    _got = _imp.access(str(_locked))
+    _locked.chmod(0o600)
+    check("and one it cannot read names the permission it needs",
+          not _got.ok and not _got.missing and "Full Disk Access" in _got.reason)
+    check("an import that can't read anything returns a sentence, not an exception",
+          _imp.run_import(path=str(Path(tempfile.mkdtemp()) / "nope.db")).ok is False)
+    check("the settings pane it offers is the Full Disk Access one",
+          _imp.SETTINGS_URL.endswith("Privacy_AllFiles"))
+    # The page asks the app, because the app is what macOS granted it to -- the
+    # data server can be the project's own Python, which was never granted.
+    for _link in ("mg://import", "mg://settings", "mg://relaunch"):
+        _what = _link.split("//")[1]
+        check(f"the page can ask the app to {_what}",
+              f'what == "{_what}"' in _dt or f'href="{_link}"' in _dt or _link in _ajs)
+    check("and the app answers those itself instead of browsing to them",
+          'url.scheme() == "mg"' in _dt)
+    # The same server answers a browser and a phone, where mg:// means nothing.
+    check("the button only appears inside the app",
+          "MessagingGraph/desktop" in _dt and "inDesktopApp" in _ajs)
+    check("a browser still gets the commands that work there",
+          "./mg import" in _ajs and "./mg serve" in _ajs)
+    check("a permission granted is explained as needing a restart",
+          "started again" in _dt and "def relaunch" in _dt)
+    # With data already imported there is no demo banner, so the only way back
+    # in was the menu bar -- and refreshing the data is the common case.
+    check("you can import again once you already have data",
+          '<h2>Your messages</h2>' in _ajs and "Import again" in _ajs)
+    check("and the instructions no longer open with Terminal",
+          "Press **Import my messages**" in Path("docs/INSTRUCTIONS.md").read_text())
+
     print("\nwords that were never mine:")
     from app.analysis.quoted import my_name as _mn, is_quoted as _iq, MIN_GREETINGS as _MG
     from app.analysis.gratitude import _clean_what as _cw, _when as _wn
