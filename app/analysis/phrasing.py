@@ -58,3 +58,24 @@ def gap_words(days: int) -> str:
     # int() on 1.9 years gave "over 1 years". Anything short of two is a year.
     years = int(days / 365.25)
     return "over a year" if years < 2 else f"over {years} years"
+
+
+MONTHS = ("January", "February", "March", "April", "May", "June", "July",
+          "August", "September", "October", "November", "December")
+
+
+def when_words(then, now) -> str:
+    """When something happened, said the way you would say it to someone.
+
+    Reads after "it's been" or on its own: "back in August", "last November".
+    The year comes from the calendar, not from a day count: at 330 days the old
+    rule called November 2025 "back in November" while standing in October
+    2026, which is last November by any reading.
+    """
+    days = (now - then).days
+    if days < 21:
+        return "the other week" if days >= 10 else "the other day"
+    if days < 56:
+        return f"about {max(3, round(days / 7))} weeks ago"
+    month = MONTHS[then.month - 1]
+    return f"back in {month}" if then.year == now.year else f"last {month}"
