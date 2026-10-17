@@ -20,7 +20,7 @@ function signedOut() {
   document.body.innerHTML = paired
     ? `<div class="signedout"><h2>Lost the Mac</h2>
        <p>Messaging Graph isn't answering. It may be asleep, off this Wi-Fi, or
-       restarting.</p><button class="btn primary" onclick="location.reload()">Try again</button></div>`
+       restarting.</p><button type="button" class="btn primary" onclick="location.reload()">Try again</button></div>`
     : `<div class="signedout"><h2>This session has ended</h2>
        <p>The server was restarted, so the link it printed earlier no longer works.
        Open the new link from your terminal.</p></div>`;
@@ -37,6 +37,8 @@ async function postJSON(path, body) {
 // n with its noun, agreeing: n(1, 'plan') -> "1 plan". Written out by hand in
 // a few places already, and missing in the places this fixes.
 const n = (k, singular, plural) => `${k} ${k === 1 ? singular : (plural || singular + 's')}`;
+
+const COPY_HINT = 'Selected. Press ⌘C to copy.';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -493,6 +495,8 @@ function syncFoot() {
     ? s.excluded_contact_ids.length + ' hidden' : '';
 }
 
+const VIEW_TITLE = { now: 'Now', graph: 'My brainstorm', people: 'People', privacy: 'Privacy' };
+
 function go(v, push = true) {
   // Re-read the palette on every render rather than caching it once. The CSS is
   // the authority; this way a theme that changed underneath us -- a system flip,
@@ -509,6 +513,13 @@ function go(v, push = true) {
     if (here) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   });
+  // Replacing the contents does not move the scrollbar, so leaving People
+  // half way down and opening Now put you half way down Now.
+  const main = $('#main');
+  if (main) main.scrollTop = 0;
+  // Every view was called "messaging graph", which makes the back button and
+  // a row of tabs equally unhelpful.
+  document.title = `${VIEW_TITLE[v] || 'messaging graph'} · messaging graph`;
   ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy })[v]();
 }
 
@@ -561,13 +572,13 @@ function viewNow() {
     <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
     ${notices(o)}
     <div class="statline">
-      ${pc.confirmed ? `<button class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>` : ''}
-      ${pc.in_motion ? `<button class="jump" data-goto="graph" data-jump="plans-motion"><b>${pc.in_motion}</b> being discussed</button>` : ''}
-      ${pc.revive ? `<button class="jump" data-goto="graph" data-jump="plans-revive"><b>${pc.revive}</b> worth reviving</button>` : ''}
+      ${pc.confirmed ? `<button type="button" class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>` : ''}
+      ${pc.in_motion ? `<button type="button" class="jump" data-goto="graph" data-jump="plans-motion"><b>${pc.in_motion}</b> being discussed</button>` : ''}
+      ${pc.revive ? `<button type="button" class="jump" data-goto="graph" data-jump="plans-revive"><b>${pc.revive}</b> worth reviving</button>` : ''}
       ${v.close ? `<span><b>${v.close}</b> close right now</span>` : ''}
       ${v.quiet ? `<span><b>${v.quiet}</b> gone quiet</span>` : ''}
     </div>
-    <div class="foot-note">From ${o.messages.toLocaleString()} messages across ${o.threads}
+    <div class="foot-note">From ${o.messages.toLocaleString()} messages across ${o.threads.toLocaleString()}
       threads on this Mac. None of it is a to-do list — skipping all of it is a perfectly
       good week.</div>`;
   document.querySelectorAll('.card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
@@ -622,7 +633,7 @@ function notices(o) {
       keep going to digits instead of names — everything here reads better once
       the app knows who is who.`
       : 'Name them so their profiles and drafts make sense.'}</div>
-      <button class="btn primary name-them">Name them</button></div>` : ''}
+      <button type="button" class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(o)}
     ${o.filtered ? `<div class="notice quiet"><div>${o.filtered} automated or marketing
       ${o.filtered === 1 ? 'thread is' : 'threads are'} set aside and left out of everything here.</div></div>` : ''}`;
@@ -694,9 +705,9 @@ function draftCard(d, src = '/api/messages') {
     ${d.detail ? `<div class="detail">${quoted ? '“' + esc(d.detail) + '”' : 'Proposed: ' + esc(d.detail)}</div>` : ''}
     <textarea class="dtext" rows="2" aria-label="Draft message to ${esc(d.who)}">${esc(d.draft)}</textarea>
     <div class="dact">
-      <button class="btn primary copy">Copy</button>
-      ${d.options > 1 ? '<button class="btn another">Another version</button>' : ''}
-      <button class="btn ghost skip">Not now</button>
+      <button type="button" class="btn primary copy">Copy</button>
+      ${d.options > 1 ? '<button type="button" class="btn another">Another version</button>' : ''}
+      <button type="button" class="btn ghost skip">Not now</button>
       <span class="dnote" role="status"></span>
     </div></div>`;
 }
@@ -712,7 +723,7 @@ function wireDraft(card) {
       note.textContent = 'Copied. Paste it into Messages.';
     } catch {
       ta.select();
-      note.textContent = 'Selected. Press ⌘C to copy.';
+      note.textContent = COPY_HINT;
     }
     card.classList.add('sent');
     hideDraft(id, 'copied');
@@ -759,7 +770,7 @@ async function drawCrew() {
           ${[2, 3, 4, 5, 6, 7, 8].map(n => `<option value="${n}" ${String(S.crew.size) === String(n) ? 'selected' : ''}>${n}</option>`).join('')}
         </select></label>
       <label class="mini"><input id="crew-near" type="checkbox" ${S.crew.nearby ? 'checked' : ''}> keep it local</label>
-      <button class="btn primary crew-go">Who should I ask?</button>
+      <button type="button" class="btn primary crew-go">Who should I ask?</button>
     </div>
     ${ideas.length ? `<div class="crewideas"><span class="mini">or try:</span>
       ${ideas.map(i => `<button type="button" class="chip sm crew-idea" data-a="${esc(i.activity)}" title="${esc(i.why)}">${esc(i.activity)}</button>`).join('')}</div>` : ''}
@@ -810,14 +821,14 @@ async function loadCrew() {
         <ul class="why">${m.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul></div>`).join('')}</div>
     ${crew.alternates.length ? `<div class="alts mini">If someone can't make it:
       ${crew.alternates.map(m => `<span class="link alt" data-id="${esc(m.id)}">${esc(m.name)}</span>`).join(', ')}</div>` : ''}
-    <div class="crewact"><button class="btn another crew-others">Suggest different people</button></div>
+    <div class="crewact"><button type="button" class="btn another crew-others">Suggest different people</button></div>
     <div class="draft plain">
       <div class="dtop"><span class="who">The ask</span>${crew.when_label
         ? `<span class="kind">${esc(crew.when_label)}</span>` : ''}</div>
       <textarea class="dtext" rows="2" aria-label="Invitation to send">${esc(crew.draft)}</textarea>
       <div class="dact">
-        <button class="btn primary crew-copy">Copy</button>
-        <button class="btn another crew-again">Another version</button>
+        <button type="button" class="btn primary crew-copy">Copy</button>
+        <button type="button" class="btn another crew-again">Another version</button>
         <span class="dnote" role="status"></span>
       </div></div></div>`;
   fitText(out.querySelector('.dtext'));
@@ -829,7 +840,7 @@ async function loadCrew() {
       note.textContent = 'Copied. Start a group in Messages and paste it.';
     } catch {
       ta.select();
-      note.textContent = 'Selected. Press ⌘C to copy.';
+      note.textContent = COPY_HINT;
     }
   };
   out.querySelector('.crew-again').onclick = () => {
@@ -858,41 +869,46 @@ async function copyInto(ta, note) {
     note.textContent = 'Copied. Paste it into the chat.';
   } catch {
     ta.select();
-    note.textContent = 'Selected. Press ⌘C to copy.';
+    note.textContent = COPY_HINT;
   }
 }
 
 async function drawCircles() {
-  const host = $('#circles-panel');
-  if (!host) return;
-  const d = await api('/api/connections');
-  S.circles = Object.fromEntries(d.circles.map(c => [c.thread_id, c]));
-  const ago = n => n === null ? '—' : n === 0 ? 'active today' : `last active ${n}d ago`;
-  const person = (id, name, extra = '') =>
-    `<button class="mchip" data-person="${esc(id)}">${avatar(name, 'sm')}${esc(name)}${extra}</button>`;
-  const groups = d.circles.map(c => `
-    <div class="circle">
-      <div class="ctop"><b>${esc(c.name)}</b><span class="cmeta">${ago(c.days_idle)}</span></div>
-      <div class="cmembers">${c.members.map(m => person(m.id, m.name)).join('')}</div>
-      <div class="cfoot"><span>${c.messages.toLocaleString()} messages · ${n(c.plans_done, 'plan')} happened${
-        c.plans_open ? ` · ${c.plans_open} live` : ''}</span>
-        <button class="btn primary propose" data-thread="${esc(c.thread_id)}">Propose a plan</button></div>
-    </div>`).join('');
-  const interests = d.interests.map(g => `
-    <div class="interest"><div class="itop"><b>${esc(g.interest)}</b><span class="cmeta">${g.members.length} people</span></div>
-      <div class="cmembers">${g.members.map(m => person(m.id, m.name)).join('')}</div></div>`).join('');
-  host.innerHTML = `
-    <div class="netsec"><div class="nethead">Group chats <span>${d.circles.length}</span></div>
-      <div class="circles">${groups || '<div class="pempty">No group chats.</div>'}</div></div>
-    <div class="netsec"><div class="nethead">Shared interests <span>${d.interests.length}</span></div>
-      <div class="pdef">What stands out in each person's thread compared with your others, not just what everyone talks about.</div>
-      <div class="interests">${interests || '<div class="pempty">Not enough shared topics yet.</div>'}</div></div>
-    ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}`;
-  host.querySelectorAll('.mchip[data-person]').forEach(el => el.onclick = () => openPerson(el.dataset.person));
-  host.querySelectorAll('.propose').forEach(b => b.onclick = () => {
-    const c = S.circles[b.dataset.thread];
-    openProposal(c, c.members.map(m => m.id), 0);
-  });
+  try {
+    const host = $('#circles-panel');
+    if (!host) return;
+    const d = await api('/api/connections');
+    S.circles = Object.fromEntries(d.circles.map(c => [c.thread_id, c]));
+    const ago = n => n === null ? '—' : n === 0 ? 'active today' : `last active ${n}d ago`;
+    const person = (id, name, extra = '') =>
+      `<button type="button" class="mchip" data-person="${esc(id)}">${avatar(name, 'sm')}${esc(name)}${extra}</button>`;
+    const groups = d.circles.map(c => `
+      <div class="circle">
+        <div class="ctop"><b>${esc(c.name)}</b><span class="cmeta">${ago(c.days_idle)}</span></div>
+        <div class="cmembers">${c.members.map(m => person(m.id, m.name)).join('')}</div>
+        <div class="cfoot"><span>${c.messages.toLocaleString()} messages · ${n(c.plans_done, 'plan')} happened${
+          c.plans_open ? ` · ${c.plans_open} live` : ''}</span>
+          <button type="button" class="btn primary propose" data-thread="${esc(c.thread_id)}">Propose a plan</button></div>
+      </div>`).join('');
+    const interests = d.interests.map(g => `
+      <div class="interest"><div class="itop"><b>${esc(g.interest)}</b><span class="cmeta">${n(g.members.length, 'person', 'people')}</span></div>
+        <div class="cmembers">${g.members.map(m => person(m.id, m.name)).join('')}</div></div>`).join('');
+    host.innerHTML = `
+      <div class="netsec"><div class="nethead">Group chats <span>${d.circles.length}</span></div>
+        <div class="circles">${groups || '<div class="pempty">No group chats.</div>'}</div></div>
+      <div class="netsec"><div class="nethead">Shared interests <span>${d.interests.length}</span></div>
+        <div class="pdef">What stands out in each person's thread compared with your others, not just what everyone talks about.</div>
+        <div class="interests">${interests || '<div class="pempty">Not enough shared topics yet.</div>'}</div></div>
+      ${d.mention_links ? `<div class="pfoot">${d.mention_links} connection${d.mention_links === 1 ? '' : 's'} found from people coming up by name in other chats. They show on each person's profile.</div>` : ''}`;
+    host.querySelectorAll('.mchip[data-person]').forEach(el => el.onclick = () => openPerson(el.dataset.person));
+    host.querySelectorAll('.propose').forEach(b => b.onclick = () => {
+      const c = S.circles[b.dataset.thread];
+      openProposal(c, c.members.map(m => m.id), 0);
+    });
+  } catch {
+    const box = $('#circles-panel');
+    if (box) box.innerHTML = `<div class="empty">Couldn't load who's connected. <button type="button" class="linkish" onclick="drawCircles()">Try again</button></div>`;
+  }
 }
 
 // ---------------------------------------------------------------- filtered threads
@@ -911,7 +927,7 @@ async function drawFiltered() {
       <div class="ctop"><b>${esc(t.name)}</b><span class="cmeta">${status(t)}</span></div>
       ${t.sample ? `<div class="detail">“${esc(t.sample)}”</div>` : ''}
       ${t.reasons.length ? `<ul class="pp-why">${t.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-      <div class="dact"><button class="btn ${t.automated ? 'primary' : 'ghost'} verdict"
+      <div class="dact"><button type="button" class="btn ${t.automated ? 'primary' : 'ghost'} verdict"
         data-tid="${esc(t.thread_id)}" data-real="${t.automated}">${t.automated ? "It's a real person" : 'Set aside again'}</button>
         <span class="dnote" role="status"></span></div>
     </div>`).join('')}</div>`;
@@ -940,14 +956,14 @@ function wireThanks(cid, seed) {
         <span class="kind">${DRAFT_KIND[d.kind] || ''}</span></div>
       <div class="why">${esc(d.why)}</div>
       <textarea class="dtext" id="thank-text" aria-label="Thank-you draft">${esc(d.draft)}</textarea>
-      <div class="dact"><button class="btn primary" id="thank-copy">Copy</button>
-        ${d.options > 1 ? '<button class="btn" id="thank-next">Another version</button>' : ''}
+      <div class="dact"><button type="button" class="btn primary" id="thank-copy">Copy</button>
+        ${d.options > 1 ? '<button type="button" class="btn" id="thank-next">Another version</button>' : ''}
         <span class="dnote" id="thank-note" role="status"></span></div></div>`;
     fitText($('#thank-text'));
     $('#thank-copy').onclick = () => copyInto($('#thank-text'), $('#thank-note'));
     const next = $('#thank-next');
     if (next) next.onclick = async () => {
-      box.innerHTML = '<button class="btn ghost" id="thank-btn">Draft a thank-you</button>';
+      box.innerHTML = '<button type="button" class="btn ghost" id="thank-btn">Draft a thank-you</button>';
       wireThanks(cid, (seed + 1) % d.options);
       $('#thank-btn').click();
     };
@@ -987,7 +1003,7 @@ function locationNotice(o) {
   const detail = l.to_confirm ? ` (${l.to_confirm} with a guess to confirm)` : '';
   return `<div class="notice"><div><b>${n} of the people you talk to most ${n === 1 ? "doesn't" : "don't"} have a confirmed location${detail}.</b>
     Add where they live so groups and plans can use it.</div>
-    <button class="btn primary add-locations">Add locations</button></div>`;
+    <button type="button" class="btn primary add-locations">Add locations</button></div>`;
 }
 
 async function saveLocation(cid, body) {
@@ -1001,14 +1017,14 @@ function renderLocation(cid, loc, unknown) {
   if (!box) return;
   const view = () => {
     if (loc && loc.source === 'you') {
-      box.innerHTML = `Lives in <b>${esc(loc.place)}</b> <button class="linkish" data-act="edit">Change</button>`;
+      box.innerHTML = `Lives in <b>${esc(loc.place)}</b> <button type="button" class="linkish" data-act="edit">Change</button>`;
     } else if (loc) {
       box.innerHTML = `${loc.confidence === 'likely' ? 'Might live' : 'Probably lives'} in <b>${esc(loc.place)}</b>
         <span class="quote">from “${esc(loc.quote)}”</span>
-        <button class="linkish" data-act="confirm">That's right</button><button class="linkish" data-act="edit">Change</button>`;
+        <button type="button" class="linkish" data-act="confirm">That's right</button><button type="button" class="linkish" data-act="edit">Change</button>`;
     } else {
       box.innerHTML = `${unknown ? "Location: you said you don't know" : 'Location unknown'}
-        <button class="linkish" data-act="edit">Add</button>`;
+        <button type="button" class="linkish" data-act="edit">Add</button>`;
     }
     box.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
       if (b.dataset.act === 'edit') return edit();
@@ -1102,7 +1118,7 @@ async function openNaming() {
       Your Contacts app isn't changed.</div>
     ${list.length ? list.map(u => `
       <div class="nameme" data-id="${esc(u.id)}">
-        <div class="ctop"><b>${esc(u.label)}</b><span class="cmeta">${u.messages} messages${
+        <div class="ctop"><b>${esc(u.label)}</b><span class="cmeta">${n(u.messages.toLocaleString(), 'message')}${
           u.last ? ' · last ' + esc(u.last.slice(0, 10)) : ''}</span></div>
         ${u.groups.length ? `<div class="pdef">Also in: ${u.groups.map(esc).join(', ')}</div>` : ''}
         <div class="msgs nm-recent">${u.recent.map(m =>
@@ -1150,7 +1166,7 @@ async function openProposal(circle, selected, seed) {
     <div class="pp-label">Who's invited</div>
     <div class="cmembers">${circle.members.map(m => {
       const on = selected.includes(m.id);
-      return `<button class="mchip toggle ${on ? 'on' : ''}" aria-pressed="${on}" data-id="${esc(m.id)}">${esc(m.name)}</button>`;
+      return `<button type="button" class="mchip toggle ${on ? 'on' : ''}" aria-pressed="${on}" data-id="${esc(m.id)}">${esc(m.name)}</button>`;
     }).join('')}</div>
     <div class="proposal">
       <div class="pp-act">${esc(p.activity.charAt(0).toUpperCase() + p.activity.slice(1))}
@@ -1162,8 +1178,8 @@ async function openProposal(circle, selected, seed) {
     <div class="pp-label">Draft</div>
     <textarea class="dtext" id="pp-text" rows="3" aria-label="Draft plan message">${esc(p.draft)}</textarea>
     <div class="dact">
-      <button class="btn primary" id="pp-copy">Copy</button>
-      ${p.options > 1 ? '<button class="btn" id="pp-next">Another idea</button>' : ''}
+      <button type="button" class="btn primary" id="pp-copy">Copy</button>
+      ${p.options > 1 ? '<button type="button" class="btn" id="pp-next">Another idea</button>' : ''}
       <span class="dnote" id="pp-note" role="status"></span>
     </div>`;
   $('#drawer .close').onclick = closeDrawer;
@@ -1193,53 +1209,58 @@ function planRow(r) {
 }
 
 async function drawPlans() {
-  const host = $('#plans-panel');
-  if (!host) return;
-  const d = await api('/api/plans/overview'), k = d.counts;
-  S.planRows = Object.fromEntries([...d.confirmed, ...d.in_motion, ...d.revive].map(r => [r.id, r]));
-  const col = (id, color, title, def, rows, empty) => `
-    <section class="pcol" id="${id}">
-      <div class="phead"><span class="dot" style="background:${color}"></span><b>${title}</b>
-        <span class="cnt">${rows.length}</span></div>
-      <div class="pdef">${def}</div>
-      ${rows.length ? rows.map(planRow).join('') : `<div class="pempty">${empty}</div>`}
-    </section>`;
-  const groups = d.groups.length ? d.groups.map(g => `
-    <div class="pgroup"><div class="pgname">${esc(g.name)}</div>
-      <div class="pgmem">${firstNames(g.members)}</div>
-      ${g.plans.map(planRow).join('')}</div>`).join('')
-    : '<div class="pempty">No live plans in any group chat.</div>';
-  const revive = S.showAllRevive ? d.revive : d.revive.slice(0, 6);
-  host.innerHTML = `
-    <div class="pgrid">
-      ${col('plans-confirmed', PAINT.adds, 'Confirmed', 'Someone said yes, or it has a date.',
-            d.confirmed, 'Nothing confirmed right now.')}
-      ${col('plans-motion', PAINT.accent, 'Still being discussed', 'Floated or proposed, no firm yes yet.',
-            d.in_motion, 'Nothing under discussion right now.')}
-      <section class="pcol" id="plans-groups">
-        <div class="phead"><span class="dot" style="background:${PAINT.plan}"></span><b>Between groups</b>
-          <span class="cnt">${d.groups.reduce((n, g) => n + g.plans.length, 0)}</span></div>
-        <div class="pdef">Live plans in group chats, and who's in each group.</div>
-        ${groups}
-      </section>
-    </div>
-    <section class="previve" id="plans-revive">
-      <div class="phead"><span class="dot" style="background:${PAINT.stale}"></span><b>Worth reviving</b>
-        <span class="cnt">${k.revive}</span></div>
-      <div class="pdef">Wanted in the last ${d.revive_window_days} days, and nobody picked a day.</div>
-      <div class="rgrid">${revive.map(planRow).join('') || '<div class="pempty">Nothing stalled recently.</div>'}</div>
-      ${d.revive.length > 6 ? `<button class="btn ghost more-revive">${S.showAllRevive ? 'Show fewer' : `Show all ${d.revive.length}`}</button>` : ''}
-      <div class="pfoot">Not shown: ${k.lapsed} older plans that quietly lapsed, ${k.done} that happened,
-        and ${k.dropped} that someone called off.</div>
-    </section>`;
-  host.querySelectorAll('.pr').forEach(el => {
-    const open = () => openPlan(el.dataset.plan);
-    el.onclick = open;
-    el.onkeydown = e => { if (e.key === 'Enter') open(); };
-  });
-  const more = host.querySelector('.more-revive');
-  if (more) more.onclick = () => { S.showAllRevive = !S.showAllRevive; drawPlans(); };
-  settleJump();              // a count on Now may have been aiming at one of these
+  try {
+    const host = $('#plans-panel');
+    if (!host) return;
+    const d = await api('/api/plans/overview'), k = d.counts;
+    S.planRows = Object.fromEntries([...d.confirmed, ...d.in_motion, ...d.revive].map(r => [r.id, r]));
+    const col = (id, color, title, def, rows, empty) => `
+      <section class="pcol" id="${id}">
+        <div class="phead"><span class="dot" style="background:${color}"></span><b>${title}</b>
+          <span class="cnt">${rows.length}</span></div>
+        <div class="pdef">${def}</div>
+        ${rows.length ? rows.map(planRow).join('') : `<div class="pempty">${empty}</div>`}
+      </section>`;
+    const groups = d.groups.length ? d.groups.map(g => `
+      <div class="pgroup"><div class="pgname">${esc(g.name)}</div>
+        <div class="pgmem">${firstNames(g.members)}</div>
+        ${g.plans.map(planRow).join('')}</div>`).join('')
+      : '<div class="pempty">No live plans in any group chat.</div>';
+    const revive = S.showAllRevive ? d.revive : d.revive.slice(0, 6);
+    host.innerHTML = `
+      <div class="pgrid">
+        ${col('plans-confirmed', PAINT.adds, 'Confirmed', 'Someone said yes, or it has a date.',
+              d.confirmed, 'Nothing confirmed right now.')}
+        ${col('plans-motion', PAINT.accent, 'Still being discussed', 'Floated or proposed, no firm yes yet.',
+              d.in_motion, 'Nothing under discussion right now.')}
+        <section class="pcol" id="plans-groups">
+          <div class="phead"><span class="dot" style="background:${PAINT.plan}"></span><b>Between groups</b>
+            <span class="cnt">${d.groups.reduce((n, g) => n + g.plans.length, 0)}</span></div>
+          <div class="pdef">Live plans in group chats, and who's in each group.</div>
+          ${groups}
+        </section>
+      </div>
+      <section class="previve" id="plans-revive">
+        <div class="phead"><span class="dot" style="background:${PAINT.stale}"></span><b>Worth reviving</b>
+          <span class="cnt">${k.revive}</span></div>
+        <div class="pdef">Wanted in the last ${n(d.revive_window_days, 'day')}, and nobody picked a day.</div>
+        <div class="rgrid">${revive.map(planRow).join('') || '<div class="pempty">Nothing stalled recently.</div>'}</div>
+        ${d.revive.length > 6 ? `<button type="button" class="btn ghost more-revive" aria-expanded="${!!S.showAllRevive}">${S.showAllRevive ? 'Show fewer' : `Show all ${d.revive.length}`}</button>` : ''}
+        <div class="pfoot">Not shown: ${k.lapsed} older plans that quietly lapsed, ${k.done} that happened,
+          and ${k.dropped} that someone called off.</div>
+      </section>`;
+    host.querySelectorAll('.pr').forEach(el => {
+      const open = () => openPlan(el.dataset.plan);
+      el.onclick = open;
+      el.onkeydown = e => { if (e.key === 'Enter') open(); };
+    });
+    const more = host.querySelector('.more-revive');
+    if (more) more.onclick = () => { S.showAllRevive = !S.showAllRevive; drawPlans(); };
+    settleJump();              // a count on Now may have been aiming at one of these
+  } catch {
+    const box = $('#plans-panel');
+    if (box) box.innerHTML = `<div class="empty">Couldn't load plans. <button type="button" class="linkish" onclick="drawPlans()">Try again</button></div>`;
+  }
 }
 
 async function drawOverall() {
@@ -1248,7 +1269,7 @@ async function drawOverall() {
   if (!host) return;
   mountChart(host, d, { height: 168, aria: 'Messages per week across all threads' });
   const sm = d.summary;
-  $('#rate-head').textContent = `${sm.recent_avg} messages a week`;
+  $('#rate-head').textContent = `${n(sm.recent_avg, 'message')} a week`;
   $('#rate-sub').textContent = sm.change === null ? 'across every thread'
     : `across every thread · ${sm.change > 0 ? '+' : ''}${sm.change}% against the previous quarter`;
 }
@@ -1324,7 +1345,7 @@ function viewPeople() {
       This is read from when and how you text, nothing more — it's a nudge to think of
       someone, not a verdict on them. Open anyone to see where each number came from.</div>
     ${S.overview.unnamed ? `<div class="notice"><div><b>${S.overview.unnamed} without a name.</b>
-      Name them so you can tell who's who.</div><button class="btn primary name-them">Name them</button></div>` : ''}
+      Name them so you can tell who's who.</div><button type="button" class="btn primary name-them">Name them</button></div>` : ''}
     ${locationNotice(S.overview)}
     <div class="chartbox"><div class="chead">
       <div><b id="rate-head">—</b><span id="rate-sub">across every thread</span></div>
@@ -1349,7 +1370,7 @@ function viewPeople() {
           `<option value="${c[0]}"${S.sort === c[0] ? ' selected' : ''}>${esc(c[1])}</option>`
         ).join('')}</select></label>
       <span class="hint" id="people-count"></span>
-      ${thin.length ? `<button class="btn ghost sm" id="t-thin">${S.showThin ? 'Hide' : 'Show'} ${
+      ${thin.length ? `<button type="button" class="btn ghost sm" id="t-thin" aria-expanded="${!!S.showThin}">${S.showThin ? 'Hide' : 'Show'} ${
         n(thin.length, 'thread')} with too little to read</button>` : ''}
     </div>
     <div id="archwrap"></div>
@@ -1733,7 +1754,7 @@ async function openPerson(id) {
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
     ${p.vibe ? vibeCard(p.vibe, p) : ''}
-    <div class="thankbox" id="thankbox"><button class="btn ghost" id="thank-btn">Draft a thank-you</button></div>
+    <div class="thankbox" id="thankbox"><button type="button" class="btn ghost" id="thank-btn">Draft a thank-you</button></div>
     <div class="metrics">
       <div class="metric"><div class="n">${p.msgs_per_week_recent.toFixed(1)}</div><div class="l">messages a week</div></div>
       <div class="metric"><div class="n">${p.warmth.toFixed(0)}</div><div class="l">warmth</div></div>
@@ -1746,13 +1767,13 @@ async function openPerson(id) {
         p.my_median_reply_s === null ? 'no reply of yours to time yet'
         : 'you write back in'}</div></div>
     </div>
-    ${p.confidence < .7 ? `<div class="empty">Only ${p.total_messages} messages here, so
+    ${p.confidence < .7 ? `<div class="empty">Only ${p.total_messages.toLocaleString()} messages here, so
       this is a sketch rather than a reading (confidence ${(p.confidence*100).toFixed(0)}%).</div>` : ''}
     <h2>What the numbers say — and what else they could mean</h2>
     ${p.signals.map(sig).join('')}
     <h2>Connected to</h2>
     <div class="cmembers">${d.connections.length ? d.connections.map(x =>
-      `<button class="mchip" data-person="${esc(x.id)}">${avatar(x.name, 'sm')}${esc(x.name)}<small>${esc(x.via.join(', '))}</small></button>`).join('')
+      `<button type="button" class="mchip" data-person="${esc(x.id)}">${avatar(x.name, 'sm')}${esc(x.name)}<small>${esc(x.via.join(', '))}</small></button>`).join('')
       : '<div class="pempty">No group chats together, just your one-to-one thread.</div>'}</div>
     <h2>Plans together</h2>
     <div class="plist">${d.plans.length ? d.plans.map(pl => `
@@ -1773,7 +1794,7 @@ async function openPerson(id) {
     </div>
     <div id="hist"></div>
     ${d.thread_id ? `<div class="drawer-foot">Not a real conversation?
-      <button class="btn ghost hide-thread" data-tid="${esc(d.thread_id)}">Set it aside as automated</button>
+      <button type="button" class="btn ghost hide-thread" data-tid="${esc(d.thread_id)}">Set it aside as automated</button>
       <span class="dnote" role="status"></span></div>` : ''}`;
   $('#drawer .close').onclick = closeDrawer;
   openDrawer();
@@ -1875,7 +1896,7 @@ function renderHistory() {
   const box = $('#hist');
   if (!box) return;
   $('#hcount').textContent = H.q
-    ? `${H.matched} of ${H.total} messages match`
+    ? `${H.matched.toLocaleString()} of ${n(H.total.toLocaleString(), 'message')} match`
     : `showing ${H.messages.length} of ${H.total}`;
 
   if (!H.messages.length) {
@@ -1883,7 +1904,7 @@ function renderHistory() {
     return;
   }
   const parts = [];
-  if (H.more) parts.push('<button class="more" id="older">Load older messages</button>');
+  if (H.more) parts.push('<button type="button" class="more" id="older">Load older messages</button>');
   let lastDay = null;
   for (const m of H.messages) {
     // A six-hour silence is a new conversation, the same rule the analysis uses.
@@ -2000,7 +2021,7 @@ async function openPlan(id) {
         : '<div class="empty">The messages behind this plan are no longer in the data.</div>'}
       <div class="pfoot">Highlighted messages are the ones that name it; the replies around them are how the
         app judged it ${esc(d.state)} (confidence ${Math.round(d.confidence * 100)}%).</div>
-      ${person ? `<div class="drawer-foot"><button class="btn ghost open-person" data-person="${esc(person.id)}">Open
+      ${person ? `<div class="drawer-foot"><button type="button" class="btn ghost open-person" data-person="${esc(person.id)}">Open
         ${esc(shortName(person.name))}'s profile</button></div>` : ''}`;
     const op = drawer.querySelector('.open-person');
     if (op) op.onclick = () => openPerson(op.dataset.person);
@@ -2018,7 +2039,8 @@ async function viewGraph() {
       Turn on stale plans to see what was agreed to and never landed. Drag to rearrange,
       scroll to zoom, hover to isolate, click anything for detail.</div>
     <div class="controls">
-      <span class="chip ${S.includeStale ? 'on' : ''}" id="t-stale">show stale plans</span>
+      <span class="chip ${S.includeStale ? 'on' : ''}" id="t-stale" role="switch"
+        tabindex="0" aria-checked="${!!S.includeStale}">show stale plans</span>
       <span class="focus" role="group" aria-label="Which conversations to draw">${
         [['direct', 'one-to-one'], ['group', 'group chats']].map(([k, label]) =>
           `<span class="chip ${S.ties[k] ? 'on' : ''}" data-tie="${k}"
@@ -2033,10 +2055,10 @@ async function viewGraph() {
       <div class="legend"><b>plan state</b>
         ${['scheduled', 'confirmed', 'proposed', 'floated', 'stale'].map(k =>
           `<span><i style="background:${STATE_COLOR[k]}"></i>${k}</span>`).join('')}
-        <b style="margin-top:4px">how a person is doing</b>
+        <b class="gap">how a person is doing</b>
         ${['close', 'steady', 'practical', 'uneven', 'quiet'].map(k =>
           `<span><i style="background:${STATE_COLOR_PERSON[k]}"></i>${STATE_LABEL[k]}</span>`).join('')}
-        <b style="margin-top:4px">lines</b>
+        <b class="gap">lines</b>
         <span><i class="ln solid"></i>just the two of you</span>
         <span><i class="ln dash"></i>a group chat you share</span>
         <span><i class="ln thin"></i>in this plan</span>
@@ -2054,7 +2076,13 @@ async function viewGraph() {
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>`;
-  $('#t-stale').onclick = () => { S.includeStale = !S.includeStale; viewGraph(); };
+  // It is a switch now, so it has to answer the keyboard like one.
+  const stale = $('#t-stale');
+  const flipStale = () => { S.includeStale = !S.includeStale; viewGraph(); };
+  stale.onclick = flipStale;
+  stale.onkeydown = e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipStale(); }
+  };
   document.querySelectorAll('[data-tie]').forEach(c => {
     const flip = () => {
       S.ties[c.dataset.tie] = !S.ties[c.dataset.tie];

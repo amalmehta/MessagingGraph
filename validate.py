@@ -852,6 +852,47 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nsmall things, swept rather than guessed:")
+    _ajs2 = Path("app/static/app.js").read_text()
+    _css2 = Path("app/static/styles.css").read_text()
+    _html2 = Path("app/static/index.html").read_text()
+    check("every button says what it is",
+          not re.search(r"<button(?![^>]*\btype=)", _ajs2 + _html2),
+          f"{(_ajs2 + _html2).count('type=\"button\"')} of them")
+    # A panel that fetches and never catches says "Loading…" for the rest of
+    # the session the moment the Mac blinks.
+    for _fn in ("drawPlans", "drawCircles", "drawCrew"):
+        _body = _ajs2[_ajs2.index(f"async function {_fn}()"):]
+        check(f"{_fn} says something when the fetch fails",
+              "catch" in _body[:_body.index("\n}\n")])
+    check("a focus ring is never removed without one to replace it",
+          "outline:none" not in _css2.replace("outline:none;border-color", "KEEP"),
+          "search and draft boxes included")
+    check("the page title says which view you are on",
+          "VIEW_TITLE" in _ajs2 and "document.title" in _ajs2)
+    check("and switching view takes you to the top of it",
+          "main.scrollTop = 0" in _ajs2)
+    check("counts people read carry their separators and agree with their noun",
+          "n(g.members.length, 'person', 'people')" in _ajs2
+          and "o.threads.toLocaleString()" in _ajs2)
+    check("one sentence is written once",
+          _ajs2.count("'Selected. Press") <= 1 and "COPY_HINT" in _ajs2)
+    check("nothing styles itself inline where a class would do",
+          'style="margin-top:4px"' not in _ajs2)
+    check("the stylesheet has no rules nothing can reach",
+          ".intros{" not in _css2 and ".intro .why" not in _css2)
+    check("and one element is described in one place",
+          _css2.count(".mchip small{") == 1)
+    check("the same refusal is worded the same way everywhere",
+          '"no such contact"' not in Path("app/main.py").read_text())
+    check("what shows and hides says so to a screen reader",
+          'aria-expanded="${!!S.showAllRevive}"' in _ajs2
+          and 'aria-expanded="${!!S.showThin}"' in _ajs2)
+    check("and a switch answers the keyboard as well as the mouse",
+          'role="switch"' in _ajs2 and "flipStale" in _ajs2)
+    check("the pairing page follows the system colours like the rest",
+          "theme-color" in Path("app/static/pair.html").read_text())
+
     print("\nthe phone, over a link that can be an app:")
     from app.tls import ensure as _tls, paths as _tlsp
     _troot = Path(tempfile.mkdtemp()) / "vault"

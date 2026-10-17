@@ -74,7 +74,7 @@ class KeychainKeyStore:
         try:
             self._kr.delete_password(SERVICE, ACCOUNT)
         except Exception:
-            pass
+            pass        # already gone, or the Keychain said no: nothing left to undo
 
 
 class MemoryKeyStore:

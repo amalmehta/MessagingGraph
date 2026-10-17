@@ -87,4 +87,5 @@ def _covers(cert_path: Path, names: list[str]) -> bool:
             return False
         return set(names) <= have
     except Exception:
+        # Unreadable, expired, the wrong shape: each means "make a new one".
         return False

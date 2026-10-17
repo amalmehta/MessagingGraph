@@ -55,7 +55,7 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
             out.append(Suggestion(
                 "reconnect", p.name, p.contact_id,
                 f"You used to talk about {a_week(p.msgs_per_week)}. "
-                f"It's been {gap} days.",
+                f"It's been {count(gap, 'day')}.",
                 f"No occasion needed — “hey, you crossed my mind” does the whole job.",
                 weight=88 + p.warmth / 5, tone="warm"))
 
@@ -103,7 +103,7 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
         elif p.state == "close" and gap > 12:
             out.append(Suggestion(
                 "check_in", p.name, p.contact_id,
-                f"One of your closer threads, quiet for {gap} days.",
+                f"One of your closer threads, quiet for {count(gap, 'day')}.",
                 f"Not a problem — just the kind of gap that's easy to close while "
                 f"it's still small.",
                 weight=62, tone="warm"))
