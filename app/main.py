@@ -199,6 +199,17 @@ class PlatformPick(BaseModel):
     platform: str
 
 
+@app.get("/api/refresh")
+def refresh_status():
+    """When the app last went and looked, and what it found.
+
+    Read-only here: the schedule runs in the Mac app, because reading your
+    messages is something only the app has permission to do.
+    """
+    from .refresh import load_status
+    return enc(load_status().to_dict())
+
+
 @app.get("/api/platforms")
 def platforms():
     """Which histories there are, and which one you are looking at."""

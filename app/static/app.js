@@ -2486,6 +2486,31 @@ function simulate(raw) {
 
 // ---------------------------------------------------------------- privacy
 
+// What the hourly schedule last managed, said plainly: a job that quietly
+// cannot do half its work is worse than no job.
+async function drawRefresh() {
+  const line = $('#refreshline');
+  if (!line) return;
+  let r;
+  try { r = await api('/api/refresh'); } catch { line.textContent = ''; return; }
+  if (!r.last_run) {
+    line.textContent = r.enabled
+      ? 'The Mac app re-reads your messages every hour. It has not run yet.'
+      : 'Hourly refresh is switched off in the menu bar.';
+    return;
+  }
+  const bits = r.last_results.map(o => o.ok
+    ? `${PLATFORM_LABEL[o.platform] || o.platform}: ${n(o.messages.toLocaleString(), 'message')}`
+    : `${PLATFORM_LABEL[o.platform] || o.platform} couldn't be read`);
+  line.innerHTML = `Last checked ${esc(ago(r.last_run))}. ${esc(bits.join(' · '))}
+    ${r.enabled ? '' : '<b>Hourly refresh is off.</b>'}
+    ${r.last_results.some(o => !o.ok)
+      ? `<br><span class="hint">${esc(r.last_results.filter(o => !o.ok)
+          .map(o => o.note).join(' '))}</span>` : ''}`;
+}
+
+const PLATFORM_LABEL = { imessage: 'iMessage', whatsapp: 'WhatsApp', instagram: 'Instagram' };
+
 async function viewPrivacy() {
   const d = await api('/api/privacy'), s = d.settings;
   const T = (key, on, title, note) => `
@@ -2516,6 +2541,8 @@ async function viewPrivacy() {
       : `<div class="sub tight">In a browser this is a terminal command:
          <div class="cmds"><code>./mg import</code></div>
          Open the Mac app and it is a button.</div>`}
+    <h2>Keeping up to date</h2>
+    <div class="sub tight" id="refreshline">Checking…</div>
     <h2>Your phone</h2>
     <div id="phonebox"><span class="pempty">Loading…</span></div>
     <h2>What a Claude call would contain</h2>
@@ -2527,6 +2554,7 @@ async function viewPrivacy() {
       Bring someone back from the People tab and this fills in.</div>`}
 `;
   drawPhone();
+  drawRefresh();
 
   document.querySelectorAll('.toggle').forEach(t => t.onclick = async () => {
     const key = t.dataset.k;
