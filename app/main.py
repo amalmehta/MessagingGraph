@@ -121,6 +121,19 @@ def network() -> dict:
     return _network["value"]
 
 
+_interests_cache: dict = {}
+
+
+def _interest_map() -> dict:
+    """What each person is the one you discuss, cached with the data: the scan
+    costs half a second and a search box must not."""
+    if _interests_cache.get("version") != state.version:
+        from .analysis.network import interests
+        _interests_cache.update(version=state.version,
+                                value=interests(state.corpus, state.plans))
+    return _interests_cache["value"]
+
+
 _topics: dict = {}
 
 
@@ -180,6 +193,24 @@ def person_series(cid: str, weeks: int = 40):
     if cid not in state.profiles_by_id:
         raise HTTPException(404, "No such contact.")
     return enc(contact_series(state.corpus, cid, state.now, max(8, min(80, weeks))))
+
+
+@app.get("/api/search")
+def search_everything(q: str = "", limit: int = 18):
+    """One box for the whole app, asked in the words you would say out loud.
+
+    Nothing here leaves the machine and nothing is sent to a model: the words
+    are weighted by how rare they are in your own history, which is what makes
+    "coachella" matter and "going" not.
+    """
+    from .search import search as run_search
+    if not q.strip():
+        return enc({"query": "", "terms": [], "hits": [], "searched": 0,
+                    "asked_when": False, "asked_who": False})
+    found = run_search(state.corpus, state.plans, state.profiles, q,
+                       now=state.now, limit=max(1, min(60, limit)),
+                       interests=_interest_map())
+    return enc(found.to_dict())
 
 
 @app.get("/api/people/{cid}/history")
