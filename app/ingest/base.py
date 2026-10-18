@@ -17,6 +17,14 @@ def load_source(name: str) -> Corpus:
     if name == "vault":
         from ..vault import Vault
         return Vault().read()
+    if name.startswith("vault:"):
+        # One platform's history. They are kept and shown apart, because they
+        # are different people saying different things in different places.
+        from ..vault import Vault
+        return Vault().read(name.split(":", 1)[1])
+    if name == "whatsapp":
+        from .whatsapp import WhatsAppSource
+        return WhatsAppSource().load()
     if name.startswith("chatdb:"):
         import os
         from .contacts import AB_ROOT

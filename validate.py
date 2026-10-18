@@ -852,6 +852,42 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nWhatsApp, and a tab for each platform:")
+    from app.ingest.whatsapp import WhatsAppSource, CORE_DATA_EPOCH, _from_jid, _when
+    from app.vault import Vault as _V, PLATFORMS as _PL, DEFAULT_PLATFORM as _DP
+    # Core Data counts from 2001, not 1970. Miss it and the whole history
+    # lands 31 years early and every thread looks dead.
+    _probe = datetime(2026, 1, 1)
+    check("WhatsApp's clock is read from 2001, not 1970",
+          CORE_DATA_EPOCH == 978307200
+          and abs((_when(_probe.timestamp() - 978307200) - _probe).total_seconds()) < 2)
+    check("a number with no name is shown as a number, not as a jid",
+          _from_jid("15551234567@s.whatsapp.net") == "+15551234567"
+          and _from_jid("") == "Unknown")
+    check("a missing WhatsApp says so rather than failing",
+          WhatsAppSource(path="/nope/ChatStorage.sqlite").available()[0] is False)
+    # Each platform is kept apart, and the one imported before platforms
+    # existed keeps the filename it already had.
+    _vt = _V(Path(tempfile.mkdtemp()) / "v", MemoryKeyStore())
+    check("iMessage keeps the name an older vault already wrote",
+          _vt.path_for("imessage").name == "corpus.v1.enc")
+    check("and every other platform gets its own file",
+          _vt.path_for("whatsapp").name == "corpus.whatsapp.v1.enc"
+          and _vt.path_for("whatsapp") != _vt.path_for("imessage"))
+    _vt.write(corpus, {"messages": len(corpus.messages)}, platform="whatsapp")
+    check("what is written to one platform is readable from it",
+          len(_vt.read("whatsapp").messages) == len(corpus.messages))
+    check("and writing one leaves the other alone",
+          _vt.imported() == ["whatsapp"] and not _vt.exists("imessage"))
+    _js5 = Path("app/static/app.js").read_text()
+    check("the page offers a tab per platform and nothing is merged",
+          "data-platform=" in _js5 and "/api/platform" in _js5
+          and "refreshAll" in _js5)
+    check("switching throws away what belonged to the platform you left",
+          "S.graph = null; S.drafts = {}" in _js5)
+    check("and WhatsApp needs no Full Disk Access, unlike chat.db",
+          "Group Container" in Path("app/ingest/whatsapp.py").read_text())
+
     print("\nasking the app a question:")
     from app.search import search as _se, terms as _terms, _word_in as _win
     _ans = _se(app_state.corpus, app_state.plans, app_state.profiles,

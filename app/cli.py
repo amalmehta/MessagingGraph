@@ -59,6 +59,29 @@ def _access_help() -> None:
 
 
 def cmd_import(a) -> int:
+    if getattr(a, "whatsapp", False):
+        return _import_whatsapp(a)
+    return _import_imessage(a)
+
+
+def _import_whatsapp(a) -> int:
+    """WhatsApp keeps its history in a Group Container, which macOS does not
+    protect, so this needs no Full Disk Access and no trip through Settings."""
+    from .importer import run_whatsapp_import
+    r = run_whatsapp_import(days=a.days, on_step=lambda m: print(f"  {m}", flush=True))
+    if not r.ok:
+        _line(BAD, r.note)
+        return 1
+    print(f"\n  messages                {r.messages:>8,}")
+    print(f"  people                  {r.people:>8,}")
+    print(f"  threads                 {r.threads:>8,}\n")
+    _line(OK, "Encrypted into the vault, beside your iMessage history rather than mixed in")
+    if r.note:
+        _line(WARN, r.note)
+    return 0
+
+
+def _import_imessage(a) -> int:
     from .ingest.imessage import IMessageSource
     from .vault import Vault, VaultError
 
@@ -258,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
 
     i = sub.add_parser("import", help="read chat.db once into the encrypted vault")
     i.add_argument("--days", type=int, default=400, help="how far back to import (default 400)")
+    i.add_argument("--whatsapp", action="store_true",
+                   help="import WhatsApp instead of iMessage (no Full Disk Access needed)")
     i.add_argument("--chatdb", default=DB_PATH, help=argparse.SUPPRESS)
     i.add_argument("--addressbook", default=AB_ROOT, help=argparse.SUPPRESS)
     i.set_defaults(fn=cmd_import)

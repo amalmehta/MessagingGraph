@@ -21,12 +21,44 @@ from .privacy import NetworkGate, PrivacySettings, apply_settings
 class AppState:
     def __init__(self, source: str = "synthetic") -> None:
         self.source_name = source
+        # Each platform is worked out once and kept, because switching between
+        # them should feel like a tab and not like a reload.
+        self._cache: dict[str, dict] = {}
         self.settings = PrivacySettings()
         self.gate = NetworkGate(self.settings)
         self.raw: Corpus | None = None
         self.reload()
 
+    @property
+    def platform(self) -> str:
+        if self.source_name.startswith("vault:"):
+            return self.source_name.split(":", 1)[1]
+        return "imessage" if self.source_name == "vault" else self.source_name
+
+    def platforms(self) -> list[str]:
+        """What there is to switch between."""
+        if self.source_name in ("synthetic",) or self.source_name.startswith("chatdb:"):
+            return [self.source_name]
+        from .vault import Vault
+        return Vault().imported() or ["imessage"]
+
+    def switch(self, platform: str) -> None:
+        """Show another platform. The one being left is kept as it was, so
+        coming back is instant."""
+        want = "vault" if platform == "imessage" else f"vault:{platform}"
+        if want == self.source_name:
+            return
+        self._cache[self.source_name] = self.__dict__.copy()
+        self.source_name = want
+        kept = self._cache.get(want)
+        if kept:
+            self.__dict__.update(kept)
+            self.source_name = want
+            return
+        self.reload()
+
     def reload(self) -> None:
+        self._cache.pop(self.source_name, None)
         self.raw = load_source(self.source_name)
         # One reference clock for the whole app, anchored to the newest message in
         # the store rather than to the wall clock. A corpus is loaded once and then
@@ -34,7 +66,7 @@ class AppState:
         # slowly drains the most recent bucket of every chart and reports a decline
         # that is really just the server having been up for a day.
         self.now = self.raw.messages[-1].ts if self.raw.messages else datetime.now()
-        if self.source_name == "vault":
+        if self.source_name == "vault" or self.source_name.startswith("vault:"):
             from .vault import Vault
             self.overrides = OverrideStore(Vault())
         else:

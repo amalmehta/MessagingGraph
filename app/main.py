@@ -195,6 +195,34 @@ def person_series(cid: str, weeks: int = 40):
     return enc(contact_series(state.corpus, cid, state.now, max(8, min(80, weeks))))
 
 
+class PlatformPick(BaseModel):
+    platform: str
+
+
+@app.get("/api/platforms")
+def platforms():
+    """Which histories there are, and which one you are looking at."""
+    from .importer import PLATFORMS as NAMES
+    have = state.platforms()
+    return enc({"active": state.platform,
+                "platforms": [{"id": p, "label": NAMES.get(p, p.title())} for p in have]})
+
+
+@app.post("/api/platform")
+def set_platform(pick: PlatformPick):
+    """Switch which history every view is reading.
+
+    Each is analysed on its own: separate people, separate plans, separate
+    graph. They are not merged, because a group chat on one is not the same
+    room as a group chat on the other.
+    """
+    if pick.platform not in state.platforms():
+        raise HTTPException(404, "Nothing imported from there yet.")
+    state.switch(pick.platform)
+    _network.clear(); _topics.clear(); _interests_cache.clear()
+    return enc({"active": state.platform})
+
+
 @app.get("/api/search")
 def search_everything(q: str = "", limit: int = 18):
     """One box for the whole app, asked in the words you would say out loud.
