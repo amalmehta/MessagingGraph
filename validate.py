@@ -852,6 +852,46 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nasking the app a question:")
+    from app.search import search as _se, terms as _terms, _word_in as _win
+    _ans = _se(app_state.corpus, app_state.plans, app_state.profiles,
+               "what dates are we going to coachella", now=app_state.now)
+    check("a question is stripped to the words that carry it",
+          _terms("what dates are we going to coachella") == ["dates", "coachella"]
+          and _terms("who did i go skiing with") == ["skiing"])
+    check("a question of nothing but scaffolding still searches for something",
+          _terms("what are we going to do") != [])
+    # "ski" must not be answered by "skin", which substring matching would.
+    check("words match as words",
+          _win("ski", "a ski trip") and not _win("ski", "skin care")
+          and not _win("cycling", "the recycling"))
+    # The rarest word carries the subject. Without that, "what dates are we
+    # going to coachella" answered itself from an unrelated thread that merely
+    # said "dates", lifted over the top by a date bonus.
+    check("the subject of the question is required, not merely preferred",
+          "pivot" in Path("app/search.py").read_text()
+          and "score *= 0.12" in Path("app/search.py").read_text())
+    check("and when nothing is about the subject, it says which word",
+          "off_subject" in Path("app/search.py").read_text()
+          and "off_subject" in Path("app/static/app.js").read_text())
+    check("asked for a date and finding none is said out loud",
+          "no_date" in Path("app/search.py").read_text()
+          and "Nothing that matched mentions a date" in Path("app/static/app.js").read_text())
+    _who = _se(app_state.corpus, app_state.plans, app_state.profiles,
+               "who do i talk to about climbing", now=app_state.now,
+               interests={app_state.profiles[0].contact_id: {"climbing": 9}})
+    # A group chat is people too, so it answers "who"; a plan and a message
+    # do not, and both were coming out on top before they were demoted.
+    check("a question about who is answered by people, not by what was said",
+          not _who.hits or _who.hits[0].kind in ("person", "group"),
+          _who.hits[0].kind if _who.hits else "nothing matched")
+    check("an empty question searches for nothing rather than everything",
+          _se(app_state.corpus, app_state.plans, app_state.profiles, "   ",
+              now=app_state.now).hits == [])
+    check("nothing is sent anywhere to answer it",
+          "requests" not in Path("app/search.py").read_text()
+          and "http" not in Path("app/search.py").read_text().lower().split("\"\"\"")[2])
+
     print("\nsmall things, swept rather than guessed:")
     _ajs2 = Path("app/static/app.js").read_text()
     _css2 = Path("app/static/styles.css").read_text()

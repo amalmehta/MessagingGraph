@@ -346,6 +346,7 @@ function markStale(stale) {
 
 async function boot() {
   keepOffline();
+  wireAsk();
   // Before anything draws, so a draft you put away yesterday doesn't flash up.
   try {
     const prefs = await api('/api/prefs');
@@ -495,7 +496,74 @@ function syncFoot() {
     ? s.excluded_contact_ids.length + ' hidden' : '';
 }
 
-const VIEW_TITLE = { now: 'Now', graph: 'My brainstorm', people: 'People', privacy: 'Privacy' };
+const VIEW_TITLE = { now: 'Now', graph: 'My brainstorm', people: 'People', privacy: 'Privacy',
+  search: 'Search' };
+
+const HIT_LABEL = { plan: 'plan', person: 'person', message: 'message', group: 'group chat' };
+
+// Asking the whole app at once. The question goes nowhere near a model or a
+// network -- the words are weighted against your own history on this machine.
+async function viewSearch() {
+  const q = S.query || '';
+  $('#main').innerHTML = `<h1>Search</h1>
+    <div class="sub tight">Everything the app knows — people, plans, group chats and the
+      messages themselves. Nothing is sent anywhere to answer it.</div>
+    <div id="hits"><div class="empty">Looking…</div></div>`;
+  let r;
+  try {
+    r = await api('/api/search?q=' + encodeURIComponent(q));
+  } catch {
+    $('#hits').innerHTML = `<div class="empty">Couldn't search just now.
+      <button type="button" class="linkish" onclick="viewSearch()">Try again</button></div>`;
+    return;
+  }
+  const box = $('#hits');
+  if (!r.hits.length) {
+    box.innerHTML = `<div class="empty">Nothing matched ${esc(q)}.
+      ${r.terms.length ? `Looked for ${r.terms.map(t => `<b>${esc(t)}</b>`).join(', ')} across
+      ${n(r.searched.toLocaleString(), 'message')}.` : ''}</div>`;
+    return;
+  }
+  // Said plainly rather than left for you to notice: you asked when, and
+  // nothing that matched names a date.
+  // The subject itself was not found: say which word, rather than offering
+  // whatever shared the other words as though it were an answer.
+  const offSubject = r.off_subject
+    ? `<div class="notice quiet"><div>Nothing here mentions <b>${esc(r.off_subject)}</b>.
+       What's below matched the rest of the question.</div></div>` : '';
+  const noDate = r.no_date
+    ? `<div class="notice quiet"><div>Nothing that matched mentions a date. What's below is
+       what the thread does say.</div></div>` : '';
+  box.innerHTML = `
+    <div class="asked">Looked for ${r.terms.map(t => `<b>${esc(t)}</b>`).join(', ')}
+      across ${n(r.searched.toLocaleString(), 'message')}.</div>
+    ${offSubject}${noDate}
+    <div class="hits">${r.hits.map((h, i) => `
+      <button type="button" class="hit" data-i="${i}">
+        <div class="htop"><span class="hkind">${HIT_LABEL[h.kind] || h.kind}</span>
+          ${h.when ? `<span class="hwhen">${esc(h.when)}</span>` : ''}</div>
+        <div class="hbody">${esc(h.title)}</div>
+        <div class="hmeta">${esc([h.who, h.detail, h.ts ? ago(h.ts) : ''].filter(Boolean).join(' · '))}</div>
+      </button>`).join('')}</div>`;
+  box.querySelectorAll('.hit').forEach(b => b.onclick = () => {
+    const h = r.hits[+b.dataset.i];
+    if (h.kind === 'person') openPerson(h.target_id);
+    else if (h.kind === 'plan') openPlan(h.target_id);
+    else go('people');            // a message or a group: the thread lives there
+  });
+}
+
+function wireAsk() {
+  const form = $('#askform'), input = $('#ask');
+  if (!form) return;
+  form.onsubmit = e => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q) return;
+    S.query = q;
+    go('search');
+  };
+}
 
 function go(v, push = true) {
   // Re-read the palette on every render rather than caching it once. The CSS is
@@ -520,7 +588,8 @@ function go(v, push = true) {
   // Every view was called "messaging graph", which makes the back button and
   // a row of tabs equally unhelpful.
   document.title = `${VIEW_TITLE[v] || 'messaging graph'} · messaging graph`;
-  ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy })[v]();
+  ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy,
+     search: viewSearch })[v]();
 }
 
 // ---------------------------------------------------------------- now

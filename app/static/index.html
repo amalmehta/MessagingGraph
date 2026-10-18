@@ -22,6 +22,10 @@
 <div id="app">
   <aside>
     <div class="brand">messaging graph<small id="src">loading</small></div>
+    <form id="askform" role="search" autocomplete="off">
+      <input id="ask" type="search" placeholder="Ask anything…" aria-label="Search everything"
+        maxlength="120">
+    </form>
     <nav aria-label="Views">
       <button type="button" data-view="now" class="on">Now <span class="c" id="c-now"></span></button>
       <button type="button" data-view="graph">My brainstorm <span class="c" id="c-graph"></span></button>
