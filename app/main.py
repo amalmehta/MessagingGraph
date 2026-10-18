@@ -178,7 +178,7 @@ def series(weeks: int = 40):
 @app.get("/api/people/{cid}/series")
 def person_series(cid: str, weeks: int = 40):
     if cid not in state.profiles_by_id:
-        raise HTTPException(404, "no such contact")
+        raise HTTPException(404, "No such contact.")
     return enc(contact_series(state.corpus, cid, state.now, max(8, min(80, weeks))))
 
 
@@ -192,7 +192,7 @@ def person_history(cid: str, limit: int = 60, before: str | None = None,
     is hiding the messages in between.
     """
     if cid not in state.profiles_by_id:
-        raise HTTPException(404, "no such contact")
+        raise HTTPException(404, "No such contact.")
     thread = state.corpus.direct_thread(cid)
     if thread is None:
         return {"messages": [], "total": 0, "matched": 0, "has_more": False}
@@ -229,7 +229,7 @@ def person_history(cid: str, limit: int = 60, before: str | None = None,
 def person(cid: str):
     prof = state.profiles_by_id.get(cid)
     if prof is None:
-        raise HTTPException(404, "no such contact")
+        raise HTTPException(404, "No such contact.")
     # Message bodies come from /history, which pages and searches; this endpoint
     # stays to the profile so opening a drawer does not ship a transcript twice.
     plans = [p for p in state.plans if cid in p.participant_ids]
@@ -587,7 +587,7 @@ def preview_outbound(cid: str):
     from .analysis.llm import DraftRequest, build_payload
     prof = state.profiles_by_id.get(cid)
     if prof is None:
-        raise HTTPException(404, "no such contact")
+        raise HTTPException(404, "No such contact.")
     thread = state.corpus.direct_thread(cid)
     msgs = state.corpus.messages_in(thread.id)[-24:] if thread else []
     payload = build_payload(DraftRequest(profile=prof, recent=msgs, intent="check in"))

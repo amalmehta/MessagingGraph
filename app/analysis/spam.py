@@ -18,6 +18,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from ..models import Corpus, Thread
+from .phrasing import count
 
 MARKETING: list[tuple[re.Pattern[str], str]] = [(re.compile(p, re.I), label) for p, label in [
     (r"\breply\s+stop\b|\btext\s+stop\b|\bstop\s+to\s+(?:end|opt|quit|cancel|unsub\w*)\b|\bstop2end\b|"
@@ -101,7 +102,8 @@ def classify_thread(corpus: Corpus, thread: Thread) -> ThreadVerdict:
     if len(real_mine) >= NEVER_FILTER_AFTER:
         score = min(score, 0.49)
 
-    reasons = [f"{c} of {n} messages from them contain {label}" for label, c in labels.most_common(2)]
+    reasons = [f"{c} of {count(n, 'message')} from them contain {label}"
+               for label, c in labels.most_common(2)]
     if links >= 0.5:
         reasons.append(f"{round(100 * links)}% of their messages are links")
     if template >= 0.5:
