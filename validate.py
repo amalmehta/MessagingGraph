@@ -20,6 +20,7 @@ import sqlite3
 import sys
 import subprocess
 import tempfile
+import unicodedata
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -851,6 +852,53 @@ def main() -> int:
     check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
+
+    print("\nwhat WhatsApp actually hands you:")
+    from app.ingest.whatsapp import (clean_name as _cn, _from_jid as _fj,
+                                     NOT_A_CONVERSATION as _NAC, NOT_A_PERSON as _NAP,
+                                     JID_ONLY as _JO, GROUP_EVENT as _GE)
+    # Names arrive wrapped in direction marks and padded with non-breaking
+    # spaces. Invisible, and they travel into every search and every avatar.
+    check("invisible direction marks are taken out of names",
+          _cn("\u202a+39\xa0333\xa0000\xa00000\u202c") == "+39 333 000 0000"
+          and _cn("\u200eYou") == "You")
+    check("and an identifier stored where a name should be is not a name",
+          _cn("+CgAQvLL71QYgAw==") == "" and _cn("Maria De La Cruz") == "Maria De La Cruz")
+    # Most of this history is @lid, which is not a phone number.
+    check("a phone number is only read off a jid that holds one",
+          _fj("15551234567@s.whatsapp.net") == "+15551234567"
+          and _fj("179735841767521@lid") == "Unknown"
+          and _fj("CgAQvLL71QYgAw==@lid") == "Unknown")
+    check("status and the broadcast list are not conversations",
+          "@status" in _NAC and "@broadcast" in _NAC)
+    check("WhatsApp's own account is not a friend",
+          "whatsapp" in _NAP and "you" in _NAP)
+    # "179735841767521@lid" is someone joining a group, stored as a message.
+    check("a group event is not something anyone said",
+          bool(_JO.match("179735841767521@lid")) and _GE == 6
+          and not _JO.match("see you at 7@the pub"))
+    _wsrc = Path("app/ingest/whatsapp.py").read_text()
+    check("people are named from what they call themselves",
+          "ZWAPROFILEPUSHNAME" in _wsrc and "pushed.get(jid" in _wsrc)
+    check("including the name carried on their messages",
+          "ZPUSHNAME IS NOT NULL" in _wsrc and "pushed.setdefault" in _wsrc)
+    # Run against the real store when it is here; skipped cleanly when not.
+    from app.ingest.whatsapp import WhatsAppSource as _WA
+    _w = _WA(days=400, id_key=b"a-key-for-this-check-only-32bytes")
+    if _w.available()[0]:
+        _wc = _w.load()
+        _nm = [x.name for x in _wc.contacts.values()]
+        check("and on this Mac nothing unreadable survives any of that",
+              not [n for n in _nm if "==" in n or n.lower() in ("you", "whatsapp")
+                   or any(unicodedata.category(ch) == "Cf" for ch in n)],
+              f"{len(_nm)} people")
+        check("with real names recovered rather than left as identifiers",
+              sum(1 for n in _nm if not n.startswith("+") and n != "Unknown") > 10)
+    else:
+        check("and on this Mac nothing unreadable survives any of that",
+              True, "no WhatsApp here to read")
+        check("with real names recovered rather than left as identifiers",
+              True, "no WhatsApp here to read")
 
     print("\nwarmer, without getting silly about it:")
     _fjs = Path("app/static/app.js").read_text()
