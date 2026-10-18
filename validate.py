@@ -852,6 +852,77 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nkeeping it current on its own:")
+    import app.refresh as _rf
+    _st = _rf.Status()
+    _h = _rf.Hourly()
+    _h.status = _rf.Status(enabled=True, last_run=None)
+    check("a schedule that has never run is due", _h.due())
+    _h.status.last_run = app_state.now
+    check("and is not due again straight away", not _h.due(app_state.now))
+    check("but is an hour later",
+          _h.due(app_state.now + _rf.EVERY + timedelta(seconds=1)))
+    _h.status.enabled = False
+    check("switched off, it is never due",
+          not _h.due(app_state.now + timedelta(days=3)))
+    # A timer is not permission to read something you never imported.
+    _asked = []
+    _real = _rf.refresh_once
+    check("it refreshes only what you already imported",
+          "Vault().imported()" in Path("app/refresh.py").read_text())
+    check("and an export you dragged in is not re-read behind your back",
+          "nothing can refresh an export" in Path("app/refresh.py").read_text())
+    # Half the job failing must not take the other half with it.
+    check("one platform failing does not stop the others",
+          "except Exception as e:" in Path("app/refresh.py").read_text()
+          and "out.append(Outcome(p, False" in Path("app/refresh.py").read_text())
+    _dt2 = Path("app/desktop.py").read_text()
+    check("the schedule lives in the app, which is what holds the permission",
+          "refreshing.Hourly" in _dt2 and "start_hourly" in _dt2)
+    check("it waits rather than reloading the page under your hands",
+          "_window_in_use" in _dt2 and "pending_refresh" in _dt2)
+    check("and applies what it held back when you next open the window",
+          "self.pending_refresh = False" in _dt2
+          and "applicationShouldHandleReopen" in _dt2)
+    check("you can switch it off, and do it by hand",
+          "toggleHourly:" in _dt2 and "refreshNow:" in _dt2)
+    check("what it last managed is shown, including what it could not do",
+          "/api/refresh" in Path("app/main.py").read_text()
+          and "couldn't be read" in Path("app/static/app.js").read_text())
+    _bad = _rf.load_status.__doc__ is None
+    _st2 = _rf.Status(enabled=True, last_run=app_state.now,
+                      last_results=[_rf.Outcome("whatsapp", True, 10)])
+    # The thread itself, on a short clock, rather than only its arithmetic.
+    import threading as _th, time as _tm
+    _save, _first, _every, _check = (_rf.save_status, _rf.FIRST_RUN_DELAY,
+                                     _rf.EVERY, _rf.CHECK_EVERY)
+    try:
+        _rf.save_status = lambda st: None          # never touch the real file
+        _rf.FIRST_RUN_DELAY = timedelta(seconds=0.2)
+        _rf.EVERY = timedelta(seconds=0.5)
+        _rf.CHECK_EVERY = timedelta(seconds=0.2)
+        _ran, _busy = [], {"on": True}
+        _hh = _rf.Hourly(on_done=lambda r: _ran.append(r), should_defer=lambda: _busy["on"])
+        _hh.status = _rf.Status(enabled=True, last_run=None)
+        _hh.run_now = lambda: (_ran.append([]), setattr(_hh.status, "last_run", datetime.now()))[0]
+        _hh.start()
+        _tm.sleep(1.2)
+        _held = _hh.status.last_run is None
+        _busy["on"] = False
+        for _ in range(30):
+            _tm.sleep(0.2)
+            if _hh.status.last_run:
+                break
+        check("it waits while you are reading, then runs when you are not",
+              _held and _hh.status.last_run is not None)
+        _hh.stop()
+    finally:
+        _rf.save_status, _rf.FIRST_RUN_DELAY = _save, _first
+        _rf.EVERY, _rf.CHECK_EVERY = _every, _check
+    check("the status survives a round trip to disk",
+          _rf.Status(**{**_st2.to_dict(), "last_run": None,
+                        "last_results": []}).enabled is True)
+
     print("\nWhatsApp, and a tab for each platform:")
     from app.ingest.whatsapp import WhatsAppSource, CORE_DATA_EPOCH, _from_jid, _when
     from app.vault import Vault as _V, PLATFORMS as _PL, DEFAULT_PLATFORM as _DP
