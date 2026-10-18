@@ -323,7 +323,7 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     signals.append(Signal(
         "self_editing", "How much you edit yourself", self_editing,
         ("about your usual" if abs(edit_dev) < 0.25 else
-         f"{'well over' if abs(edit_dev) > 2 else ''}"
+         f"{'well over ' if abs(edit_dev) > 2 else ''}"
          f"{min(abs(edit_dev), 2.0) * 100:.0f}% "
          f"{'more' if edit_dev > 0 else 'less'} than your usual").replace("  ", " "),
         _clamp(-edit_dev / 1.2), 0.19,

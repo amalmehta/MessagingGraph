@@ -387,15 +387,24 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
 .draft{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 14px;
   display:flex;flex-direction:column;gap:7px}
 .draft.sent{opacity:.55}
-.dtop{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.dtop .who{font-weight:600}
-.dtop .who.link{cursor:pointer}
-.dtop .who.link:hover{color:var(--accent)}
-.dtop .kind{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.6px;color:var(--faint);white-space:nowrap}
-.draft .why{color:var(--dim);font-size:12.5px;line-height:1.5}
+.dtop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+/* A face, because these are people and a column of names is a spreadsheet. */
+.dwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.dwho .who{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dwho.link{cursor:pointer}
+.dwho.link:hover .who{color:var(--accent)}
+/* What the card is for, in words rather than shouted in mono capitals. */
+.dtop .kind{font-size:11px;color:var(--accent);background:var(--wash-accent);
+  border:1px solid var(--edge-accent);border-radius:20px;padding:2px 9px;white-space:nowrap}
+/* The reason sits under the message now, and reads like a note rather than
+   competing with the thing you actually came to send. */
+.draft .why{color:var(--faint);font-size:12px;line-height:1.5}
 .draft .detail{color:var(--faint);font-size:12px;border-left:2px solid var(--line);padding-left:9px;line-height:1.5}
-.dtext{width:100%;box-sizing:border-box;resize:vertical;min-height:44px;overflow:hidden;background:var(--panel2);
-  border:1px solid var(--line);border-radius:8px;color:var(--ink);font:13.5px/1.5 system-ui,sans-serif;padding:9px 10px}
+/* The message is the point of the card, so it is the biggest thing on it and
+   shaped like something you would send rather than a form field. */
+.dtext{width:100%;box-sizing:border-box;resize:vertical;min-height:46px;overflow:hidden;
+  background:var(--panel2);border:1px solid var(--line);border-radius:14px;color:var(--ink);
+  font:15px/1.55 system-ui,sans-serif;padding:11px 13px}
 .dtext:focus-visible{outline:2px solid var(--accent);outline-offset:1px;
   border-color:var(--edge-accent)}
 .dact{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:auto}
@@ -797,3 +806,22 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
   font-weight:600}
 .plat:disabled{opacity:.5;cursor:default}
 .plat:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* A card you can tell is about a person at a glance, and that answers when you
+   point at it. Motion stays inside the reduced-motion rule already in here. */
+.draft{transition:box-shadow .14s,border-color .14s,transform .14s}
+.draft:hover{border-color:var(--line-strong);box-shadow:0 3px 12px var(--shadow);
+  transform:translateY(-1px)}
+.draft:focus-within{border-color:var(--edge-accent)}
+/* Copy is the thing you came to do, so it looks like it. */
+.draft .dact .btn.primary{border-radius:20px;padding:6px 16px;font-weight:600}
+.draft .dnote{color:var(--adds);font-size:12px;font-weight:600}
+
+/* Observations get the same face and the same plain label as the drafts, so
+   the two read as one app rather than two. */
+.cwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
+.cwho .who{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .top{align-items:center}
+.card .kind{font:inherit;font-size:11px;text-transform:none;letter-spacing:0;
+  color:var(--dim);background:var(--panel2);border:1px solid var(--line);
+  border-radius:20px;padding:2px 9px;white-space:nowrap}

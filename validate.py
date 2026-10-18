@@ -852,6 +852,37 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nwarmer, without getting silly about it:")
+    _fjs = Path("app/static/app.js").read_text()
+    _fcss = Path("app/static/styles.css").read_text()
+    check("a draft card shows a face, because these are people",
+          "${avatar(d.who)}" in _fjs and ".dwho{" in _fcss)
+    check("and so does an observation",
+          '<span class="cwho">${avatar(a.who)}' in _fjs)
+    # The message is what you came for; the reason is a note about it.
+    _card = _fjs[_fjs.index("function draftCard"):]
+    _card = _card[:_card.index("\n}")]
+    check("the message comes before the reason for it",
+          _card.index("dtext") < _card.index('class="why"'))
+    check("and is the larger of the two",
+          "font:15px/1.55" in _fcss)
+    # Said in words, not shouted in mono capitals named after the code.
+    check("what a card is for is said plainly",
+          "reply: 'your turn'" in _fjs and "reconnect: 'say hi'" in _fjs
+          and "revive_plan: 'pick a date'" in _fjs)
+    check("and nothing is sold to you",
+          not any(w in _fjs for w in ("make it happen", "get everyone out",
+                                      "Let's go", "Crush", "🔥")))
+    check("observations are labelled the same way",
+          "NOTICE_KIND" in _fjs and "'worth a thought'" in _fjs)
+    # "well over200% more than your usual" was on screen.
+    from app.analysis.relationships import profile_all as _pa2
+    _bad = [sg.display for q in app_state.profiles for sg in q.signals
+            if sg.display and re.search(r"[a-z]\d", sg.display)]
+    check("no sentence runs a word into a number", not _bad, str(_bad[:1]))
+    check("the greeting sounds like a person, not a form",
+          "'Morning'" in _fjs and "Good morning" not in _fjs)
+
     print("\nkeeping it current on its own:")
     import app.refresh as _rf
     _st = _rf.Status()

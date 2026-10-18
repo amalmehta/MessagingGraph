@@ -38,7 +38,7 @@ async function postJSON(path, body) {
 // a few places already, and missing in the places this fixes.
 const n = (k, singular, plural) => `${k} ${k === 1 ? singular : (plural || singular + 's')}`;
 
-const COPY_HINT = 'Selected. Press ⌘C to copy.';
+const COPY_HINT = 'Ready — press ⌘C.';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -537,6 +537,13 @@ function syncFoot() {
 const VIEW_TITLE = { now: 'Now', graph: 'My brainstorm', people: 'People', privacy: 'Privacy',
   search: 'Search' };
 
+// The same plain voice as the draft labels: what it is, not what the code
+// that found it is called.
+const NOTICE_KIND = {
+  uneven: 'a bit one-sided', reflect: 'worth a thought', growing: 'picking up',
+  warm: 'going well', drifting: 'drifting', quiet: 'gone quiet',
+};
+
 const HIT_LABEL = { plan: 'plan', person: 'person', message: 'message', group: 'group chat' };
 
 // Asking the whole app at once. The question goes nowhere near a model or a
@@ -634,7 +641,7 @@ function go(v, push = true) {
 // The one place the app says hello. Time of day, nothing more personal than that.
 function greeting() {
   const h = new Date().getHours();
-  const part = h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const part = h < 5 ? 'Up late' : h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening';
   // The page used to promise a status report on everyone and then hand you five
   // counters. It answers one question now, so it says which one.
   return `${part}. Here's who to write to.`;
@@ -748,9 +755,10 @@ function notices(o) {
 
 // ---------------------------------------------------------------- drafts
 const DRAFT_KIND = {
-  reply: 'waiting on you', follow_up: 'follow up', revive_plan: 'plan',
-  group_plan: 'group plan', reconnect: 'reconnect', check_in: 'check in',
-  thanked: 'thank you', anniversary: 'anniversary', together: 'thank you', appreciation: 'appreciation',
+  reply: 'your turn', follow_up: 'ask how it went', revive_plan: 'pick a date',
+  group_plan: 'group plan', reconnect: 'say hi', check_in: 'check in',
+  thanked: 'say thanks', anniversary: 'a year of texting', together: 'say thanks',
+  appreciation: 'something nice',
 };
 // Which drafts you have waved away, and until when, is the server's to keep.
 // It used to be localStorage: scoped to an origin, and the Mac app hands out a
@@ -806,11 +814,13 @@ function draftCard(d, src = '/api/messages') {
   const quoted = ['reply', 'follow_up', 'thanked'].includes(d.kind);
   const person = d.kind !== 'group_plan';
   return `<div class="draft" data-id="${esc(d.id)}" data-src="${esc(src)}">
-    <div class="dtop"><span class="who ${person ? 'link' : ''}" ${person ? `data-person="${esc(d.target_ids[0])}"` : ''}>${esc(d.who)}</span>
+    <div class="dtop">
+      <span class="dwho ${person ? 'link' : ''}" ${person ? `data-person="${esc(d.target_ids[0])}"` : ''}>
+        ${avatar(d.who)}<span class="who">${esc(d.who)}</span></span>
       <span class="kind">${DRAFT_KIND[d.kind] || esc(d.kind)}</span></div>
+    <textarea class="dtext" rows="2" aria-label="Draft message to ${esc(d.who)}">${esc(d.draft)}</textarea>
     <div class="why">${esc(d.why)}</div>
     ${d.detail ? `<div class="detail">${quoted ? '“' + esc(d.detail) + '”' : 'Proposed: ' + esc(d.detail)}</div>` : ''}
-    <textarea class="dtext" rows="2" aria-label="Draft message to ${esc(d.who)}">${esc(d.draft)}</textarea>
     <div class="dact">
       <button type="button" class="btn primary copy">Copy</button>
       ${d.options > 1 ? '<button type="button" class="btn another">Another version</button>' : ''}
@@ -827,7 +837,7 @@ function wireDraft(card) {
   card.querySelector('.copy').onclick = async () => {
     try {
       await navigator.clipboard.writeText(ta.value);
-      note.textContent = 'Copied. Paste it into Messages.';
+      note.textContent = 'Copied ✓ — paste it into Messages.';
     } catch {
       ta.select();
       note.textContent = COPY_HINT;
@@ -944,7 +954,7 @@ async function loadCrew() {
     const ta = out.querySelector('.dtext'), note = out.querySelector('.dnote');
     try {
       await navigator.clipboard.writeText(ta.value);
-      note.textContent = 'Copied. Start a group in Messages and paste it.';
+      note.textContent = 'Copied ✓ — start a group in Messages and paste it.';
     } catch {
       ta.select();
       note.textContent = COPY_HINT;
@@ -1463,8 +1473,8 @@ function viewPeople() {
     <div class="sub tight">Where the pattern is worth a second look rather than a message.</div>
     <div class="cards">${noticing.map(a => `
       <div class="card ${a.tone}" data-id="${esc(a.target_id)}" data-kind="${a.kind}">
-        <div class="top"><span class="who">${esc(a.who)}</span>
-          <span class="kind">${a.kind.replace('_', ' ')}</span></div>
+        <div class="top"><span class="cwho">${avatar(a.who)}<span class="who">${esc(a.who)}</span></span>
+          <span class="kind">${esc(NOTICE_KIND[a.kind] || a.kind.replace('_', ' '))}</span></div>
         <div class="note">${esc(a.observation)}</div>
         <div class="act">${esc(a.action)}</div>
       </div>`).join('')}</div>` : ''}
