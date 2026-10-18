@@ -32,6 +32,22 @@ class Access:
     missing: bool = False     # no chat.db at all, which is not a permission problem
 
 
+# What each platform is called on screen, and how it is read.
+PLATFORMS = {
+    "imessage": "iMessage",
+    "whatsapp": "WhatsApp",
+}
+
+
+def whatsapp_access() -> Access:
+    """WhatsApp asks nothing of you: macOS protects ~/Library/Messages and
+    does not protect Group Containers, so this is readable as it stands."""
+    from .ingest.whatsapp import WhatsAppSource
+    ok, why = WhatsAppSource().available()
+    missing = "No WhatsApp database" in why
+    return Access(True) if ok else Access(False, why, missing=missing)
+
+
 def access(path: str = DB_PATH) -> Access:
     """Whether this process can read chat.db, asked cheaply and without side effects."""
     if not os.path.exists(path):
@@ -54,6 +70,38 @@ class Result:
     people: int = 0
     threads: int = 0
     note: str = ""
+
+
+def run_whatsapp_import(days: int = 400, on_step=None) -> Result:
+    """The same shape as the iMessage import, into its own place in the vault."""
+    def step(msg: str) -> None:
+        if on_step:
+            on_step(msg)
+
+    from .ingest.whatsapp import WhatsAppSource
+    from .vault import Vault, VaultError
+
+    got = whatsapp_access()
+    if not got.ok:
+        return Result(False, note=got.reason)
+    step("Unlocking the vault…")
+    vault = Vault()
+    try:
+        id_key = vault.id_key()
+    except VaultError as e:
+        return Result(False, note=str(e))
+    step(f"Reading WhatsApp from the last {days} days…")
+    src = WhatsAppSource(days=days, id_key=id_key)
+    corpus = src.load()
+    rep = src.report
+    if rep.kept == 0:
+        return Result(False, note="WhatsApp has nothing in that window.")
+    step("Encrypting…")
+    vault.write(corpus, {"window_days": days, "messages": rep.kept,
+                         "people": len(corpus.contacts), "threads": len(corpus.threads)},
+                platform="whatsapp")
+    return Result(True, messages=rep.kept, people=len(corpus.contacts),
+                  threads=len(corpus.threads))
 
 
 def run_import(days: int = 400, path: str = DB_PATH, ab_root: str = AB_ROOT,
@@ -90,7 +138,8 @@ def run_import(days: int = 400, path: str = DB_PATH, ab_root: str = AB_ROOT,
 
     step("Encrypting…")
     vault.write(corpus, {"window_days": days, "messages": rep.kept,
-                         "people": len(corpus.contacts), "threads": len(corpus.threads)})
+                         "people": len(corpus.contacts), "threads": len(corpus.threads)},
+                platform="imessage")
     note = ""
     if rep.contacts_named == 0:
         note = "No names came from Contacts, so people will show as phone numbers."

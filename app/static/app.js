@@ -344,6 +344,51 @@ function markStale(stale) {
   document.body.prepend(bar);
 }
 
+// Each platform is its own history, so the whole app -- people, plans, the
+// graph -- changes with it. They are never merged: a group chat on WhatsApp
+// is not the same room as one on iMessage.
+async function drawPlatforms() {
+  const bar = $('#platforms');
+  if (!bar) return;
+  let p;
+  try { p = await api('/api/platforms'); } catch { return; }
+  S.platform = p.active;
+  if (p.platforms.length < 2) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = p.platforms.map(x => `
+    <button type="button" class="plat ${x.id === p.active ? 'on' : ''}"
+      data-platform="${esc(x.id)}" aria-pressed="${x.id === p.active}">${esc(x.label)}</button>`).join('');
+  bar.querySelectorAll('[data-platform]').forEach(b => b.onclick = async () => {
+    if (b.classList.contains('on')) return;
+    bar.querySelectorAll('[data-platform]').forEach(o => o.disabled = true);
+    const r = await postJSON('/api/platform', { platform: b.dataset.platform });
+    if (!r.ok) { bar.querySelectorAll('[data-platform]').forEach(o => o.disabled = false); return; }
+    await refreshAll();
+  });
+}
+
+// Everything the app holds belongs to one platform, so none of it survives
+// the switch.
+async function loadData() {
+  S.overview = await api('/api/overview');
+  S.people = await api('/api/people');
+  const o = S.overview;
+  $('#src').textContent = SOURCE_LABEL[o.source] || o.source;
+  $('#c-now').textContent = o.suggestions.length;
+  $('#c-people').textContent = o.contacts;
+  $('#c-graph').textContent = o.plans.open + o.plans.stale;
+  $('#foot-span').textContent = o.span.from.slice(0, 10) + ' → ' + o.span.to.slice(0, 10);
+  syncFoot();
+}
+
+async function refreshAll() {
+  // None of what is held belongs to the platform being switched to.
+  S.graph = null; S.drafts = {}; S.draftSeeds = {};
+  await loadData();
+  await drawPlatforms();
+  go(S.view === 'search' ? 'now' : S.view, false);
+}
+
 async function boot() {
   keepOffline();
   wireAsk();
@@ -354,17 +399,10 @@ async function boot() {
     S.theme = prefs.theme;
   } catch { /* a fresh server with nothing saved yet */ }
   wireTheme();
+  drawPlatforms();
   wireReload();
   wirePhoneLayout();
-  S.overview = await api('/api/overview');
-  S.people = await api('/api/people');
-  const o = S.overview;
-  $('#src').textContent = SOURCE_LABEL[o.source] || o.source;
-  $('#c-now').textContent = o.suggestions.length;
-  $('#c-people').textContent = o.contacts;
-  $('#c-graph').textContent = o.plans.open + o.plans.stale;
-  $('#foot-span').textContent = o.span.from.slice(0, 10) + ' → ' + o.span.to.slice(0, 10);
-  syncFoot();
+  await loadData();
   document.querySelectorAll('nav button').forEach(b =>
     b.onclick = () => go(b.dataset.view));
   $('#scrim').onclick = closeDrawer;

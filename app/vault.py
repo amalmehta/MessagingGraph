@@ -37,6 +37,11 @@ from .models import Contact, Corpus, Message, Thread
 VAULT_DIR = Path.home() / "Library" / "Application Support" / "messaging-graph"
 CORPUS_FILE = "corpus.v1.enc"
 MANIFEST_FILE = "manifest.json"
+# Each platform is imported and kept on its own, because they are separate
+# histories with separate people and the app shows them side by side rather
+# than pretending they are one conversation.
+PLATFORMS = ("imessage", "whatsapp", "instagram")
+DEFAULT_PLATFORM = "imessage"
 SERVICE = "messaging-graph"
 ACCOUNT = "vault-key"
 FORMAT = 1
@@ -135,10 +140,26 @@ class Vault:
 
     @property
     def corpus_path(self) -> Path:
-        return self.root / CORPUS_FILE
+        return self.path_for(DEFAULT_PLATFORM)
 
-    def exists(self) -> bool:
-        return self.corpus_path.exists()
+    def path_for(self, platform: str = DEFAULT_PLATFORM) -> Path:
+        """iMessage keeps the original name, so a vault imported before there
+        were platforms is still the one the app reads."""
+        if platform == DEFAULT_PLATFORM:
+            return self.root / CORPUS_FILE
+        return self.root / f"corpus.{platform}.v1.enc"
+
+    def manifest_path(self, platform: str = DEFAULT_PLATFORM) -> Path:
+        if platform == DEFAULT_PLATFORM:
+            return self.root / MANIFEST_FILE
+        return self.root / f"manifest.{platform}.json"
+
+    def exists(self, platform: str = DEFAULT_PLATFORM) -> bool:
+        return self.path_for(platform).exists()
+
+    def imported(self) -> list[str]:
+        """Which platforms have something to show."""
+        return [p for p in PLATFORMS if self.exists(p)]
 
     def _key(self, create: bool) -> bytes:
         k = self.keys.get()
@@ -172,10 +193,11 @@ class Vault:
             os.fsync(fh.fileno())
         os.replace(tmp, self.root / name)
 
-    def write(self, corpus: Corpus, summary: dict) -> None:
+    def write(self, corpus: Corpus, summary: dict,
+              platform: str = DEFAULT_PLATFORM) -> None:
         self._prepare_dir()
         token = Fernet(self._key(create=True)).encrypt(_serialize(corpus))
-        self._write_private(CORPUS_FILE, token)
+        self._write_private(self.path_for(platform).name, token)
         manifest = {
             "format": FORMAT,
             "imported_at": datetime.now().isoformat(timespec="seconds"),
@@ -183,13 +205,15 @@ class Vault:
             "key": f"login Keychain, service '{SERVICE}'",
             **summary,
         }
-        self._write_private(MANIFEST_FILE, json.dumps(manifest, indent=2).encode())
+        manifest["platform"] = platform
+        self._write_private(self.manifest_path(platform).name,
+                            json.dumps(manifest, indent=2).encode())
 
-    def read(self) -> Corpus:
-        if not self.exists():
-            raise VaultError("No imported data yet. Run `./mg import` first.")
+    def read(self, platform: str = DEFAULT_PLATFORM) -> Corpus:
+        if not self.exists(platform):
+            raise VaultError(f"Nothing imported from {platform} yet.")
         try:
-            blob = Fernet(self._key(create=False)).decrypt(self.corpus_path.read_bytes())
+            blob = Fernet(self._key(create=False)).decrypt(self.path_for(platform).read_bytes())
         except InvalidToken as e:
             raise VaultError("The vault can't be decrypted with the key in the Keychain. "
                              "Run `./mg wipe` and import again.") from e
