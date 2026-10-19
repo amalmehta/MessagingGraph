@@ -853,6 +853,40 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\nthe whole history at once:")
+    from app.insights import build as _ins, DAYS as _IDAYS
+    _i = _ins(app_state.corpus, app_state.profiles, app_state.now)
+    check("it adds up to what is actually there",
+          _i["messages"] == len(app_state.corpus.messages)
+          and _i["mine"] + _i["theirs"] == _i["messages"],
+          f"{_i['messages']:,} messages")
+    check("shares are percentages of that, not of something else",
+          0 <= _i["mine_share"] <= 100 and 0 <= _i["group_share"] <= 100
+          and abs(_i["mine_share"] - round(100 * _i["mine"] / _i["messages"])) < 1)
+    check("every hour and every weekday is accounted for",
+          len(_i["by_hour"]) == 24 and len(_i["by_day"]) == 7
+          and sum(_i["by_hour"]) == _i["messages"] == sum(_i["by_day"]))
+    check("the busiest day it names is the busiest one there is",
+          _i["busiest_day"] == _IDAYS[_i["by_day"].index(max(_i["by_day"]))])
+    check("and the busiest hour agrees with the hours",
+          _i["busiest_hour"] == _i["by_hour"].index(max(_i["by_hour"])))
+    check("the people it lists are the ones you talk to most",
+          [t["messages"] for t in _i["top"]] == sorted(
+              [t["messages"] for t in _i["top"]], reverse=True))
+    check("a day count is never zero, however short the history",
+          _i["days"] >= 1 and _i["per_day"] > 0)
+    # An empty corpus must not divide by anything.
+    from dataclasses import replace as _rpl
+    _empty = _rpl(app_state.corpus, messages=(), threads={}, contacts={})
+    check("and nothing at all is said plainly rather than crashing",
+          _ins(_empty, [], app_state.now)["empty"] is True)
+    _ijs = Path("app/static/app.js").read_text()
+    check("it has a page of its own, not a corner of People",
+          "viewInsights" in _ijs and "insights: 'Insights'" in _ijs
+          and 'data-view="insights"' in Path("app/static/index.html").read_text())
+    check("and nothing on it is a score out of ten",
+          "not marks out of ten" in _ijs)
+
     print("\nwhat WhatsApp actually hands you:")
     from app.ingest.whatsapp import (clean_name as _cn, _from_jid as _fj,
                                      NOT_A_CONVERSATION as _NAC, NOT_A_PERSON as _NAP,

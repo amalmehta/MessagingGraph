@@ -234,6 +234,13 @@ def set_platform(pick: PlatformPick):
     return enc({"active": state.platform})
 
 
+@app.get("/api/insights")
+def insights():
+    """The shape of the whole history, rather than one person at a time."""
+    from .insights import build as build_insights
+    return enc(build_insights(state.corpus, state.profiles, state.now))
+
+
 @app.get("/api/search")
 def search_everything(q: str = "", limit: int = 18):
     """One box for the whole app, asked in the words you would say out loud.
