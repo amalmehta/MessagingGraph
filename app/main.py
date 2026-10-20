@@ -737,7 +737,7 @@ def phone_status(request: Request):
     _mac_only(request)
     return enc({
         "on": guard.on_lan,
-        "addresses": [f"http://{h}/pair" for h in LAN_HOSTS],
+        "addresses": [f"{guard.scheme}://{h}/pair" for h in LAN_HOSTS],
         "offering": pairing.offering,
         "code": pairing.code_on_offer(),
         "seconds_left": pairing.seconds_left(),
@@ -784,7 +784,7 @@ def pair_redeem(body: Redeem, request: Request):
     pairing_store.save(pairing)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(DEVICE_COOKIE, device.token, httponly=True, samesite="strict",
-                    path="/", max_age=DEVICE_MAX_AGE)
+                    path="/", max_age=DEVICE_MAX_AGE, secure=guard.on_lan)
     return resp
 
 

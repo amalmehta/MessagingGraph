@@ -771,7 +771,7 @@ def main() -> int:
           and client.get("/openapi.json").status_code == 404)
 
     print("\nletting the phone in over the network:")
-    MAC_ORIGIN = {"origin": "http://127.0.0.1:8077"}
+    MAC_ORIGIN = {"origin": "https://127.0.0.1:8077"}
     STATIC = Path("app/static")
     # A second, separate app object built the way `./mg serve --phone` builds it,
     # so the loopback one the checks above used stays exactly as locked as it was.
@@ -792,10 +792,10 @@ def main() -> int:
     check("--phone publishes a .local name and not a loopback one",
           bool(lanmod.LAN_HOSTS) and not any(h.startswith("127.") or h.startswith("localhost")
                                              for h in lanmod.LAN_HOSTS), LAN)
-    lanmac = TestClient(lanmod.app, base_url="http://127.0.0.1:8077")
+    lanmac = TestClient(lanmod.app, base_url="https://127.0.0.1:8077")
     lanmac.get(f"/?token={lanmod.guard.token}")
-    ph = TestClient(lanmod.app, base_url=f"http://{LAN}")
-    ORIG = {"origin": f"http://{LAN}".lower()}
+    ph = TestClient(lanmod.app, base_url=f"https://{LAN}")
+    ORIG = {"origin": f"https://{LAN}".lower()}
 
     check("an unpaired phone on the Wi-Fi gets nothing but the pairing page",
           ph.get("/api/overview").status_code == 401 and ph.get("/").status_code == 401
@@ -816,13 +816,20 @@ def main() -> int:
     _sc = _ok.headers.get("set-cookie", "").lower()
     check("the right code hands out an HttpOnly, SameSite=Strict device cookie",
           _ok.status_code == 200 and "httponly" in _sc and "samesite=strict" in _sc)
+    check("and a Secure one, because the phone is only ever served over https",
+          "secure" in _sc)
+    check("a page this server never serves, plain http, is refused as cross-origin",
+          ph.post("/api/pair/redeem", json={"code": "000000"},
+                  headers={"origin": f"http://{LAN}".lower()}).status_code == 403)
+    check("the Mac is shown https addresses for the phone",
+          all(a.startswith("https://") for a in lanmac.get("/api/phone").json()["addresses"]))
     check("and then the phone can read the same app the Mac sees",
           ph.get("/api/overview").status_code == 200)
     check("a paired phone still can't pair the next one",
           ph.post("/api/phone/open", headers=ORIG).status_code == 403
           and ph.get("/api/phone").status_code == 403)
     check("someone else on the Wi-Fi is no better off than before",
-          TestClient(lanmod.app, base_url=f"http://{LAN}")
+          TestClient(lanmod.app, base_url=f"https://{LAN}")
           .get("/api/overview").status_code == 401)
     _dev = lanmac.get("/api/phone").json()["devices"][0]
     check("the Mac lists the phone without ever showing its token", "token" not in _dev)
@@ -1176,7 +1183,8 @@ def main() -> int:
     check("the phone is told https, since http cannot run a service worker at all",
           'f"https://{where[0]}/pair"' in Path("app/cli.py").read_text())
     check("and the link for this Mac matches what the server actually speaks",
-          '"https" if self.on_lan else "http"' in Path("app/security.py").read_text())
+          lanmod.guard.launch_url.startswith("https://")
+          and lanmod.guard.origins == {f"https://{h}" for h in lanmod.guard.hosts})
     _js4 = Path("app/static/app.js").read_text()
     check("the worker is served from the root, or it governs nothing",
           '@app.get("/sw.js")' in Path("app/main.py").read_text()
