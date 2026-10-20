@@ -161,6 +161,29 @@ class Vault:
         """Which platforms have something to show."""
         return [p for p in PLATFORMS if self.exists(p)]
 
+    def any(self) -> bool:
+        """Whether anything at all has been imported. Asking `exists()` instead
+        asks about iMessage, and someone who imported only WhatsApp -- the import
+        that needs no permission -- was told they had no data."""
+        return bool(self.imported())
+
+    def source(self) -> str:
+        """The source name to serve first: iMessage if it is there, otherwise
+        the first platform that is."""
+        have = self.imported()
+        if not have or have[0] == DEFAULT_PLATFORM:
+            return "vault"
+        return f"vault:{have[0]}"
+
+    def window_days(self, platform: str = DEFAULT_PLATFORM) -> int | None:
+        """How far back this platform was imported, so a refresh can read the
+        same span again rather than quietly shortening it."""
+        try:
+            d = json.loads(self.manifest_path(platform).read_text()).get("window_days")
+        except (OSError, ValueError):
+            return None
+        return d if isinstance(d, int) and d > 0 else None
+
     def _key(self, create: bool) -> bytes:
         k = self.keys.get()
         if k is None:
@@ -221,7 +244,7 @@ class Vault:
 
     def seal(self, name: str, obj: dict) -> None:
         """Encrypt a small JSON document into the vault folder with the vault key."""
-        if not self.exists():
+        if not self.any():
             raise VaultError("No imported data yet. Run `./mg import` first.")
         token = Fernet(self._key(create=False)).encrypt(json.dumps(obj).encode())
         self._write_private(name, token)
@@ -235,8 +258,12 @@ class Vault:
         except InvalidToken as e:
             raise VaultError(f"{name} can't be decrypted with the key in the Keychain.") from e
 
-    def manifest(self) -> dict | None:
-        p = self.root / MANIFEST_FILE
+    def manifest(self, platform: str | None = None) -> dict | None:
+        """One platform's manifest; with none named, the one served first."""
+        if platform is None:
+            have = self.imported()
+            platform = have[0] if have else DEFAULT_PLATFORM
+        p = self.manifest_path(platform)
         return json.loads(p.read_text()) if p.exists() else None
 
     def wipe(self) -> list[str]:

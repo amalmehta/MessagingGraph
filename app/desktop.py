@@ -306,7 +306,7 @@ class Controller(NSObject):
             from app.vault import Vault
             port = _free_port()
             os.environ["MG_PORT"] = str(port)
-            os.environ["MG_SOURCE"] = "vault" if Vault().exists() else "synthetic"
+            os.environ["MG_SOURCE"] = Vault().source() if Vault().any() else "synthetic"
             import uvicorn
             from app import main as server
             config = uvicorn.Config(server.app, host="127.0.0.1", port=port, access_log=False,
@@ -352,7 +352,7 @@ class Controller(NSObject):
             ) from None
         port = _free_port()
         cmd = [str(project / ".venv" / "bin" / "python"), "-m", "app.cli", "serve", "--port", str(port)]
-        if not Vault().exists():
+        if not Vault().any():
             cmd.append("--synthetic")
         self.child = subprocess.Popen(cmd, cwd=project, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       text=True, bufsize=1)
@@ -403,7 +403,7 @@ class Controller(NSObject):
     @objc.python_method
     def _update_subtitle(self) -> None:
         from app.vault import Vault
-        if not Vault().exists():
+        if not Vault().any():
             self.window.setSubtitle_("Demo data · import your messages from the menu bar")
         else:
             when = (Vault().manifest() or {}).get("imported_at", "")[:10]
@@ -437,8 +437,8 @@ class Controller(NSObject):
                 return
             from app.vault import Vault
             state = self.server.state
-            if state.source_name == "synthetic" and Vault().exists():
-                state.source_name = "vault"            # first import since the app started
+            if state.source_name == "synthetic" and Vault().any():
+                state.source_name = Vault().source()   # first import since the app started
             state.reload()
             AppHelper.callAfter(self._update_subtitle)
             AppHelper.callAfter(lambda: self.webview.reload_(None))

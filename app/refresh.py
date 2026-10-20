@@ -82,14 +82,18 @@ def refresh_once(platforms: list[str] | None = None) -> list[Outcome]:
     from .importer import run_import, run_whatsapp_import
     from .vault import Vault
 
-    want = platforms if platforms is not None else Vault().imported()
+    vault = Vault()
+    want = platforms if platforms is not None else vault.imported()
     out: list[Outcome] = []
     for p in want:
+        # The span you chose when you imported. Falling back on the importer's
+        # default turned `mg import --days 2000` into 400 days an hour later.
+        days = vault.window_days(p) or 400
         try:
             if p == "whatsapp":
-                r = run_whatsapp_import()
+                r = run_whatsapp_import(days=days)
             elif p == "imessage":
-                r = run_import()
+                r = run_import(days=days)
             else:
                 continue        # nothing can refresh an export you dragged in
             out.append(Outcome(p, r.ok, r.messages, r.note))

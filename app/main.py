@@ -39,7 +39,8 @@ from .state import AppState
 def _vault_if_any():
     """Paired phones belong with the data they can read: in the vault when the
     vault is what is being served, and in memory for the demo corpus."""
-    if os.environ.get("MG_SOURCE", "synthetic") != "vault":
+    src = os.environ.get("MG_SOURCE", "synthetic")
+    if src != "vault" and not src.startswith("vault:"):
         return None
     from .vault import Vault
     return Vault()

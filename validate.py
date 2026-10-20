@@ -982,7 +982,7 @@ def main() -> int:
     _asked = []
     _real = _rf.refresh_once
     check("it refreshes only what you already imported",
-          "Vault().imported()" in Path("app/refresh.py").read_text())
+          "vault.imported()" in Path("app/refresh.py").read_text())
     check("and an export you dragged in is not re-read behind your back",
           "nothing can refresh an export" in Path("app/refresh.py").read_text())
     # Half the job failing must not take the other half with it.
