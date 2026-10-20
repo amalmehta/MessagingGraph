@@ -2490,6 +2490,22 @@ def main() -> int:
                    "what are you up to tonight") for d in range(200) for k in range(6)]
         check("one you talked to every day has, after 35",
               _prof(_daily)[0] == "quiet", str(_prof(_daily)))
+
+        # Search, in the languages people actually text in.
+        from app.search import search as _search
+        _intl = _mini([("ana", _ago(3), "встреча в пятницу у метро"),
+                       ("ana", _ago(2), "我们周六在東京见面吧"),
+                       ("ana", _ago(1), "meet at Café Lumière after work"),
+                       (_ME, _ago(1, 5), "see you at the cafe then")])
+        def _found(q):
+            return sorted(h.title for h in _search(_intl, [], [], q, _n15).hits
+                          if h.kind == "message")
+        check("a Russian question finds the Russian message",
+              any("встреча" in d for d in _found("где встреча")), str(_found("где встреча")))
+        check("a word in Japanese or Chinese is found inside the sentence around it",
+              any("東京" in d for d in _found("東京")), str(_found("東京")))
+        check("café and cafe find each other, whichever way round",
+              len(_found("café")) == 2 and len(_found("cafe")) == 2, str(_found("café")))
         #@fifteen
     finally:
         shutil.rmtree(_t15, ignore_errors=True)
