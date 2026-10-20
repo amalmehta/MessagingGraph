@@ -187,9 +187,23 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     # -- volume and trend ------------------------------------------------
     per_week = _rate_per_week(dm, first_ts, now) if dm else 0.0
     recent = _rate_per_week(dm, now - timedelta(days=RECENT_DAYS), now)
-    prior = _rate_per_week(dm, now - timedelta(days=PRIOR_DAYS),
-                           now - timedelta(days=RECENT_DAYS))
+    # "Before" starts when the thread did. Averaging over days before you had
+    # ever spoken counted them as silence, so every thread under four months
+    # old read as rising.
+    prior_until = now - timedelta(days=RECENT_DAYS)
+    prior_from = max(first_ts, now - timedelta(days=PRIOR_DAYS))
+    prior_days = (prior_until - prior_from).total_seconds() / 86400
+    prior = _rate_per_week(dm, prior_from, prior_until) if prior_days > 0 else 0.0
     days_silent = (now - last_ts).total_seconds() / 86400
+    convos = _conversations(dm)
+    # Quiet is measured against this thread's own rhythm. A month without a
+    # word says something about a friend you text daily and nothing about one
+    # you talk to once a month, who was being called "gone quiet" after a
+    # single gap of 31 days.
+    gaps = sorted((b[0].ts - a[-1].ts).total_seconds() / 86400
+                  for a, b in zip(convos, convos[1:]))
+    usual_gap = gaps[len(gaps) // 2] if gaps else 0.0
+    quiet_after = max(float(RECENT_DAYS), min(180.0, 3 * usual_gap))
 
     # Compare counts rather than rates, with a pseudo-count so a quiet thread
     # cannot be called "rising" off three extra messages. A 1.6-msg/week thread
@@ -199,8 +213,10 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     K = 8.0
     ratio = (recent_n + K) / (expected_n + K)
 
-    if days_silent > 45 or recent < 0.15:
+    if days_silent > quiet_after:
         trend = "dormant"
+    elif prior_days < RECENT_DAYS:
+        trend = "steady"            # too new to have a before to compare with
     elif ratio > 1.35:
         trend = "rising"
     elif ratio < 0.6:
@@ -210,7 +226,6 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
 
     # -- balance ---------------------------------------------------------
     reciprocity = len(theirs) / total if total else 0.5
-    convos = _conversations(dm)
     starts_mine, starts_total = _initiations(dm)
     initiation = starts_mine / starts_total if starts_total else 0.5
 
@@ -272,7 +287,9 @@ def profile_contact(corpus: Corpus, contact_id: str, base: Baseline,
     # -- confidence ------------------------------------------------------
     # A dozen messages cannot support a claim about a friendship. Rather than
     # hide thin threads, we measure them and label the reading as provisional.
-    confidence = round(min(1.0, len(mine) / 60) ** 0.6 * min(1.0, len(convos) / 12) ** 0.4, 2)
+    # On the whole thread, not only my side of it: a parent who sends 400
+    # messages to my 10 replies is not a thin reading, and was labelled "new".
+    confidence = round(min(1.0, total / 120) ** 0.6 * min(1.0, len(convos) / 12) ** 0.4, 2)
 
     # -- signals ---------------------------------------------------------
     signals: list[Signal] = []

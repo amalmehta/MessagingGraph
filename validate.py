@@ -2468,6 +2468,28 @@ def main() -> int:
               _pl(_mini([(_ME, _ago(30), "we should get dinner sometime"),
                          (_ME, _ago(10), "dinner on saturday?"),
                          ("ana", _ago(10, 5), "yes!")])) == [("done", True)])
+
+        # How a one-on-one thread is described, on threads shaped to each mistake.
+        def _prof(rows):
+            p = profile_all(_mini(rows), _n15)[0]
+            return p.state, p.trend
+        _new40 = [(_ME if (d + k) % 2 else "ana", _n15 - timedelta(days=d, hours=k * 3),
+                   "how's it going today") for d in range(40) for k in range(3)]
+        check("a steady thread six weeks old is steady, not rising",
+              _prof(_new40)[1] == "steady", str(_prof(_new40)))
+        _parent = ([("ana", _n15 - timedelta(days=d, hours=h), "look at this photo of the garden")
+                    for d in range(300) for h in (2, 9)]
+                   + [(_ME, _n15 - timedelta(days=d, hours=1), "lovely!") for d in range(5, 300, 30)])
+        check("600 messages from them and 10 from you is not a 'new' thread",
+              _prof(_parent)[0] != "new", str(_prof(_parent)))
+        _monthly = [(_ME if k % 2 else "ana", _n15 - timedelta(days=31 + 30 * m, minutes=10 * k),
+                     "so good to catch up, tell me everything") for m in range(24) for k in range(30)]
+        check("a friend you talk to monthly has not gone quiet after 31 days",
+              _prof(_monthly)[0] != "quiet", str(_prof(_monthly)))
+        _daily = [(_ME if k % 2 else "ana", _n15 - timedelta(days=35 + d, minutes=10 * k),
+                   "what are you up to tonight") for d in range(200) for k in range(6)]
+        check("one you talked to every day has, after 35",
+              _prof(_daily)[0] == "quiet", str(_prof(_daily)))
         #@fifteen
     finally:
         shutil.rmtree(_t15, ignore_errors=True)
