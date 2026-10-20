@@ -2321,6 +2321,106 @@ def main() -> int:
           len(filtered.messages) < len(corpus.messages),
           f"{len(corpus.messages)} → {len(filtered.messages)}")
 
+    print("\nfifteen things found by reading the code:")
+    from types import SimpleNamespace as _NS
+    import app.importer as _imp15
+    import app.vault as _vmod
+    _t15 = Path(tempfile.mkdtemp(prefix="mg-fifteen-"))
+    try:
+        # Someone who imported only WhatsApp -- the import that needs no
+        # permission -- was told they had no data, and could not save a name.
+        _wv = Vault(_t15 / "v", MemoryKeyStore())
+        _wv.write(rc, {"window_days": 2000, "messages": len(rc.messages)}, platform="whatsapp")
+        check("a vault holding only WhatsApp counts as imported",
+              _wv.any() and not _wv.exists())
+        check("and is served as WhatsApp rather than as demo data",
+              _wv.source() == "vault:whatsapp")
+        _wv.seal("overrides.v1.enc", {"names": {"c_1": "Sam"}})
+        check("names and paired phones can still be saved into it",
+              _wv.unseal("overrides.v1.enc") == {"names": {"c_1": "Sam"}})
+        check("and its own manifest is the one reported",
+              (_wv.manifest() or {}).get("platform") == "whatsapp")
+        check("nothing imported is still nothing", not Vault(_t15 / "empty", MemoryKeyStore()).any())
+
+        # The hourly refresh re-read with the importer's default and turned
+        # `mg import --days 2000` into 400 days an hour later.
+        _asked15 = {}
+        _was = (_imp15.run_whatsapp_import, _imp15.run_import, _vmod.Vault)
+        try:
+            _imp15.run_whatsapp_import = lambda days=400, **k: (
+                _asked15.__setitem__("whatsapp", days) or _NS(ok=True, messages=1, note=""))
+            _imp15.run_import = lambda days=400, **k: (
+                _asked15.__setitem__("imessage", days) or _NS(ok=True, messages=1, note=""))
+            _vmod.Vault = lambda *a, **k: _wv
+            _rf.refresh_once()
+        finally:
+            _imp15.run_whatsapp_import, _imp15.run_import, _vmod.Vault = _was
+        check("the hourly refresh reads back as far as you imported, not 400 days",
+              _asked15 == {"whatsapp": 2000}, str(_asked15))
+
+        # A store shaped like WhatsApp's, left in WAL mode with its newest rows
+        # still in the log, the way it is while WhatsApp is running.
+        from app.ingest.whatsapp import WhatsAppSource as _WA15, CORE_DATA_EPOCH as _CDE
+        _wdb = _t15 / "ChatStorage.sqlite"
+        _w = sqlite3.connect(_wdb)
+        _w.execute("PRAGMA journal_mode=WAL")
+        _w.execute("PRAGMA wal_autocheckpoint=0")
+        _w.executescript("""
+            CREATE TABLE ZWAPROFILEPUSHNAME (ZJID TEXT, ZPUSHNAME TEXT);
+            CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT,
+                                         ZPARTNERNAME TEXT, ZSESSIONTYPE INTEGER);
+            CREATE TABLE ZWAGROUPMEMBER (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                                         ZMEMBERJID TEXT, ZCONTACTNAME TEXT, ZFIRSTNAME TEXT);
+            CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                                     ZISFROMME INTEGER, ZMESSAGEDATE REAL, ZTEXT TEXT,
+                                     ZMESSAGETYPE INTEGER, ZGROUPMEMBER INTEGER,
+                                     ZFROMJID TEXT, ZPUSHNAME TEXT);
+            INSERT INTO ZWACHATSESSION VALUES (1, '120363@g.us', '', 1);
+            INSERT INTO ZWAGROUPMEMBER VALUES (1, 1, '4479001@s.whatsapp.net', 'Ana', NULL);
+            INSERT INTO ZWAGROUPMEMBER VALUES (2, 1, '4479002@s.whatsapp.net', 'Ben', NULL);
+        """)
+        _w.commit()
+        _wnow = datetime.now().timestamp() - _CDE
+        for _pk, _mem, _txt in ((1, 1, "dinner friday?"), (2, 2, "yes im in"),
+                                (3, None, "who wrote this")):
+            _w.execute("INSERT INTO ZWAMESSAGE VALUES (?, 1, 0, ?, ?, 0, ?, '120363@g.us', ?)",
+                       (_pk, _wnow - 3600 + _pk, _txt, _mem, "Ana" if _mem == 1 else "Ben"))
+            _w.commit()
+        _in_log = (_t15 / "ChatStorage.sqlite-wal").stat().st_size > 0
+        _tmpd = _t15 / "tmp"
+        _tmpd.mkdir()
+        # A temp copy cleans up after a clean run, so watch for it being made at
+        # all: a killed import is the one that leaves it behind.
+        _tmp_was, _mk_was, _cp_was = tempfile.tempdir, tempfile.mkdtemp, shutil.copy2
+        _copied = []
+        tempfile.tempdir = str(_tmpd)
+        tempfile.mkdtemp = lambda *a, **k: (_copied.append("mkdtemp"), _mk_was(*a, **k))[1]
+        shutil.copy2 = lambda *a, **k: (_copied.append(str(a[0])), _cp_was(*a, **k))[1]
+        try:
+            _wsrc = _WA15(path=str(_wdb), days=30)
+            _wc = _wsrc.load()
+        finally:
+            tempfile.tempdir, tempfile.mkdtemp, shutil.copy2 = _tmp_was, _mk_was, _cp_was
+            _w.close()
+        _wby = {m.text: m.sender_id for m in _wc.messages}
+        _wname = {c.id: c.name for c in _wc.contacts.values()}
+        check("WhatsApp is read through its write-ahead log, newest messages included",
+              _in_log and "yes im in" in _wby)
+        check("and nothing of it is written to a temp folder on the way",
+              not any(_tmpd.iterdir()) and not _copied, ", ".join(_copied))
+        check("a group message is credited to the member who wrote it",
+              _wname.get(_wby.get("dinner friday?")) == "Ana"
+              and _wname.get(_wby.get("yes im in")) == "Ben")
+        check("one with no member row is dropped, not handed to whoever is listed first",
+              "who wrote this" not in _wby
+              and _wsrc.report.dropped.get("unknown sender") == 1)
+        check("a group with no name is not named after one of its members",
+              [t.name for t in _wc.threads.values()] == ["Unknown"],
+              str([t.name for t in _wc.threads.values()]))
+        #@fifteen
+    finally:
+        shutil.rmtree(_t15, ignore_errors=True)
+
     print("\npalette:")
     css = Path("app/static/styles.css").read_text()
     js = Path("app/static/app.js").read_text()

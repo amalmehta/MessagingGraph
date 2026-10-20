@@ -19,15 +19,14 @@ import hmac
 import os
 import re
 import secrets
-import shutil
 import sqlite3
-import tempfile
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..models import SELF_ID, Contact, Corpus, Message, Thread
+from .contacts import snapshot
 
 DB_PATH = str(Path.home() / "Library" / "Group Containers" /
               "group.net.whatsapp.WhatsApp.shared" / "ChatStorage.sqlite")
@@ -119,26 +118,23 @@ class WhatsAppSource:
             from .base import SourceUnavailable
             raise SourceUnavailable(why)
         rep = self.report
-        # A copy, because WhatsApp may be running and writing to it.
-        with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "wa.sqlite"
-            shutil.copy2(self.path, copy)
-            for extra in ("-wal", "-shm"):
-                side = Path(self.path + extra)
-                if side.exists():
-                    shutil.copy2(side, str(copy) + extra)
-            db = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
-            db.row_factory = sqlite3.Row
-            try:
-                return self._read(db, rep)
-            finally:
-                db.close()
+        # Into memory, the way chat.db is read. Copying the file and its WAL to
+        # a temp folder left your whole history on disk in the clear -- for good,
+        # if the import was killed -- and two copies taken one after the other
+        # while WhatsApp is writing need not agree with each other.
+        db = snapshot(self.path)
+        db.row_factory = sqlite3.Row
+        try:
+            return self._read(db, rep)
+        finally:
+            db.close()
 
     def _read(self, db: sqlite3.Connection, rep: Report) -> Corpus:
         cutoff = datetime.now() - timedelta(days=self.days)
         threads: dict[str, Thread] = {}
         contacts: dict[str, Contact] = {}
         members: dict[int, list[str]] = {}
+        member_of_row: dict[int, str] = {}      # ZWAGROUPMEMBER.Z_PK -> contact id
 
         # What people call themselves. Only 4 of 413 group members here have a
         # name from Contacts, and without this the rest are anonymous.
@@ -148,20 +144,24 @@ class WhatsAppSource:
             if row["ZJID"] and name:
                 pushed[row["ZJID"]] = name
         # And the one carried on each message, which reaches further still.
+        # Not in a group, though: there ZFROMJID is the group's own id, and the
+        # push name is whichever member wrote that message.
         for row in db.execute("SELECT ZFROMJID, ZPUSHNAME FROM ZWAMESSAGE "
                               "WHERE ZPUSHNAME IS NOT NULL AND ZPUSHNAME <> '' "
-                              "AND ZFROMJID IS NOT NULL"):
+                              "AND ZFROMJID IS NOT NULL AND ZFROMJID NOT LIKE '%@g.us'"):
             name = clean_name(row["ZPUSHNAME"])
             if name:
                 pushed.setdefault(row["ZFROMJID"], name)
 
         # Who is in each group, and what WhatsApp calls them.
         for row in db.execute(
-                "SELECT ZCHATSESSION, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME FROM ZWAGROUPMEMBER"):
+                "SELECT Z_PK, ZCHATSESSION, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME "
+                "FROM ZWAGROUPMEMBER"):
             jid = row["ZMEMBERJID"]
             if not jid:
                 continue
             cid = self._id("w_", jid)
+            member_of_row[row["Z_PK"]] = cid
             name = (clean_name(row["ZCONTACTNAME"]) or clean_name(row["ZFIRSTNAME"])
                     or pushed.get(jid, "") or _from_jid(jid))
             if cid not in contacts:
@@ -221,8 +221,11 @@ class WhatsAppSource:
                 rep.attachment_only += 1
             sender = SELF_ID
             if not from_me:
-                if is_group and row["ZGROUPMEMBER"]:
-                    sender = _member_cid(db, row["ZGROUPMEMBER"], self._id) or _first(threads[tid])
+                if is_group:
+                    # Only the member row says who wrote it. ZFROMJID is the
+                    # group, and the first member listed is a guess that hands
+                    # one person everybody else's messages.
+                    sender = member_of_row.get(row["ZGROUPMEMBER"])
                 else:
                     sender = _first(threads[tid])
                 if sender is None:
@@ -246,11 +249,6 @@ class WhatsAppSource:
 
 def _first(thread: Thread) -> str | None:
     return thread.participant_ids[0] if thread.participant_ids else None
-
-
-def _member_cid(db: sqlite3.Connection, pk: int, mk) -> str | None:
-    row = db.execute("SELECT ZMEMBERJID FROM ZWAGROUPMEMBER WHERE Z_PK = ?", (pk,)).fetchone()
-    return mk("w_", row["ZMEMBERJID"]) if row and row["ZMEMBERJID"] else None
 
 
 def _from_jid(jid: str) -> str:
