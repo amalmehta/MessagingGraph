@@ -2506,6 +2506,30 @@ def main() -> int:
               any("東京" in d for d in _found("東京")), str(_found("東京")))
         check("café and cafe find each other, whichever way round",
               len(_found("café")) == 2 and len(_found("cafe")) == 2, str(_found("café")))
+
+        # The page. These read the script, as the checks on it above do; the
+        # behaviour was also driven in a browser against the demo data.
+        _js15 = Path("app/static/app.js").read_text()
+        _api = _js15[_js15.index("const api = "):_js15.index("function signedOut")]
+        check("a request the server refuses is an error, not an answer to read",
+              "if (!r.ok)" in _api and "throw e" in _api)
+        _now = _js15[_js15.index("function viewNow()"):_js15.index("function wireJumps()")]
+        check("the drafts and thank-yous say so when they can't load, instead of 'Drafting…' for good",
+              "drawDrafts().catch(" in _now and "drawThanks().catch(" in _now)
+        _wd = _js15[_js15.index("function wireDraft("):_js15.index("// ----", _js15.index("function wireDraft("))]
+        check("'Another version' comes back however its request ends",
+              "finally" in _wd and "another.disabled = false" in _wd)
+        check("and the name on a draft opens that person, as it looks like it should",
+              "querySelector('.dwho[data-person]')" in _wd and ".who.link" not in _js15)
+        _op = _js15[_js15.index("async function openPerson("):_js15.index("// ---------------------------------------------------------------- history")]
+        _lh = _js15[_js15.index("async function loadHistory("):_js15.index("function renderHistory(")]
+        check("a profile that arrives after you've opened someone else is dropped",
+              _op.count("gen !== drawerGen") >= 2 and "drawerGen++" in _js15)
+        check("and so is a page of their history, or one for a search you've typed past",
+              "gen !== drawerGen || cid !== H.cid || q !== H.q" in _lh)
+        _views = re.search(r"const VIEWS = \[([^\]]*)\]", _js15).group(1)
+        check("Insights survives a reload and the Back button",
+              "'insights'" in _views)
         #@fifteen
     finally:
         shutil.rmtree(_t15, ignore_errors=True)

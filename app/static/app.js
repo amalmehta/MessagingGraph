@@ -1,13 +1,25 @@
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
-const api = (p) => fetch(p).then(r => {
+const api = (p) => fetch(p).then(async r => {
   if (r.status === 401) { signedOut(); throw new Error('signed out'); }
   // Set by the service worker when the Mac could not be reached and this came
   // off the phone instead. Saying so beats letting you read last week's
   // drafts believing they are today's.
   markStale(r.headers.get('x-mg-from-cache') === '1');
-  return r.json();
+  const data = await r.json().catch(() => ({}));
+  // A 404 or a 500 used to come back as though it were the answer, so a
+  // profile that no longer existed threw on p.name and the click did nothing.
+  if (!r.ok) {
+    const e = new Error(data.detail || `Request failed (${r.status})`);
+    e.status = r.status;
+    e.detail = data.detail || '';
+    throw e;
+  }
+  return data;
 });
+// What a box says when what it was waiting for never came. The placeholder
+// ("Drafting…") otherwise stays up for good.
+const COULDNT = (what) => `<div class="empty">Couldn't load ${what}. Reload the page to try again.</div>`;
 
 // The session cookie is only valid for one run of the server. After a restart the
 // old tab would otherwise fail silently on every click.
@@ -438,7 +450,8 @@ function wirePhoneLayout() {
 
 // The view lives in the address bar, so a reload comes back where you were and the
 // browser's own Back button walks through the app rather than out of it.
-const VIEWS = ['now', 'graph', 'people', 'privacy'];
+// Insights was missing, so reloading it or coming Back to it landed on Now.
+const VIEWS = ['now', 'graph', 'people', 'privacy', 'insights'];
 function viewFromUrl() {
   const v = new URLSearchParams(location.search).get('view');
   return VIEWS.includes(v) ? v : 'now';
@@ -677,7 +690,9 @@ function go(v, push = true) {
   // drawn in the other theme's colours.
   readTheme();
   S.view = v;
-  if (push && viewFromUrl() !== v) {
+  // Search lives in the box rather than the address, so it is not a place to
+  // come back to: pushing it stacked up ?view=search entries that reloaded as Now.
+  if (push && VIEWS.includes(v) && viewFromUrl() !== v) {
     history.pushState({ view: v }, '', v === 'now' ? location.pathname : `?view=${v}`);
   }
   document.querySelectorAll('nav button').forEach(b => {
@@ -759,8 +774,8 @@ function viewNow() {
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
   wireJumps();
-  drawDrafts();
-  drawThanks();
+  drawDrafts().catch(() => { const b = $('#drafts'); if (b) b.innerHTML = COULDNT('drafts'); });
+  drawThanks().catch(() => { const b = $('#thanks'); if (b) b.innerHTML = COULDNT('thank-yous'); });
 }
 
 // The three plan counts live on Now but the plans themselves are on the
@@ -892,7 +907,7 @@ function draftCard(d, src = '/api/messages') {
 function wireDraft(card) {
   const id = card.dataset.id, ta = card.querySelector('.dtext'), note = card.querySelector('.dnote');
   fitText(ta);
-  const who = card.querySelector('.who.link');
+  const who = card.querySelector('.dwho[data-person]');
   if (who) who.onclick = () => openPerson(who.dataset.person);
   card.querySelector('.copy').onclick = async () => {
     try {
@@ -910,9 +925,16 @@ function wireDraft(card) {
     const d = S.drafts[id];
     S.draftSeeds[id] = ((S.draftSeeds[id] || 0) + 1) % d.options;
     another.disabled = true;
-    const list = await api(`${card.dataset.src}?redraft=${encodeURIComponent(id)}&seed=${S.draftSeeds[id]}`);
+    let list;
+    try {
+      list = await api(`${card.dataset.src}?redraft=${encodeURIComponent(id)}&seed=${S.draftSeeds[id]}`);
+    } catch {
+      note.textContent = "Couldn't get another version. Try again.";
+      return;
+    } finally {
+      another.disabled = false;
+    }
     const fresh = list.find(x => x.id === id);
-    another.disabled = false;
     if (!fresh) return;
     S.drafts[id] = fresh;
     const next = document.createElement('div');
@@ -1124,8 +1146,16 @@ function wireThanks(cid, seed) {
   if (!btn) return;
   btn.onclick = async () => {
     btn.disabled = true;
-    const res = await api(`/api/people/${encodeURIComponent(cid)}/gratitude?seed=${seed}`);
     const box = $('#thankbox');
+    let res;
+    try {
+      res = await api(`/api/people/${encodeURIComponent(cid)}/gratitude?seed=${seed}`);
+    } catch {
+      btn.disabled = false;
+      if (box && !box.querySelector('.thank-err')) box.insertAdjacentHTML('beforeend',
+        `<div class="pdef thank-err" role="status">Couldn't draft one just now. Try again.</div>`);
+      return;
+    }
     if (!res.draft) { box.innerHTML = `<div class="pdef">${esc(res.reason)}</div>`; return; }
     const d = res.draft;
     box.innerHTML = `<div class="draft">
@@ -1870,6 +1900,7 @@ async function refreshFoot() {
 let drawerReturn = null;
 
 function openDrawer() {
+  drawerGen++;                       // a plan or a form replacing a person is moving on too
   const d = $('#drawer');
   drawerReturn = document.activeElement;
   d.classList.add('on');
@@ -1886,7 +1917,13 @@ function openDrawer() {
   (d.querySelector('.close') || d).focus();
 }
 
+// Which opening of the drawer is current. Everything that fills it awaits the
+// server, and a reply that lands after you have moved on -- to another person,
+// a plan, or nothing -- is about someone you are no longer looking at.
+let drawerGen = 0;
+
 function closeDrawer() {
+  drawerGen++;
   const d = $('#drawer');
   const was = d.classList.contains('on');
   d.classList.remove('on');
@@ -1915,7 +1952,23 @@ function trapTab(e) {
 
 async function openPerson(id) {
   if (!id || !id.startsWith('p_')) return;
-  const d = await api('/api/people/' + id), p = d.profile;
+  // Opening B before A has arrived drew A's chart into B's profile and A's
+  // messages under B's name.
+  const gen = ++drawerGen;
+  let d;
+  try {
+    d = await api('/api/people/' + id);
+  } catch (e) {
+    if (gen !== drawerGen || e.message === 'signed out') return;
+    $('#drawer').innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
+      <div class="empty">${esc(e.detail || "That person couldn't be loaded. Reload the page.")}</div>`;
+    $('#drawer .close').onclick = closeDrawer;
+    openDrawer();
+    drawerGen = gen;                           // opening is not moving on
+    return;
+  }
+  if (gen !== drawerGen) return;
+  const p = d.profile;
   $('#drawer').innerHTML = `
     <button type="button" class="close" aria-label="Close">&times;</button>
     <h3>${avatar(p.name, 'big')}<span id="pname">${esc(p.name)}</span>
@@ -1975,6 +2028,7 @@ async function openPerson(id) {
       <span class="dnote" role="status"></span></div>` : ''}`;
   $('#drawer .close').onclick = closeDrawer;
   openDrawer();
+  drawerGen = gen;
   $('#drawer').scrollTop = 0;
   $('#drawer').querySelectorAll('.mchip[data-person]').forEach(el =>
     el.onclick = () => openPerson(el.dataset.person));
@@ -2035,9 +2089,11 @@ async function openPerson(id) {
     go(S.view);
   };
 
-  const sd = await api(`/api/people/${id}/series?weeks=40`);
+  let sd = null;
+  try { sd = await api(`/api/people/${id}/series?weeks=40`); } catch { /* the rest still stands */ }
+  if (gen !== drawerGen) return;
   const host = $('#p-rate');
-  if (host) {
+  if (host && sd) {
     mountChart(host, sd, { height: 150, aria: `Messages per week with ${p.name}` });
     const sm = sd.summary;
     $('#p-head').textContent = `${sm.recent_avg} a week lately`;
@@ -2062,7 +2118,20 @@ async function loadHistory(append = false) {
   const qs = new URLSearchParams({ limit: '60' });
   if (H.q) qs.set('q', H.q);
   if (append && H.before) qs.set('before', H.before);
-  const d = await api(`/api/people/${H.cid}/history?` + qs);
+  // The answer belongs to this person and this search. Typing on, or opening
+  // someone else, makes it someone else's.
+  const gen = drawerGen, cid = H.cid, q = H.q;
+  let d;
+  try {
+    d = await api(`/api/people/${cid}/history?` + qs);
+  } catch {
+    if (gen === drawerGen && cid === H.cid && q === H.q) {
+      const box = $('#hist');
+      if (box) box.innerHTML = COULDNT('this conversation');
+    }
+    return;
+  }
+  if (gen !== drawerGen || cid !== H.cid || q !== H.q) return;
   H.messages = append ? [...d.messages, ...H.messages] : d.messages;
   H.total = d.total; H.matched = d.matched; H.more = d.has_more;
   H.before = d.oldest;
@@ -2161,7 +2230,8 @@ function vibeCard(v, p) {
 }
 
 async function openPlan(id) {
-  const d = await api('/api/plans/' + encodeURIComponent(id));
+  let d;
+  try { d = await api('/api/plans/' + encodeURIComponent(id)); } catch (e) { d = { detail: e.detail }; }
   const drawer = $('#drawer');
   if (!d.id) {
     drawer.innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
