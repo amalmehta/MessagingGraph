@@ -39,7 +39,12 @@ STOP = {
 WHEN = re.compile(r"\b(when|what\s+(?:date|dates|day|days|time)|which\s+(?:day|days|date|dates)|"
                   r"how\s+soon|what\s+time)\b", re.I)
 WHO = re.compile(r"\b(who|whose|which\s+(?:person|people|friend))\b", re.I)
-WORD = re.compile(r"[a-z0-9']+")
+# Letters in any script. This was [a-z0-9'], so "где встреча" and "東京" had no
+# words in them at all and found nothing.
+WORD = re.compile(r"[\w']+")
+# Scripts written without spaces between words, where a word is found inside a
+# run of text rather than between boundaries.
+UNSPACED = re.compile(r"[\u0e00-\u0e7f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 # Enough of a date to be worth showing when the question asked for one.
 DATEISH = re.compile(
     r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\b"
@@ -50,10 +55,17 @@ DATEISH = re.compile(
 MAX_PER_KIND = 6
 
 
+def fold(text: str) -> str:
+    """Lowercase, with accents taken off, so "Café" in a message and "cafe" in
+    a question are the same word. Both sides go through this: folding only the
+    question turned "café" into "cafe" and then looked for it in "café"."""
+    flat = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in flat if not unicodedata.combining(c))
+
+
 def terms(q: str) -> list[str]:
     """The words worth searching for, in the order they were typed."""
-    flat = unicodedata.normalize("NFKD", q.lower())
-    words = [w.strip("'") for w in WORD.findall(flat)]
+    words = [w.strip("'") for w in WORD.findall(fold(q))]
     kept = [w for w in words if w and w not in STOP and len(w) > 1]
     return kept or [w for w in words if w]        # a query of nothing but stopwords
 
@@ -103,9 +115,10 @@ def _weights(corpus: Corpus, words: list[str]) -> dict[str, float]:
     for m in corpus.messages:
         if not m.text:
             continue
-        seen = set(WORD.findall(m.text.lower()))
+        low = fold(m.text)
+        seen = set(WORD.findall(low))
         for w in words:
-            if w in seen:
+            if w in seen or (UNSPACED.search(w) and w in low):
                 counts[w] += 1
     total = max(1, len(corpus.messages))
     return {w: math.log(1 + total / (1 + counts[w])) for w in words}
@@ -113,7 +126,9 @@ def _weights(corpus: Corpus, words: list[str]) -> dict[str, float]:
 
 @lru_cache(maxsize=4096)
 def _word_re(word: str):
-    return re.compile(rf"(?<![a-z0-9]){re.escape(word)}(?![a-z0-9])")
+    if UNSPACED.search(word):
+        return re.compile(re.escape(word))
+    return re.compile(rf"(?<![\w]){re.escape(word)}(?![\w])")
 
 
 def _word_in(word: str, low: str) -> bool:
@@ -133,7 +148,7 @@ def _matches(text: str, words: list[str], weight: dict[str, float],
     """
     if not text:
         return 0.0
-    low = text.lower()
+    low = fold(text)
     hit = [w for w in words if _word_in(w, low)]
     if not hit:
         return 0.0
@@ -187,7 +202,7 @@ def search(corpus: Corpus, plans: list[Plan], profiles: list[RelationshipProfile
     for prof in profiles:
         s = _matches(prof.name, words, weight, pivot) * 2.5
         theirs = topics.get(prof.contact_id) or {}
-        shared = [t for t in theirs if any(w in t.lower() for w in words)]
+        shared = [t for t in theirs if any(w in fold(t) for w in words)]
         detail = prof.headline or ""
         if shared:
             s += 6.0 * len(shared)
@@ -221,7 +236,7 @@ def search(corpus: Corpus, plans: list[Plan], profiles: list[RelationshipProfile
         said_when = ""
         if out.asked_when:
             found = DATEISH.search(m.text)
-            if found and (not pivot or _word_in(pivot, m.text.lower())):
+            if found and (not pivot or _word_in(pivot, fold(m.text))):
                 said_when = found.group(0)
                 s *= 2.4
         thread = corpus.threads.get(m.thread_id)
@@ -235,7 +250,7 @@ def search(corpus: Corpus, plans: list[Plan], profiles: list[RelationshipProfile
     # "when is the ski trip" was offering six Cabin Trip plans, none of which
     # mention skiing, dressed up as matches because they had the word "trip".
     if pivot:
-        on_subject = [h for h in hits if _word_in(pivot, f"{h.title} {h.detail} {h.who}".lower())]
+        on_subject = [h for h in hits if _word_in(pivot, fold(f"{h.title} {h.detail} {h.who}"))]
         if on_subject:
             hits = on_subject
         else:

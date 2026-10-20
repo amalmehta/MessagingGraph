@@ -282,8 +282,9 @@ def person_history(cid: str, limit: int = 60, before: str | None = None,
 
     items = full
     if q:
-        needle = q.lower().strip()
-        items = [m for m in items if needle in m.text.lower()]
+        from .search import fold
+        needle = fold(q).strip()
+        items = [m for m in items if needle in fold(m.text)]
     matched = len(items)
 
     if before:
