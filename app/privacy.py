@@ -20,26 +20,54 @@ from .models import Corpus, Message
 # Redaction
 # ---------------------------------------------------------------------------
 
-_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("[email]", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b")),
-    ("[card]", re.compile(r"\b(?:\d[ -]*?){13,16}\b")),
-    ("[phone]", re.compile(r"\b(?:\+?1[ .-]?)?\(?\d{3}\)?[ .-]?\d{3}[ .-]?\d{4}\b")),
-    ("[ssn]", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
-    ("[url]", re.compile(r"https?://\S+")),
-    ("[address]", re.compile(r"\b\d{1,5}\s+[A-Z][a-z]+\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Ln|Lane|Dr|Drive)\b")),
-    ("[code]", re.compile(r"\b\d{6}\b")),  # 2FA-shaped
+# A run of digits with the separators people type between them. Whether it is a
+# phone number is decided by counting digits, below, not by the shape of one
+# country's numbers: the pattern this replaced knew only (415) 555-0134, and let
+# +91 98765 43210, +49 30 1234567 and most of +44 7700 900123 straight through.
+_DIGIT_RUN = re.compile(r"(?<![\w+])(?:\+|00)?\(?\d[\d ().\-]{5,}\d(?!\w)")
+
+
+def _phone(m: re.Match[str]) -> str:
+    raw = m.group(0)
+    digits = sum(c.isdigit() for c in raw)
+    if raw.startswith(("+", "00")):
+        return "[phone]" if 8 <= digits <= 15 else raw      # E.164 tops out at 15
+    # Without a country code, the national lengths: 10 for North America and
+    # India, 11 for a UK 07... mobile. Dates and prices are shorter than that.
+    return "[phone]" if 10 <= digits <= 11 else raw
+
+
+_PATTERNS: list[tuple[str, re.Pattern[str], object]] = [
+    ("[email]", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,}\b"), "[email]"),
+    # Before the card and phone patterns, which would otherwise take its digits
+    # and leave the country and bank letters behind.
+    ("[iban]", re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,3})?\b"), "[iban]"),
+    ("[card]", re.compile(r"\b(?:\d[ -]*?){13,16}\b"), "[card]"),
+    ("[phone]", _DIGIT_RUN, _phone),
+    ("[ssn]", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[ssn]"),
+    ("[url]", re.compile(r"https?://\S+"), "[url]"),
+    ("[address]", re.compile(r"\b\d{1,5}\s+[A-Z][a-z]+\s+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Ln|Lane|Dr|Drive)\b"), "[address]"),
+    ("[code]", re.compile(r"\b\d{6}\b"), "[code]"),  # 2FA-shaped
 ]
 
 
 def redact(text: str) -> str:
     """Strip the obvious identifiers out of a message body."""
-    for token, pattern in _PATTERNS:
-        text = pattern.sub(token, text)
+    for _token, pattern, repl in _PATTERNS:
+        text = pattern.sub(repl, text)
     return text
 
 
 def redaction_hits(text: str) -> list[str]:
-    return [token for token, pattern in _PATTERNS if pattern.search(text)]
+    """What `redact` takes out, in the order it does, so a phone number is not
+    also reported as the 2FA code its last six digits look like."""
+    hits = []
+    for token, pattern, repl in _PATTERNS:
+        out = pattern.sub(repl, text)
+        if out != text:
+            hits.append(token)
+            text = out
+    return hits
 
 
 # ---------------------------------------------------------------------------

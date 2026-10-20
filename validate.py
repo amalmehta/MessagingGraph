@@ -2417,6 +2417,24 @@ def main() -> int:
         check("a group with no name is not named after one of its members",
               [t.name for t in _wc.threads.values()] == ["Unknown"],
               str([t.name for t in _wc.threads.values()]))
+
+        # WhatsApp histories are mostly international, and the phone pattern
+        # knew one country.
+        from app.privacy import redact as _red, redaction_hits as _hits
+        _gone = {"+91 98765 43210": "[phone]", "+49 30 1234567": "[phone]",
+                 "+44 7700 900123": "[phone]", "07700 900123": "[phone]",
+                 "(415) 555-0199": "[phone]", "415-555-0134": "[phone]",
+                 "GB82 WEST 1234 5698 7654 32": "[iban]", "DE89370400440532013000": "[iban]"}
+        _leaks = {k: _red(f"it's {k} ok") for k, tok in _gone.items()
+                  if _red(f"it's {k} ok") != f"it's {tok} ok"}
+        check("phone numbers and bank accounts are hidden whatever country they are from",
+              not _leaks, str(_leaks))
+        _keep = ["on 2024-01-15 at 10.30", "it costs 1500", "see you at 7", "flat 12 3 4"]
+        check("while dates, prices and times are left alone",
+              all(_red(t) == t for t in _keep), str([_red(t) for t in _keep]))
+        check("and what was hidden is reported once, not once per pattern it resembles",
+              _hits("ring +44 7700 900123") == ["[phone]"], str(_hits("ring +44 7700 900123")))
+
         #@fifteen
     finally:
         shutil.rmtree(_t15, ignore_errors=True)
