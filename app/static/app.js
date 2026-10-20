@@ -535,7 +535,67 @@ function syncFoot() {
 }
 
 const VIEW_TITLE = { now: 'Now', graph: 'My brainstorm', people: 'People', privacy: 'Privacy',
-  search: 'Search' };
+  search: 'Search', insights: 'Insights' };
+
+// The whole history at once. Everything else here is about somebody; this is
+// the other question, and the rate chart was the only part of it anywhere --
+// sitting oddly on the People page, which is about individuals.
+async function viewInsights() {
+  $('#main').innerHTML = `<h1>Insights</h1>
+    <div class="sub tight">What a year of this looks like from a distance. Facts about
+      when and how much, not marks out of ten.</div>
+    <div id="ins"><div class="empty">Working it out…</div></div>`;
+  let d;
+  try { d = await api('/api/insights'); } catch {
+    $('#ins').innerHTML = `<div class="empty">Couldn't work that out.
+      <button type="button" class="linkish" onclick="viewInsights()">Try again</button></div>`;
+    return;
+  }
+  if (d.empty) {
+    $('#ins').innerHTML = '<div class="empty">Nothing imported yet.</div>';
+    return;
+  }
+  const hourMax = Math.max(...d.by_hour, 1), dayMax = Math.max(...d.by_day, 1);
+  const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  $('#ins').innerHTML = `
+    <div class="bignums">
+      <div class="bignum"><b>${d.messages.toLocaleString()}</b><span>messages</span></div>
+      <div class="bignum"><b>${d.per_day}</b><span>a day, on average</span></div>
+      <div class="bignum"><b>${d.people}</b><span>people</span></div>
+      <div class="bignum"><b>${d.mine_share}%</b><span>of it is you</span></div>
+    </div>
+    <div class="sub tight">${esc(d.first_month)} to ${esc(d.last_month)} — ${n(d.days, 'day')}.
+      ${d.group_share}% of it in group chats.</div>
+
+    <h2>When you text</h2>
+    <div class="sub tight">Mostly the ${esc(d.busiest_part)}, and more on
+      ${esc(d.busiest_day)} than any other day.</div>
+    <div class="whenwrap">
+      <div class="whenbars" role="img" aria-label="Messages by hour of day">
+        ${d.by_hour.map((v, h) => `<i style="height:${Math.max(2, 100 * v / hourMax)}%"
+          title="${h}:00 — ${n(v.toLocaleString(), 'message')}"></i>`).join('')}
+      </div>
+      <div class="whenaxis"><span>midnight</span><span>noon</span><span>midnight</span></div>
+    </div>
+    <div class="daybars">
+      ${d.by_day.map((v, i) => `<div class="daybar">
+        <span class="dl">${DAYS[i]}</span>
+        <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
+        <span class="dv">${v.toLocaleString()}</span></div>`).join('')}
+    </div>
+
+    <h2>Who that is, mostly</h2>
+    <div class="sub tight">By how much of the year they are. Open anyone for the rest of it.</div>
+    <div class="topppl">
+      ${d.top.map(t => `<button type="button" class="topp" data-id="${esc(t.id)}">
+        ${avatar(t.name)}
+        <span class="tn">${esc(t.name)}</span>
+        <i><b style="width:${t.share}%"></b></i>
+        <span class="tv">${t.messages.toLocaleString()}</span></button>`).join('')}
+    </div>`;
+  $('#ins').querySelectorAll('.topp').forEach(b =>
+    b.onclick = () => openPerson(b.dataset.id));
+}
 
 // The same plain voice as the draft labels: what it is, not what the code
 // that found it is called.
@@ -634,7 +694,7 @@ function go(v, push = true) {
   // a row of tabs equally unhelpful.
   document.title = `${VIEW_TITLE[v] || 'messaging graph'} · messaging graph`;
   ({ now: viewNow, graph: viewGraph, people: viewPeople, privacy: viewPrivacy,
-     search: viewSearch })[v]();
+     search: viewSearch, insights: viewInsights })[v]();
 }
 
 // ---------------------------------------------------------------- now

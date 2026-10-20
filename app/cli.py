@@ -146,10 +146,10 @@ def cmd_serve(a) -> int:
         os.environ["MG_AB_ROOT"] = a.addressbook
     else:
         from .vault import Vault
-        if not Vault().exists():
+        if not Vault().any():
             _line(BAD, "No imported data yet. Run ./mg import, or ./mg serve --synthetic.")
             return 1
-        source = "vault"
+        source = Vault().source()
     os.environ["MG_SOURCE"] = source
     os.environ["MG_PORT"] = str(a.port)
 
@@ -223,13 +223,13 @@ def cmd_doctor(a) -> int:
         _line(OK, "No Messages store on this machine")
 
     v = Vault()
-    if not v.exists():
+    if not v.any():
         _line(OK, "No vault yet (nothing imported)")
     else:
         m = v.manifest() or {}
         _line(OK, f"Vault from {m.get('imported_at', '?')}: {m.get('messages', '?'):,} messages, "
                   f"{m.get('people', '?')} people, last {m.get('window_days', '?')} days")
-        dmode, fmode = _mode(v.root), _mode(v.corpus_path)
+        dmode, fmode = _mode(v.root), _mode(v.path_for(v.imported()[0]))
         good = dmode == "0o700" and fmode == "0o600"
         _line(OK if good else BAD, f"Permissions {dmode} (folder) / {fmode} (file)")
         problems += 0 if good else 1

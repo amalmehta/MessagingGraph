@@ -39,7 +39,8 @@ from .state import AppState
 def _vault_if_any():
     """Paired phones belong with the data they can read: in the vault when the
     vault is what is being served, and in memory for the demo corpus."""
-    if os.environ.get("MG_SOURCE", "synthetic") != "vault":
+    src = os.environ.get("MG_SOURCE", "synthetic")
+    if src != "vault" and not src.startswith("vault:"):
         return None
     from .vault import Vault
     return Vault()
@@ -232,6 +233,13 @@ def set_platform(pick: PlatformPick):
     state.switch(pick.platform)
     _network.clear(); _topics.clear(); _interests_cache.clear()
     return enc({"active": state.platform})
+
+
+@app.get("/api/insights")
+def insights():
+    """The shape of the whole history, rather than one person at a time."""
+    from .insights import build as build_insights
+    return enc(build_insights(state.corpus, state.profiles, state.now))
 
 
 @app.get("/api/search")
@@ -729,7 +737,7 @@ def phone_status(request: Request):
     _mac_only(request)
     return enc({
         "on": guard.on_lan,
-        "addresses": [f"http://{h}/pair" for h in LAN_HOSTS],
+        "addresses": [f"{guard.scheme}://{h}/pair" for h in LAN_HOSTS],
         "offering": pairing.offering,
         "code": pairing.code_on_offer(),
         "seconds_left": pairing.seconds_left(),
@@ -776,7 +784,7 @@ def pair_redeem(body: Redeem, request: Request):
     pairing_store.save(pairing)
     resp = JSONResponse({"ok": True})
     resp.set_cookie(DEVICE_COOKIE, device.token, httponly=True, samesite="strict",
-                    path="/", max_age=DEVICE_MAX_AGE)
+                    path="/", max_age=DEVICE_MAX_AGE, secure=guard.on_lan)
     return resp
 
 

@@ -86,7 +86,12 @@ class Guard:
         self.local = {f"127.0.0.1:{port}", f"localhost:{port}"}
         self.lan = {h.lower() for h in lan_hosts}
         self.hosts = self.local | self.lan
-        self.origins = {f"http://{h}" for h in self.hosts}
+        # With the phone let in, the server speaks only https (`mg serve --phone`
+        # hands uvicorn a certificate), so that is the scheme every browser --
+        # this Mac's included -- puts in Origin. Allowing http here refused every
+        # POST, pairing among them.
+        self.scheme = "https" if self.lan else "http"
+        self.origins = {f"{self.scheme}://{h}" for h in self.hosts}
         self.token = secrets.token_urlsafe(32)
         self.session = secrets.token_urlsafe(32)
         # Supplied by main.py, because the Guard shouldn't own who is paired --
@@ -98,8 +103,7 @@ class Guard:
         # https whenever the phone is being served, because then that is the
         # only thing the server speaks -- printing http:// sent this Mac's own
         # browser to a port that would not talk to it.
-        scheme = "https" if self.on_lan else "http"
-        return f"{scheme}://127.0.0.1:{self.port}/?token={self.token}"
+        return f"{self.scheme}://127.0.0.1:{self.port}/?token={self.token}"
 
     @property
     def on_lan(self) -> bool:
@@ -138,7 +142,7 @@ class Guard:
                         "when it started.", 401))
                 resp = RedirectResponse("/", status_code=303)
                 resp.set_cookie(COOKIE, self.session, httponly=True,
-                                samesite="strict", path="/")
+                                samesite="strict", path="/", secure=self.on_lan)
                 return self.harden(resp)
 
             # Who is asking: this Mac's browser, a paired phone, or nobody yet.

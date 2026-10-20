@@ -17,21 +17,34 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import secrets
-import shutil
 import sqlite3
-import tempfile
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from ..models import SELF_ID, Contact, Corpus, Message, Thread
+from .contacts import snapshot
 
 DB_PATH = str(Path.home() / "Library" / "Group Containers" /
               "group.net.whatsapp.WhatsApp.shared" / "ChatStorage.sqlite")
 CORE_DATA_EPOCH = 978307200          # 2001-01-01, where Core Data starts counting
 GROUP_SESSION = 1
 TEXT_MESSAGE = 0
+# Status updates and the broadcast list are not conversations with anyone, and
+# counting them as threads invents a relationship with nobody.
+NOT_A_CONVERSATION = ("@status", "@broadcast", "@newsletter")
+# WhatsApp's own account, and the entry it keeps for you.
+NOT_A_PERSON = {"whatsapp", "you", "meta ai"}
+# A row whose whole text is an identifier is a group event -- someone joined,
+# someone left -- recorded as though it were a message.
+JID_ONLY = re.compile(r"^\s*[\w.+-]+@(?:lid|s\.whatsapp\.net|g\.us|broadcast)\s*$", re.I)
+GROUP_EVENT = 6
+# WhatsApp sometimes stores an identifier where the name should be, and it
+# arrives looking like "+CgAQvLL71QYgAw==". Nobody is called that.
+NOT_A_NAME = re.compile(r"^\+?[A-Za-z0-9+/_-]{16,}={0,2}$")
 
 
 @dataclass
@@ -47,6 +60,21 @@ class Report:
 
     def drop(self, why: str) -> None:
         self.dropped[why] = self.dropped.get(why, 0) + 1
+
+
+def clean_name(raw: str | None) -> str:
+    """WhatsApp wraps names in direction marks and pads numbers with
+    non-breaking spaces. Both are invisible, and both travel into every
+    search, every draft and every avatar unless they are taken out here."""
+    if not raw:
+        return ""
+    out = "".join(" " if ch == "\xa0" else ch
+                  for ch in raw if unicodedata.category(ch) != "Cf")
+    out = re.sub(r"\s+", " ", out).strip()
+    if "==" in out or (" " not in out and NOT_A_NAME.match(out)
+                       and not out.lstrip("+").isdigit()):
+        return ""
+    return out
 
 
 def _when(raw: float | None) -> datetime | None:
@@ -90,35 +118,52 @@ class WhatsAppSource:
             from .base import SourceUnavailable
             raise SourceUnavailable(why)
         rep = self.report
-        # A copy, because WhatsApp may be running and writing to it.
-        with tempfile.TemporaryDirectory() as tmp:
-            copy = Path(tmp) / "wa.sqlite"
-            shutil.copy2(self.path, copy)
-            for extra in ("-wal", "-shm"):
-                side = Path(self.path + extra)
-                if side.exists():
-                    shutil.copy2(side, str(copy) + extra)
-            db = sqlite3.connect(f"file:{copy}?mode=ro", uri=True)
-            db.row_factory = sqlite3.Row
-            try:
-                return self._read(db, rep)
-            finally:
-                db.close()
+        # Into memory, the way chat.db is read. Copying the file and its WAL to
+        # a temp folder left your whole history on disk in the clear -- for good,
+        # if the import was killed -- and two copies taken one after the other
+        # while WhatsApp is writing need not agree with each other.
+        db = snapshot(self.path)
+        db.row_factory = sqlite3.Row
+        try:
+            return self._read(db, rep)
+        finally:
+            db.close()
 
     def _read(self, db: sqlite3.Connection, rep: Report) -> Corpus:
         cutoff = datetime.now() - timedelta(days=self.days)
         threads: dict[str, Thread] = {}
         contacts: dict[str, Contact] = {}
         members: dict[int, list[str]] = {}
+        member_of_row: dict[int, str] = {}      # ZWAGROUPMEMBER.Z_PK -> contact id
+
+        # What people call themselves. Only 4 of 413 group members here have a
+        # name from Contacts, and without this the rest are anonymous.
+        pushed: dict[str, str] = {}
+        for row in db.execute("SELECT ZJID, ZPUSHNAME FROM ZWAPROFILEPUSHNAME"):
+            name = clean_name(row["ZPUSHNAME"])
+            if row["ZJID"] and name:
+                pushed[row["ZJID"]] = name
+        # And the one carried on each message, which reaches further still.
+        # Not in a group, though: there ZFROMJID is the group's own id, and the
+        # push name is whichever member wrote that message.
+        for row in db.execute("SELECT ZFROMJID, ZPUSHNAME FROM ZWAMESSAGE "
+                              "WHERE ZPUSHNAME IS NOT NULL AND ZPUSHNAME <> '' "
+                              "AND ZFROMJID IS NOT NULL AND ZFROMJID NOT LIKE '%@g.us'"):
+            name = clean_name(row["ZPUSHNAME"])
+            if name:
+                pushed.setdefault(row["ZFROMJID"], name)
 
         # Who is in each group, and what WhatsApp calls them.
         for row in db.execute(
-                "SELECT ZCHATSESSION, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME FROM ZWAGROUPMEMBER"):
+                "SELECT Z_PK, ZCHATSESSION, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME "
+                "FROM ZWAGROUPMEMBER"):
             jid = row["ZMEMBERJID"]
             if not jid:
                 continue
             cid = self._id("w_", jid)
-            name = (row["ZCONTACTNAME"] or row["ZFIRSTNAME"] or "").strip() or _from_jid(jid)
+            member_of_row[row["Z_PK"]] = cid
+            name = (clean_name(row["ZCONTACTNAME"]) or clean_name(row["ZFIRSTNAME"])
+                    or pushed.get(jid, "") or _from_jid(jid))
             if cid not in contacts:
                 contacts[cid] = Contact(id=cid, name=name, handle=_from_jid(jid))
             members.setdefault(row["ZCHATSESSION"], []).append(cid)
@@ -127,8 +172,14 @@ class WhatsAppSource:
         for row in db.execute("SELECT Z_PK, ZCONTACTJID, ZPARTNERNAME, ZSESSIONTYPE "
                               "FROM ZWACHATSESSION"):
             jid = row["ZCONTACTJID"] or ""
+            if any(jid.lower().endswith(x) for x in NOT_A_CONVERSATION):
+                rep.drop("not a conversation")
+                continue
             is_group = row["ZSESSIONTYPE"] == GROUP_SESSION or jid.endswith("@g.us")
-            name = (row["ZPARTNERNAME"] or "").strip() or _from_jid(jid)
+            name = clean_name(row["ZPARTNERNAME"]) or pushed.get(jid, "") or _from_jid(jid)
+            if not is_group and name.lower() in NOT_A_PERSON:
+                rep.drop("not a person")
+                continue
             tid = self._id("wt_", jid or str(row["Z_PK"]))
             if is_group:
                 people = tuple(dict.fromkeys(members.get(row["Z_PK"], [])))
@@ -158,6 +209,11 @@ class WhatsAppSource:
                 rep.drop("outside the window")
                 continue
             text = (row["ZTEXT"] or "").strip()
+            # "179735841767521@lid" is someone joining a group, recorded as a
+            # message. It is not something anyone said.
+            if row["ZMESSAGETYPE"] == GROUP_EVENT or (text and JID_ONLY.match(text)):
+                rep.drop("a group event, not a message")
+                continue
             from_me = bool(row["ZISFROMME"])
             if not text:
                 # A photo, a voice note, a sticker: it happened, and leaving it
@@ -165,8 +221,11 @@ class WhatsAppSource:
                 rep.attachment_only += 1
             sender = SELF_ID
             if not from_me:
-                if is_group and row["ZGROUPMEMBER"]:
-                    sender = _member_cid(db, row["ZGROUPMEMBER"], self._id) or _first(threads[tid])
+                if is_group:
+                    # Only the member row says who wrote it. ZFROMJID is the
+                    # group, and the first member listed is a guess that hands
+                    # one person everybody else's messages.
+                    sender = member_of_row.get(row["ZGROUPMEMBER"])
                 else:
                     sender = _first(threads[tid])
                 if sender is None:
@@ -192,12 +251,16 @@ def _first(thread: Thread) -> str | None:
     return thread.participant_ids[0] if thread.participant_ids else None
 
 
-def _member_cid(db: sqlite3.Connection, pk: int, mk) -> str | None:
-    row = db.execute("SELECT ZMEMBERJID FROM ZWAGROUPMEMBER WHERE Z_PK = ?", (pk,)).fetchone()
-    return mk("w_", row["ZMEMBERJID"]) if row and row["ZMEMBERJID"] else None
-
-
 def _from_jid(jid: str) -> str:
-    """A phone number out of "15551234567@s.whatsapp.net", for someone with no name."""
-    digits = (jid or "").split("@")[0]
-    return f"+{digits}" if digits.isdigit() else (digits or "Unknown")
+    """A phone number, but only when it really is one.
+
+    Most of this history is @lid -- WhatsApp's opaque identifier, which is not
+    a phone number and is not 15 digits of one. Printing "+179735841767521"
+    for it invents a number that belongs to nobody, which is worse than
+    admitting there is no name.
+    """
+    jid = jid or ""
+    local, _, domain = jid.partition("@")
+    if domain.lower() == "s.whatsapp.net" and local.isdigit() and 7 <= len(local) <= 15:
+        return f"+{local}"
+    return "Unknown"

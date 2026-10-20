@@ -20,6 +20,7 @@ import sqlite3
 import sys
 import subprocess
 import tempfile
+import unicodedata
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -770,7 +771,7 @@ def main() -> int:
           and client.get("/openapi.json").status_code == 404)
 
     print("\nletting the phone in over the network:")
-    MAC_ORIGIN = {"origin": "http://127.0.0.1:8077"}
+    MAC_ORIGIN = {"origin": "https://127.0.0.1:8077"}
     STATIC = Path("app/static")
     # A second, separate app object built the way `./mg serve --phone` builds it,
     # so the loopback one the checks above used stays exactly as locked as it was.
@@ -791,10 +792,10 @@ def main() -> int:
     check("--phone publishes a .local name and not a loopback one",
           bool(lanmod.LAN_HOSTS) and not any(h.startswith("127.") or h.startswith("localhost")
                                              for h in lanmod.LAN_HOSTS), LAN)
-    lanmac = TestClient(lanmod.app, base_url="http://127.0.0.1:8077")
+    lanmac = TestClient(lanmod.app, base_url="https://127.0.0.1:8077")
     lanmac.get(f"/?token={lanmod.guard.token}")
-    ph = TestClient(lanmod.app, base_url=f"http://{LAN}")
-    ORIG = {"origin": f"http://{LAN}".lower()}
+    ph = TestClient(lanmod.app, base_url=f"https://{LAN}")
+    ORIG = {"origin": f"https://{LAN}".lower()}
 
     check("an unpaired phone on the Wi-Fi gets nothing but the pairing page",
           ph.get("/api/overview").status_code == 401 and ph.get("/").status_code == 401
@@ -815,13 +816,20 @@ def main() -> int:
     _sc = _ok.headers.get("set-cookie", "").lower()
     check("the right code hands out an HttpOnly, SameSite=Strict device cookie",
           _ok.status_code == 200 and "httponly" in _sc and "samesite=strict" in _sc)
+    check("and a Secure one, because the phone is only ever served over https",
+          "secure" in _sc)
+    check("a page this server never serves, plain http, is refused as cross-origin",
+          ph.post("/api/pair/redeem", json={"code": "000000"},
+                  headers={"origin": f"http://{LAN}".lower()}).status_code == 403)
+    check("the Mac is shown https addresses for the phone",
+          all(a.startswith("https://") for a in lanmac.get("/api/phone").json()["addresses"]))
     check("and then the phone can read the same app the Mac sees",
           ph.get("/api/overview").status_code == 200)
     check("a paired phone still can't pair the next one",
           ph.post("/api/phone/open", headers=ORIG).status_code == 403
           and ph.get("/api/phone").status_code == 403)
     check("someone else on the Wi-Fi is no better off than before",
-          TestClient(lanmod.app, base_url=f"http://{LAN}")
+          TestClient(lanmod.app, base_url=f"https://{LAN}")
           .get("/api/overview").status_code == 401)
     _dev = lanmac.get("/api/phone").json()["devices"][0]
     check("the Mac lists the phone without ever showing its token", "token" not in _dev)
@@ -851,6 +859,87 @@ def main() -> int:
     check("the phone layout reaches the stylesheet and keeps the tab bar clear of the home bar",
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
+
+    print("\nthe whole history at once:")
+    from app.insights import build as _ins, DAYS as _IDAYS
+    _i = _ins(app_state.corpus, app_state.profiles, app_state.now)
+    check("it adds up to what is actually there",
+          _i["messages"] == len(app_state.corpus.messages)
+          and _i["mine"] + _i["theirs"] == _i["messages"],
+          f"{_i['messages']:,} messages")
+    check("shares are percentages of that, not of something else",
+          0 <= _i["mine_share"] <= 100 and 0 <= _i["group_share"] <= 100
+          and abs(_i["mine_share"] - round(100 * _i["mine"] / _i["messages"])) < 1)
+    check("every hour and every weekday is accounted for",
+          len(_i["by_hour"]) == 24 and len(_i["by_day"]) == 7
+          and sum(_i["by_hour"]) == _i["messages"] == sum(_i["by_day"]))
+    check("the busiest day it names is the busiest one there is",
+          _i["busiest_day"] == _IDAYS[_i["by_day"].index(max(_i["by_day"]))])
+    check("and the busiest hour agrees with the hours",
+          _i["busiest_hour"] == _i["by_hour"].index(max(_i["by_hour"])))
+    check("the people it lists are the ones you talk to most",
+          [t["messages"] for t in _i["top"]] == sorted(
+              [t["messages"] for t in _i["top"]], reverse=True))
+    check("a day count is never zero, however short the history",
+          _i["days"] >= 1 and _i["per_day"] > 0)
+    # An empty corpus must not divide by anything.
+    from dataclasses import replace as _rpl
+    _empty = _rpl(app_state.corpus, messages=(), threads={}, contacts={})
+    check("and nothing at all is said plainly rather than crashing",
+          _ins(_empty, [], app_state.now)["empty"] is True)
+    _ijs = Path("app/static/app.js").read_text()
+    check("it has a page of its own, not a corner of People",
+          "viewInsights" in _ijs and "insights: 'Insights'" in _ijs
+          and 'data-view="insights"' in Path("app/static/index.html").read_text())
+    check("and nothing on it is a score out of ten",
+          "not marks out of ten" in _ijs)
+
+    print("\nwhat WhatsApp actually hands you:")
+    from app.ingest.whatsapp import (clean_name as _cn, _from_jid as _fj,
+                                     NOT_A_CONVERSATION as _NAC, NOT_A_PERSON as _NAP,
+                                     JID_ONLY as _JO, GROUP_EVENT as _GE)
+    # Names arrive wrapped in direction marks and padded with non-breaking
+    # spaces. Invisible, and they travel into every search and every avatar.
+    check("invisible direction marks are taken out of names",
+          _cn("\u202a+39\xa0333\xa0000\xa00000\u202c") == "+39 333 000 0000"
+          and _cn("\u200eYou") == "You")
+    check("and an identifier stored where a name should be is not a name",
+          _cn("+CgAQvLL71QYgAw==") == "" and _cn("Maria De La Cruz") == "Maria De La Cruz")
+    # Most of this history is @lid, which is not a phone number.
+    check("a phone number is only read off a jid that holds one",
+          _fj("15551234567@s.whatsapp.net") == "+15551234567"
+          and _fj("179735841767521@lid") == "Unknown"
+          and _fj("CgAQvLL71QYgAw==@lid") == "Unknown")
+    check("status and the broadcast list are not conversations",
+          "@status" in _NAC and "@broadcast" in _NAC)
+    check("WhatsApp's own account is not a friend",
+          "whatsapp" in _NAP and "you" in _NAP)
+    # "179735841767521@lid" is someone joining a group, stored as a message.
+    check("a group event is not something anyone said",
+          bool(_JO.match("179735841767521@lid")) and _GE == 6
+          and not _JO.match("see you at 7@the pub"))
+    _wsrc = Path("app/ingest/whatsapp.py").read_text()
+    check("people are named from what they call themselves",
+          "ZWAPROFILEPUSHNAME" in _wsrc and "pushed.get(jid" in _wsrc)
+    check("including the name carried on their messages",
+          "ZPUSHNAME IS NOT NULL" in _wsrc and "pushed.setdefault" in _wsrc)
+    # Run against the real store when it is here; skipped cleanly when not.
+    from app.ingest.whatsapp import WhatsAppSource as _WA
+    _w = _WA(days=400, id_key=b"a-key-for-this-check-only-32bytes")
+    if _w.available()[0]:
+        _wc = _w.load()
+        _nm = [x.name for x in _wc.contacts.values()]
+        check("and on this Mac nothing unreadable survives any of that",
+              not [n for n in _nm if "==" in n or n.lower() in ("you", "whatsapp")
+                   or any(unicodedata.category(ch) == "Cf" for ch in n)],
+              f"{len(_nm)} people")
+        check("with real names recovered rather than left as identifiers",
+              sum(1 for n in _nm if not n.startswith("+") and n != "Unknown") > 10)
+    else:
+        check("and on this Mac nothing unreadable survives any of that",
+              True, "no WhatsApp here to read")
+        check("with real names recovered rather than left as identifiers",
+              True, "no WhatsApp here to read")
 
     print("\nwarmer, without getting silly about it:")
     _fjs = Path("app/static/app.js").read_text()
@@ -900,7 +989,7 @@ def main() -> int:
     _asked = []
     _real = _rf.refresh_once
     check("it refreshes only what you already imported",
-          "Vault().imported()" in Path("app/refresh.py").read_text())
+          "vault.imported()" in Path("app/refresh.py").read_text())
     check("and an export you dragged in is not re-read behind your back",
           "nothing can refresh an export" in Path("app/refresh.py").read_text())
     # Half the job failing must not take the other half with it.
@@ -1094,7 +1183,8 @@ def main() -> int:
     check("the phone is told https, since http cannot run a service worker at all",
           'f"https://{where[0]}/pair"' in Path("app/cli.py").read_text())
     check("and the link for this Mac matches what the server actually speaks",
-          '"https" if self.on_lan else "http"' in Path("app/security.py").read_text())
+          lanmod.guard.launch_url.startswith("https://")
+          and lanmod.guard.origins == {f"https://{h}" for h in lanmod.guard.hosts})
     _js4 = Path("app/static/app.js").read_text()
     check("the worker is served from the root, or it governs nothing",
           '@app.get("/sw.js")' in Path("app/main.py").read_text()
@@ -2230,6 +2320,157 @@ def main() -> int:
     check("excluding someone actually removes their messages",
           len(filtered.messages) < len(corpus.messages),
           f"{len(corpus.messages)} → {len(filtered.messages)}")
+
+    print("\nfifteen things found by reading the code:")
+    from types import SimpleNamespace as _NS
+    import app.importer as _imp15
+    import app.vault as _vmod
+    _t15 = Path(tempfile.mkdtemp(prefix="mg-fifteen-"))
+    try:
+        # Someone who imported only WhatsApp -- the import that needs no
+        # permission -- was told they had no data, and could not save a name.
+        _wv = Vault(_t15 / "v", MemoryKeyStore())
+        _wv.write(rc, {"window_days": 2000, "messages": len(rc.messages)}, platform="whatsapp")
+        check("a vault holding only WhatsApp counts as imported",
+              _wv.any() and not _wv.exists())
+        check("and is served as WhatsApp rather than as demo data",
+              _wv.source() == "vault:whatsapp")
+        _wv.seal("overrides.v1.enc", {"names": {"c_1": "Sam"}})
+        check("names and paired phones can still be saved into it",
+              _wv.unseal("overrides.v1.enc") == {"names": {"c_1": "Sam"}})
+        check("and its own manifest is the one reported",
+              (_wv.manifest() or {}).get("platform") == "whatsapp")
+        check("nothing imported is still nothing", not Vault(_t15 / "empty", MemoryKeyStore()).any())
+
+        # The hourly refresh re-read with the importer's default and turned
+        # `mg import --days 2000` into 400 days an hour later.
+        _asked15 = {}
+        _was = (_imp15.run_whatsapp_import, _imp15.run_import, _vmod.Vault)
+        try:
+            _imp15.run_whatsapp_import = lambda days=400, **k: (
+                _asked15.__setitem__("whatsapp", days) or _NS(ok=True, messages=1, note=""))
+            _imp15.run_import = lambda days=400, **k: (
+                _asked15.__setitem__("imessage", days) or _NS(ok=True, messages=1, note=""))
+            _vmod.Vault = lambda *a, **k: _wv
+            _rf.refresh_once()
+        finally:
+            _imp15.run_whatsapp_import, _imp15.run_import, _vmod.Vault = _was
+        check("the hourly refresh reads back as far as you imported, not 400 days",
+              _asked15 == {"whatsapp": 2000}, str(_asked15))
+
+        # A store shaped like WhatsApp's, left in WAL mode with its newest rows
+        # still in the log, the way it is while WhatsApp is running.
+        from app.ingest.whatsapp import WhatsAppSource as _WA15, CORE_DATA_EPOCH as _CDE
+        _wdb = _t15 / "ChatStorage.sqlite"
+        _w = sqlite3.connect(_wdb)
+        _w.execute("PRAGMA journal_mode=WAL")
+        _w.execute("PRAGMA wal_autocheckpoint=0")
+        _w.executescript("""
+            CREATE TABLE ZWAPROFILEPUSHNAME (ZJID TEXT, ZPUSHNAME TEXT);
+            CREATE TABLE ZWACHATSESSION (Z_PK INTEGER PRIMARY KEY, ZCONTACTJID TEXT,
+                                         ZPARTNERNAME TEXT, ZSESSIONTYPE INTEGER);
+            CREATE TABLE ZWAGROUPMEMBER (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                                         ZMEMBERJID TEXT, ZCONTACTNAME TEXT, ZFIRSTNAME TEXT);
+            CREATE TABLE ZWAMESSAGE (Z_PK INTEGER PRIMARY KEY, ZCHATSESSION INTEGER,
+                                     ZISFROMME INTEGER, ZMESSAGEDATE REAL, ZTEXT TEXT,
+                                     ZMESSAGETYPE INTEGER, ZGROUPMEMBER INTEGER,
+                                     ZFROMJID TEXT, ZPUSHNAME TEXT);
+            INSERT INTO ZWACHATSESSION VALUES (1, '120363@g.us', '', 1);
+            INSERT INTO ZWAGROUPMEMBER VALUES (1, 1, '4479001@s.whatsapp.net', 'Ana', NULL);
+            INSERT INTO ZWAGROUPMEMBER VALUES (2, 1, '4479002@s.whatsapp.net', 'Ben', NULL);
+        """)
+        _w.commit()
+        _wnow = datetime.now().timestamp() - _CDE
+        for _pk, _mem, _txt in ((1, 1, "dinner friday?"), (2, 2, "yes im in"),
+                                (3, None, "who wrote this")):
+            _w.execute("INSERT INTO ZWAMESSAGE VALUES (?, 1, 0, ?, ?, 0, ?, '120363@g.us', ?)",
+                       (_pk, _wnow - 3600 + _pk, _txt, _mem, "Ana" if _mem == 1 else "Ben"))
+            _w.commit()
+        _in_log = (_t15 / "ChatStorage.sqlite-wal").stat().st_size > 0
+        _tmpd = _t15 / "tmp"
+        _tmpd.mkdir()
+        # A temp copy cleans up after a clean run, so watch for it being made at
+        # all: a killed import is the one that leaves it behind.
+        _tmp_was, _mk_was, _cp_was = tempfile.tempdir, tempfile.mkdtemp, shutil.copy2
+        _copied = []
+        tempfile.tempdir = str(_tmpd)
+        tempfile.mkdtemp = lambda *a, **k: (_copied.append("mkdtemp"), _mk_was(*a, **k))[1]
+        shutil.copy2 = lambda *a, **k: (_copied.append(str(a[0])), _cp_was(*a, **k))[1]
+        try:
+            _wsrc = _WA15(path=str(_wdb), days=30)
+            _wc = _wsrc.load()
+        finally:
+            tempfile.tempdir, tempfile.mkdtemp, shutil.copy2 = _tmp_was, _mk_was, _cp_was
+            _w.close()
+        _wby = {m.text: m.sender_id for m in _wc.messages}
+        _wname = {c.id: c.name for c in _wc.contacts.values()}
+        check("WhatsApp is read through its write-ahead log, newest messages included",
+              _in_log and "yes im in" in _wby)
+        check("and nothing of it is written to a temp folder on the way",
+              not any(_tmpd.iterdir()) and not _copied, ", ".join(_copied))
+        check("a group message is credited to the member who wrote it",
+              _wname.get(_wby.get("dinner friday?")) == "Ana"
+              and _wname.get(_wby.get("yes im in")) == "Ben")
+        check("one with no member row is dropped, not handed to whoever is listed first",
+              "who wrote this" not in _wby
+              and _wsrc.report.dropped.get("unknown sender") == 1)
+        check("a group with no name is not named after one of its members",
+              [t.name for t in _wc.threads.values()] == ["Unknown"],
+              str([t.name for t in _wc.threads.values()]))
+
+        # WhatsApp histories are mostly international, and the phone pattern
+        # knew one country.
+        from app.privacy import redact as _red, redaction_hits as _hits
+        _gone = {"+91 98765 43210": "[phone]", "+49 30 1234567": "[phone]",
+                 "+44 7700 900123": "[phone]", "07700 900123": "[phone]",
+                 "(415) 555-0199": "[phone]", "415-555-0134": "[phone]",
+                 "GB82 WEST 1234 5698 7654 32": "[iban]", "DE89370400440532013000": "[iban]"}
+        _leaks = {k: _red(f"it's {k} ok") for k, tok in _gone.items()
+                  if _red(f"it's {k} ok") != f"it's {tok} ok"}
+        check("phone numbers and bank accounts are hidden whatever country they are from",
+              not _leaks, str(_leaks))
+        _keep = ["on 2024-01-15 at 10.30", "it costs 1500", "see you at 7", "flat 12 3 4"]
+        check("while dates, prices and times are left alone",
+              all(_red(t) == t for t in _keep), str([_red(t) for t in _keep]))
+        check("and what was hidden is reported once, not once per pattern it resembles",
+              _hits("ring +44 7700 900123") == ["[phone]"], str(_hits("ring +44 7700 900123")))
+
+        # Small threads built by hand, each the smallest case of one mistake.
+        from app.models import (Contact as _Ct, Thread as _Th, Message as _Ms,
+                                Corpus as _Cp, SELF_ID as _ME)
+
+        def _mini(rows, group=False):
+            cs = {c: _Ct(id=c, name=c.title(), handle=f"+1555000{i}")
+                  for i, c in enumerate(("ana", "ben"))}
+            th = _Th(id="t", name="Crew" if group else "Ana",
+                     participant_ids=("ana", "ben") if group else ("ana",), is_group=group)
+            ms = [_Ms(id=f"m{i}", thread_id="t", sender_id=who, ts=ts, text=x,
+                      is_from_me=who == _ME) for i, (who, ts, x) in enumerate(rows)]
+            return _Cp(contacts=cs, threads={"t": th}, messages=sorted(ms, key=lambda m: m.ts))
+
+        _n15 = datetime(2026, 10, 14, 12)                  # a Wednesday
+        _ago = lambda days, mins=0: _n15 - timedelta(days=days) + timedelta(minutes=mins)
+        _pl = lambda c: [(p.state, p.assumed) for p in extract_plans(c, _n15)]
+
+        check("in a group, one friend saying yes to another's plan confirms it",
+              _pl(_mini([("ana", _ago(0, -60), "we should get dinner friday"),
+                         ("ben", _ago(0, -55), "yes im in!")], group=True)) == [("confirmed", False)])
+        check("but agreeing with yourself still does not",
+              _pl(_mini([("ana", _ago(0, -60), "we should get dinner friday"),
+                         ("ana", _ago(0, -55), "yes im in!")], group=True)) == [("proposed", False)])
+        check("a stale plan mentioned again yesterday is not still stale",
+              _pl(_mini([(_ME, _ago(20), "we should get coffee sometime"),
+                         (_ME, _ago(1), "we should get coffee sometime")])) == [("floated", False)])
+        check("one where both mentions are old stays stale",
+              _pl(_mini([(_ME, _ago(40), "we should get coffee sometime"),
+                         (_ME, _ago(25), "we should get coffee sometime")])) == [("stale", False)])
+        check("a guessed outcome stays marked as a guess when mentions are merged",
+              _pl(_mini([(_ME, _ago(30), "we should get dinner sometime"),
+                         (_ME, _ago(10), "dinner on saturday?"),
+                         ("ana", _ago(10, 5), "yes!")])) == [("done", True)])
+        #@fifteen
+    finally:
+        shutil.rmtree(_t15, ignore_errors=True)
 
     print("\npalette:")
     css = Path("app/static/styles.css").read_text()

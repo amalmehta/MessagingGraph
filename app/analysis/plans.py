@@ -239,8 +239,12 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                             said_time = hit.group(0)
                     if _LOCK.search(m.text):
                         locked = True
-                    if m is window[0] or m.is_from_me == window[0].is_from_me:
-                        continue          # only the other side's answer settles a plan
+                    # Only someone else's answer settles a plan. By sender, not by
+                    # is_from_me: in a group every friend is "not me", and Ben
+                    # saying yes to Ana's dinner was being skipped as Ana agreeing
+                    # with herself.
+                    if m is window[0] or m.sender_id == window[0].sender_id:
+                        continue
                     if _NO.search(m.text):
                         no_others += 1
                     elif _YES.search(m.text):
@@ -301,10 +305,10 @@ def extract_plans(corpus: Corpus, now: datetime | None = None) -> list[Plan]:
                     excerpt=window[0].text[:160], assumed=assumed,
                 ))
 
-    return _merge(plans)
+    return _merge(plans, now)
 
 
-def _merge(plans: list[Plan]) -> list[Plan]:
+def _merge(plans: list[Plan], now: datetime) -> list[Plan]:
     """Collapse repeat mentions of the same activity in the same thread.
 
     'we should get dinner' said three times across a month is one unlanded plan,
@@ -320,8 +324,20 @@ def _merge(plans: list[Plan]) -> list[Plan]:
         if prev is not None and p.first_seen - prev.last_activity <= MERGE_WINDOW:
             prev.last_activity = max(prev.last_activity, p.last_activity)
             prev.evidence = (prev.evidence + p.evidence)[:12]
-            if rank[p.state] > rank[prev.state]:
-                prev.state, prev.when_text, prev.when_date = p.state, p.when_text, p.when_date
+            # A fresh mention brings a plan that had gone stale back to life;
+            # by rank alone the older "stale" outlived it.
+            revived = prev.state == "stale" and p.state in ("floated", "proposed")
+            if rank[p.state] > rank[prev.state] or revived:
+                when_text, when_date = ((p.when_text, p.when_date) if p.when_text
+                                        else (prev.when_text, prev.when_date))
+                state = "proposed" if p.state == "floated" and when_text else p.state
+                # `assumed` travels with the state it describes, or a guessed
+                # outcome is passed off as a known one.
+                prev.state, prev.when_text, prev.when_date = state, when_text, when_date
+                prev.assumed = p.assumed
+            # Judged again against the merged plan's own last word.
+            if prev.state in ("floated", "proposed") and now - prev.last_activity > STALE_AFTER:
+                prev.state = "stale"
             prev.confidence = max(prev.confidence, p.confidence)
             continue
         by_key[key] = p
