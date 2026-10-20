@@ -2435,6 +2435,39 @@ def main() -> int:
         check("and what was hidden is reported once, not once per pattern it resembles",
               _hits("ring +44 7700 900123") == ["[phone]"], str(_hits("ring +44 7700 900123")))
 
+        # Small threads built by hand, each the smallest case of one mistake.
+        from app.models import (Contact as _Ct, Thread as _Th, Message as _Ms,
+                                Corpus as _Cp, SELF_ID as _ME)
+
+        def _mini(rows, group=False):
+            cs = {c: _Ct(id=c, name=c.title(), handle=f"+1555000{i}")
+                  for i, c in enumerate(("ana", "ben"))}
+            th = _Th(id="t", name="Crew" if group else "Ana",
+                     participant_ids=("ana", "ben") if group else ("ana",), is_group=group)
+            ms = [_Ms(id=f"m{i}", thread_id="t", sender_id=who, ts=ts, text=x,
+                      is_from_me=who == _ME) for i, (who, ts, x) in enumerate(rows)]
+            return _Cp(contacts=cs, threads={"t": th}, messages=sorted(ms, key=lambda m: m.ts))
+
+        _n15 = datetime(2026, 10, 14, 12)                  # a Wednesday
+        _ago = lambda days, mins=0: _n15 - timedelta(days=days) + timedelta(minutes=mins)
+        _pl = lambda c: [(p.state, p.assumed) for p in extract_plans(c, _n15)]
+
+        check("in a group, one friend saying yes to another's plan confirms it",
+              _pl(_mini([("ana", _ago(0, -60), "we should get dinner friday"),
+                         ("ben", _ago(0, -55), "yes im in!")], group=True)) == [("confirmed", False)])
+        check("but agreeing with yourself still does not",
+              _pl(_mini([("ana", _ago(0, -60), "we should get dinner friday"),
+                         ("ana", _ago(0, -55), "yes im in!")], group=True)) == [("proposed", False)])
+        check("a stale plan mentioned again yesterday is not still stale",
+              _pl(_mini([(_ME, _ago(20), "we should get coffee sometime"),
+                         (_ME, _ago(1), "we should get coffee sometime")])) == [("floated", False)])
+        check("one where both mentions are old stays stale",
+              _pl(_mini([(_ME, _ago(40), "we should get coffee sometime"),
+                         (_ME, _ago(25), "we should get coffee sometime")])) == [("stale", False)])
+        check("a guessed outcome stays marked as a guess when mentions are merged",
+              _pl(_mini([(_ME, _ago(30), "we should get dinner sometime"),
+                         (_ME, _ago(10), "dinner on saturday?"),
+                         ("ana", _ago(10, 5), "yes!")])) == [("done", True)])
         #@fifteen
     finally:
         shutil.rmtree(_t15, ignore_errors=True)
