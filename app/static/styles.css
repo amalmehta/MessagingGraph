@@ -153,9 +153,10 @@ h2{font-size:14.5px;letter-spacing:-.15px;color:var(--dim);
 .card .act{color:var(--ink);font-size:12.5px;margin-top:8px;padding-top:8px;
   border-top:1px solid var(--line);line-height:1.55}
 .foot-note{color:var(--faint);font-size:12px;margin-top:14px;font-style:italic}
-.card .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.card .top{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .card .who{font-weight:600}
-.card .kind{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.6px;color:var(--faint)}
+.card .kind{font:inherit;font-size:11px;color:var(--dim);background:var(--panel2);
+  border:1px solid var(--line);border-radius:20px;padding:2px 9px;white-space:nowrap}
 .card .note{color:var(--dim);font-size:13px;margin-top:5px}
 
 /* table */
@@ -385,7 +386,8 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
 /* messages worth sending */
 .drafts{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px}
 .draft{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 14px;
-  display:flex;flex-direction:column;gap:7px}
+  display:flex;flex-direction:column;gap:7px;
+  transition:box-shadow .14s,border-color .14s,transform .14s}
 .draft.sent{opacity:.55}
 .dtop{display:flex;justify-content:space-between;align-items:center;gap:10px}
 /* A face, because these are people and a column of names is a spreadsheet. */
@@ -809,7 +811,6 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 
 /* A card you can tell is about a person at a glance, and that answers when you
    point at it. Motion stays inside the reduced-motion rule already in here. */
-.draft{transition:box-shadow .14s,border-color .14s,transform .14s}
 .draft:hover{border-color:var(--line-strong);box-shadow:0 3px 12px var(--shadow);
   transform:translateY(-1px)}
 .draft:focus-within{border-color:var(--edge-accent)}
@@ -821,10 +822,6 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
    the two read as one app rather than two. */
 .cwho{display:inline-flex;align-items:center;gap:8px;min-width:0}
 .cwho .who{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.card .top{align-items:center}
-.card .kind{font:inherit;font-size:11px;text-transform:none;letter-spacing:0;
-  color:var(--dim);background:var(--panel2);border:1px solid var(--line);
-  border-radius:20px;padding:2px 9px;white-space:nowrap}
 
 /* Big enough to be a person rather than a bullet point. Scoped to the cards,
    because the People table wants its small ones. */

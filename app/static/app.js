@@ -389,6 +389,8 @@ async function loadData() {
   $('#c-now').textContent = o.suggestions.length;
   $('#c-people').textContent = o.contacts;
   $('#c-graph').textContent = o.plans.open + o.plans.stale;
+  // Every other tab carries its number; this one was the exception.
+  $('#c-insights').textContent = o.threads;
   $('#foot-span').textContent = o.span.from.slice(0, 10) + ' → ' + o.span.to.slice(0, 10);
   syncFoot();
 }
@@ -590,7 +592,7 @@ async function viewInsights() {
       </div>
       <div class="whenaxis"><span>midnight</span><span>noon</span><span>midnight</span></div>
     </div>
-    <div class="daybars">
+    <div class="daybars" role="img" aria-label="Messages by day of the week">
       ${d.by_day.map((v, i) => `<div class="daybar">
         <span class="dl">${DAYS[i]}</span>
         <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
@@ -599,7 +601,7 @@ async function viewInsights() {
 
     <h2>Who that is, mostly</h2>
     <div class="sub tight">By how much of the year they are. Open anyone for the rest of it.</div>
-    <div class="topppl">
+    <div class="topppl" role="list" aria-label="The people you message most">
       ${d.top.map(t => `<button type="button" class="topp" data-id="${esc(t.id)}">
         ${avatar(t.name)}
         <span class="tn">${esc(t.name)}</span>
@@ -667,7 +669,12 @@ async function viewSearch() {
     const h = r.hits[+b.dataset.i];
     if (h.kind === 'person') openPerson(h.target_id);
     else if (h.kind === 'plan') openPlan(h.target_id);
-    else go('people');            // a message or a group: the thread lives there
+    else {
+      // A message or a group chat: open whoever the thread is with, rather
+      // than dropping you on the People list to go and find them.
+      const who = (S.people || []).find(x => x.name === h.who);
+      if (who) openPerson(who.contact_id); else go('people');
+    }
   });
 }
 
@@ -1006,7 +1013,7 @@ async function loadCrew() {
       + (c.size ? `&size=${encodeURIComponent(c.size)}` : '')
       + `&nearby=${c.nearby}&seed=${c.seed}&crew_seed=${c.crewSeed}`);
   } catch {
-    out.innerHTML = `<div class="empty">Couldn't work that one out. Try saying it a different way.</div>`;
+    out.innerHTML = `<div class="empty">Couldn't work that out. Try saying it a different way.</div>`;
     return;
   }
   if (!crew.members || !crew.members.length) {
@@ -1106,7 +1113,7 @@ async function drawCircles() {
     });
   } catch {
     const box = $('#circles-panel');
-    if (box) box.innerHTML = `<div class="empty">Couldn't load who's connected. <button type="button" class="linkish" onclick="drawCircles()">Try again</button></div>`;
+    if (box) box.innerHTML = `<div class="empty">Couldn't load who's connected's connected. <button type="button" class="linkish" onclick="drawCircles()">Try again</button></div>`;
   }
 }
 
@@ -1971,13 +1978,13 @@ async function openPerson(id) {
   const p = d.profile;
   $('#drawer').innerHTML = `
     <button type="button" class="close" aria-label="Close">&times;</button>
-    <h3>${avatar(p.name, 'big')}<span id="pname">${esc(p.name)}</span>
+    <h2>${avatar(p.name, 'big')}<span id="pname">${esc(p.name)}</span>
       <button type="button" class="editname" id="edit-name"
         title="Change the name you have for them">edit</button>
       <button type="button" class="editname danger" id="remove-person"
         title="Archive ${esc(p.name)} — leave them out of this app, not out of Messages"
         >remove</button>
-      <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h3>
+      <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h2>
     ${d.handle ? `<div class="handleline">${esc(d.handle)}</div>` : ''}
     <div class="sinceline">Talking since ${esc(since(p.first_contact))}
       <span class="dot-sep">·</span> last message ${esc(ago(p.last_contact))}</div>
@@ -1999,24 +2006,24 @@ async function openPerson(id) {
     </div>
     ${p.confidence < .7 ? `<div class="empty">Only ${p.total_messages.toLocaleString()} messages here, so
       this is a sketch rather than a reading (confidence ${(p.confidence*100).toFixed(0)}%).</div>` : ''}
-    <h2>What the numbers say — and what else they could mean</h2>
+    <h3>What the numbers say — and what else they could mean</h3>
     ${p.signals.map(sig).join('')}
-    <h2>Connected to</h2>
+    <h3>Connected to</h3>
     <div class="cmembers">${d.connections.length ? d.connections.map(x =>
       `<button type="button" class="mchip" data-person="${esc(x.id)}">${avatar(x.name, 'sm')}${esc(x.name)}<small>${esc(x.via.join(', '))}</small></button>`).join('')
       : '<div class="pempty">No group chats together, just your one-to-one thread.</div>'}</div>
-    <h2>Plans together</h2>
+    <h3>Plans together</h3>
     <div class="plist">${d.plans.length ? d.plans.map(pl => `
       <div class="prow" tabindex="0" data-plan="${esc(pl.id)}"><span class="st" style="background:${STATE_COLOR[pl.state]}22;
         color:${STATE_COLOR[pl.state]}">${pl.state}</span>
         <span>${esc(pl.title.split(' with ')[0])}</span>
         <span class="when">${esc(pl.when_text || '—')} · ${pl.last_activity.slice(5,10)}</span></div>`).join('')
       : '<div class="empty">No plans found in this thread.</div>'}</div>
-    <h2>Messaging rate</h2>
+    <h3>Messaging rate</h3>
     <div class="chartbox"><div class="chead">
       <div><b id="p-head">—</b><span id="p-sub"></span></div></div>
       <div class="plot" id="p-rate"></div></div>
-    <h2>Chat history</h2>
+    <h3>Chat history</h3>
     <div class="hbar">
       <input id="hq" class="search" type="search" placeholder="Search this conversation…"
         autocomplete="off" spellcheck="false">
