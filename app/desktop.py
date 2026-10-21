@@ -192,7 +192,7 @@ class Controller(NSObject):
         self.server = None                   # in-process server module, when not using the project's Python
         self.child = None                    # `mg serve` process, when using it
         self.importing = False               # one import at a time
-        self.hourly = None                   # the thing that keeps the data current
+        self.refresher = None                # the thing that keeps the data current
         self.refresh_item = None
         self.pending_refresh = False         # landed while you were reading; applied later
         self.launch_url = None
@@ -282,7 +282,7 @@ class Controller(NSObject):
         menu.addItem_(NSMenuItem.separatorItem())
         self._item(menu, "Import my messages…", "importMessages:", target=self)
         self._item(menu, "Refresh now", "refreshNow:", target=self)
-        self.refresh_item = self._item(menu, "Refresh every hour", "toggleHourly:", target=self)
+        self.refresh_item = self._item(menu, "Refresh every day", "toggleRefreshing:", target=self)
         self._item(menu, "Check privacy in Terminal…", "checkPrivacy:", target=self)
         menu.addItem_(NSMenuItem.separatorItem())
         self.login_item = self._item(menu, "Start at login", "toggleLogin:", target=self)
@@ -301,7 +301,7 @@ class Controller(NSObject):
             if project is not None:
                 self._start_child(project)
                 AppHelper.callAfter(self._loaded)
-                AppHelper.callAfter(self.start_hourly)
+                AppHelper.callAfter(self.start_refreshing)
                 return
             from app.vault import Vault
             port = _free_port()
@@ -323,7 +323,7 @@ class Controller(NSObject):
             self.server = server
             self.launch_url = server.guard.launch_url
             AppHelper.callAfter(self._loaded)
-            AppHelper.callAfter(self.start_hourly)
+            AppHelper.callAfter(self.start_refreshing)
         except Exception as e:                          # show the reason in the window, not a silent crash
             self._show_error("Messaging Graph couldn't open your data", str(e) or type(e).__name__)
 
@@ -449,13 +449,13 @@ class Controller(NSObject):
 
     # -- keeping it current ---------------------------------------------------
     @objc.python_method
-    def start_hourly(self) -> None:
-        self.hourly = refreshing.Hourly(on_done=self._refreshed,
+    def start_refreshing(self) -> None:
+        self.refresher = refreshing.Schedule(on_done=self._refreshed,
                                         should_defer=self._window_in_use)
-        self.hourly.start()
+        self.refresher.start()
         if self.refresh_item is not None:
             self.refresh_item.setState_(
-                NSOnState if self.hourly.status.enabled else NSOffState)
+                NSOnState if self.refresher.status.enabled else NSOffState)
 
     @objc.python_method
     def _window_in_use(self) -> bool:
@@ -473,17 +473,17 @@ class Controller(NSObject):
             return
         AppHelper.callAfter(self.reloadData_, None)
 
-    def toggleHourly_(self, sender):
-        if self.hourly is None:
+    def toggleRefreshing_(self, sender):
+        if self.refresher is None:
             return
-        on = not self.hourly.status.enabled
-        self.hourly.set_enabled(on)
+        on = not self.refresher.status.enabled
+        self.refresher.set_enabled(on)
         sender.setState_(NSOnState if on else NSOffState)
 
     def refreshNow_(self, sender):
-        if self.hourly is None or self.importing:
+        if self.refresher is None or self.importing:
             return
-        threading.Thread(target=self.hourly.run_now, daemon=True).start()
+        threading.Thread(target=self.refresher.run_now, daemon=True).start()
 
     def checkPrivacy_(self, sender):
         run_in_terminal("doctor")
