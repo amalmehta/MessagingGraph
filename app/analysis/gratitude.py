@@ -27,7 +27,8 @@ from ..names import greeting_name, short_name
 from .circles import activity_of
 from .messages import Draft
 from .quoted import is_quoted, my_name
-from .phrasing import when_words
+# MONTHS too: the same twelve the rest of the app says, named once.
+from .phrasing import MONTHS, when_words
 from .voice import style_for, thanks_parts, write
 
 THANKS = re.compile(r"\b(?:thank you|thanks|thank u|thx|ty)(?:\s+(?:so much|again|a ton|a lot|so so much))?,?"
@@ -51,8 +52,6 @@ LOOKING_BACK = {"coffee": "that coffee", "brunch": "that brunch", "dinner": "tha
                 "board games": "board games", "pottery class": "the pottery class", "pottery": "pottery",
                 "trip": "that trip", "cabin": "the cabin trip", "beach": "the beach day", "camping": "camping"}
 YOURS = {"me": "you", "my": "your", "mine": "yours", "myself": "yourself", "i": "you", "i'm": "you're"}
-MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September",
-          "October", "November", "December"]
 
 
 # "thanks for getting me this" leaves nothing behind once the thread is gone,

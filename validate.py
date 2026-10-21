@@ -860,6 +860,42 @@ def main() -> int:
           "max-width:760px" in (STATIC / "styles.css").read_text()
           and "env(safe-area-inset-bottom)" in (STATIC / "styles.css").read_text())
 
+    print("\na third sweep, and what it turned up:")
+    from app.search import terms as _t3, MAX_TERM as _MT
+    # "ski ski ski trip" was four terms of which two were distinct, so the
+    # repeat outvoted the rare word it was sitting next to.
+    check("a word typed twice is still one word",
+          _t3("ski ski ski trip") == ["ski", "trip"])
+    check("and a pasted paragraph does not become one enormous term",
+          len(_t3("z" * 200)[0]) == _MT)
+    _ajs3 = Path("app/static/app.js").read_text()
+    _css3 = Path("app/static/styles.css").read_text()
+    _html3 = Path("app/static/index.html").read_text()
+    check("every chart says what it is, not just the one that did",
+          'class="daybars" role="img"' in _ajs3 and 'class="topppl" role="list"' in _ajs3)
+    check("a message you searched for opens the person it is with",
+          "x.name === h.who" in _ajs3 and "openPerson(who.contact_id)" in _ajs3)
+    check("the Insights tab carries its number like the others",
+          'id="c-insights"' in _html3 and "$('#c-insights')" in _ajs3)
+    # The drawer opened at h3 and ran h2s beneath it.
+    _d = _ajs3[_ajs3.index("${avatar(p.name, 'big')}"):]
+    _d = _d[:_d.index("Chat history") + 20]
+    check("the drawer's title outranks the sections inside it",
+          "<h2>${avatar(p.name, 'big')}" in _ajs3
+          and "<h2>Connected to</h2>" not in _ajs3
+          and "<h3>Connected to</h3>" in _ajs3)
+    # Three rules each written twice, a few hundred lines apart.
+    import re as _re3
+    from collections import Counter as _C3
+    _sels = [x.strip() for x in _re3.findall(r"^([.#][\w.#>\s:()-]+)\{", _css3, _re3.M)]
+    check("no rule describes the same element in two places",
+          not [x for x, c in _C3(_sels).items() if c > 1])
+    check("one apology, not two spellings of it",
+          "work that one out" not in _ajs3)
+    check("and the months are written once",
+          "MONTHS, when_words" in Path("app/analysis/gratitude.py").read_text()
+          and 'MONTHS = ["January"' not in Path("app/analysis/gratitude.py").read_text())
+
     print("\nthe whole history at once:")
     from app.insights import build as _ins, DAYS as _IDAYS
     _i = _ins(app_state.corpus, app_state.profiles, app_state.now)

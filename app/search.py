@@ -63,11 +63,22 @@ def fold(text: str) -> str:
     return "".join(c for c in flat if not unicodedata.combining(c))
 
 
+# Long enough for any real word, short enough that a paste of a whole message
+# does not become one enormous term that matches nothing and caches a regex.
+MAX_TERM = 40
+
+
 def terms(q: str) -> list[str]:
-    """The words worth searching for, in the order they were typed."""
-    words = [w.strip("'") for w in WORD.findall(fold(q))]
+    """The words worth searching for, in the order they were typed.
+
+    Each one once: "ski ski ski trip" was four terms of which two were
+    distinct, so coverage counted the repeat three times and the rare word
+    was outvoted by its own echo.
+    """
+    words = [w.strip("'")[:MAX_TERM] for w in WORD.findall(fold(q))]
     kept = [w for w in words if w and w not in STOP and len(w) > 1]
-    return kept or [w for w in words if w]        # a query of nothing but stopwords
+    out = kept or [w for w in words if w]         # a query of nothing but stopwords
+    return list(dict.fromkeys(out))
 
 
 @dataclass
