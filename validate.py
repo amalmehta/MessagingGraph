@@ -1011,12 +1011,21 @@ def main() -> int:
     print("\nkeeping it current on its own:")
     import app.refresh as _rf
     _st = _rf.Status()
-    _h = _rf.Hourly()
+    _h = _rf.Schedule()
     _h.status = _rf.Status(enabled=True, last_run=None)
+    # Named for the job, not the interval: a class called Hourly that runs
+    # daily is a lie that outlives whoever changed the number.
+    check("it refreshes once a day, and nothing claims otherwise",
+          _rf.EVERY == timedelta(days=1)
+          and not [f for f in ("app/refresh.py", "app/desktop.py", "app/static/app.js")
+                   if "hourly" in Path(f).read_text().lower()],
+          str(_rf.EVERY))
+    check("and it checks often enough that a sleeping Mac catches up",
+          _rf.CHECK_EVERY < _rf.EVERY / 24)
     check("a schedule that has never run is due", _h.due())
     _h.status.last_run = app_state.now
     check("and is not due again straight away", not _h.due(app_state.now))
-    check("but is an hour later",
+    check("but is due again once the interval has passed",
           _h.due(app_state.now + _rf.EVERY + timedelta(seconds=1)))
     _h.status.enabled = False
     check("switched off, it is never due",
@@ -1034,14 +1043,14 @@ def main() -> int:
           and "out.append(Outcome(p, False" in Path("app/refresh.py").read_text())
     _dt2 = Path("app/desktop.py").read_text()
     check("the schedule lives in the app, which is what holds the permission",
-          "refreshing.Hourly" in _dt2 and "start_hourly" in _dt2)
+          "refreshing.Schedule" in _dt2 and "start_refreshing" in _dt2)
     check("it waits rather than reloading the page under your hands",
           "_window_in_use" in _dt2 and "pending_refresh" in _dt2)
     check("and applies what it held back when you next open the window",
           "self.pending_refresh = False" in _dt2
           and "applicationShouldHandleReopen" in _dt2)
     check("you can switch it off, and do it by hand",
-          "toggleHourly:" in _dt2 and "refreshNow:" in _dt2)
+          "toggleRefreshing:" in _dt2 and "refreshNow:" in _dt2)
     check("what it last managed is shown, including what it could not do",
           "/api/refresh" in Path("app/main.py").read_text()
           and "couldn't be read" in Path("app/static/app.js").read_text())
@@ -1058,7 +1067,7 @@ def main() -> int:
         _rf.EVERY = timedelta(seconds=0.5)
         _rf.CHECK_EVERY = timedelta(seconds=0.2)
         _ran, _busy = [], {"on": True}
-        _hh = _rf.Hourly(on_done=lambda r: _ran.append(r), should_defer=lambda: _busy["on"])
+        _hh = _rf.Schedule(on_done=lambda r: _ran.append(r), should_defer=lambda: _busy["on"])
         _hh.status = _rf.Status(enabled=True, last_run=None)
         _hh.run_now = lambda: (_ran.append([]), setattr(_hh.status, "last_run", datetime.now()))[0]
         _hh.start()

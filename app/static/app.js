@@ -2633,7 +2633,7 @@ function simulate(raw) {
 
 // ---------------------------------------------------------------- privacy
 
-// What the hourly schedule last managed, said plainly: a job that quietly
+// What the schedule last managed, said plainly: a job that quietly
 // cannot do half its work is worse than no job.
 async function drawRefresh() {
   const line = $('#refreshline');
@@ -2642,15 +2642,15 @@ async function drawRefresh() {
   try { r = await api('/api/refresh'); } catch { line.textContent = ''; return; }
   if (!r.last_run) {
     line.textContent = r.enabled
-      ? 'The Mac app re-reads your messages every hour. It has not run yet.'
-      : 'Hourly refresh is switched off in the menu bar.';
+      ? 'The Mac app re-reads your messages once a day. It has not run yet.'
+      : 'The daily refresh is switched off in the menu bar.';
     return;
   }
   const bits = r.last_results.map(o => o.ok
     ? `${PLATFORM_LABEL[o.platform] || o.platform}: ${n(o.messages.toLocaleString(), 'message')}`
     : `${PLATFORM_LABEL[o.platform] || o.platform} couldn't be read`);
   line.innerHTML = `Last checked ${esc(ago(r.last_run))}. ${esc(bits.join(' · '))}
-    ${r.enabled ? '' : '<b>Hourly refresh is off.</b>'}
+    ${r.enabled ? '' : '<b>The daily refresh is off.</b>'}
     ${r.last_results.some(o => !o.ok)
       ? `<br><span class="hint">${esc(r.last_results.filter(o => !o.ok)
           .map(o => o.note).join(' '))}</span>` : ''}`;

@@ -6,7 +6,7 @@ told. Two things shape how this works:
 
 * WhatsApp needs no permission, so it refreshes quietly and always succeeds.
   iMessage needs Full Disk Access, so it may not be possible at all, and an
-  hourly job that cannot do its work must say so once rather than fail every
+  daily job that cannot do its work must say so once rather than fail every
   hour in silence.
 * Only platforms you have already imported are refreshed. A timer is not
   consent to start reading something new.
@@ -26,12 +26,13 @@ from pathlib import Path
 
 STATE_FILE = (Path.home() / "Library" / "Application Support" / "messaging-graph"
               / "refresh.json")
-EVERY = timedelta(hours=1)
+EVERY = timedelta(days=1)
 # Long enough after waking that the Wi-Fi is back and the disk has settled.
 FIRST_RUN_DELAY = timedelta(minutes=2)
-# How often the hour is checked, which is not the same as how often it runs.
-# Frequent, so a Mac that slept through its hour catches up on waking.
-CHECK_EVERY = timedelta(minutes=2)
+# How often the clock is checked, which is not the same as how often it runs.
+# Often enough that a Mac asleep at the appointed hour catches up on waking
+# rather than waiting out another whole day.
+CHECK_EVERY = timedelta(minutes=10)
 
 
 @dataclass
@@ -102,8 +103,8 @@ def refresh_once(platforms: list[str] | None = None) -> list[Outcome]:
     return out
 
 
-class Hourly:
-    """A thread that wakes, reads, and tells whoever is listening."""
+class Schedule:
+    """A thread that wakes on its interval, reads, and tells whoever listens."""
 
     def __init__(self, on_done=None, should_defer=None) -> None:
         self.on_done = on_done                  # called with the outcomes, if anything landed
