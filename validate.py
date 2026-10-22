@@ -2552,6 +2552,52 @@ def main() -> int:
         check("café and cafe find each other, whichever way round",
               len(_found("café")) == 2 and len(_found("cafe")) == 2, str(_found("café")))
 
+        # What the speed rests on. Search folds every message and counts every
+        # word once per import rather than once per question, interests looks a
+        # message's words up instead of running fourteen patterns at it, and the
+        # patterns in vibes and the lexicon are matched against folded text. Each
+        # of those is only correct under an invariant, so each invariant is checked.
+        from app.search import index_for as _index_for
+        _idx = _mini([("ana", _ago(2), "ramen on friday"), (_ME, _ago(1), "yes please")])
+        check("the search index is built once and then reused",
+              _index_for(_idx) is _index_for(_idx))
+        _was = _index_for(_idx)
+        _idx.messages.append(_Ms(id="m9", thread_id="t", sender_id="ana",
+                                 ts=_ago(0, 5), text="actually saturday", is_from_me=False))
+        check("and built again once a message arrives",
+              _index_for(_idx) is not _was and len(_index_for(_idx).folded) == 3)
+        check("asking twice gives the same answer as asking once",
+              _found("where is the cafe") == _found("where is the cafe"))
+
+        from app.analysis.network import (BY_WORD as _by_word, INTERESTS as _ints,
+                                          WORDS as _iw, _lookfor)
+        _unindexed = [(label, w) for label, words, _ in _iw for w in words
+                      if label not in _by_word.get(_lookfor(w), set())]
+        check("every word an interest listens for is one its lookup will find",
+              not _unindexed, str(_unindexed[:3]))
+        _said = ["ramen tonight", "THE FILLMORE", "my run was good", "finished that book",
+                 "pour-over", "board games", "farmers market", "the cat is fine", "5k"]
+        _by_lookup = [{l for w in re.findall(r"\w+", t.casefold()) for l in _by_word.get(w, ())}
+                      for t in _said]
+        _by_pattern = [{l for l, (pat, _) in _ints.items() if pat.search(t)} for t in _said]
+        check("and the lookup never rules out an interest the pattern would have found",
+              all(a <= b for a, b in zip(_by_pattern, _by_lookup)),
+              str([t for t, a, b in zip(_said, _by_pattern, _by_lookup) if not a <= b]))
+
+        from app.analysis import vibes as _vb, lexicon as _lx
+        _folded_pats = ([_vb._LAUGH, _vb._HURT, _vb._SLANG_UP, _vb._BANTER, _vb._PRACTICAL]
+                        + _lx._H + _lx._Q + _lx._A + _lx._L + _lx._C)
+        _shouty = [p.pattern for p in _folded_pats if any(c.isupper() for c in p.pattern)]
+        check("no pattern read against folded text is written with capitals in it",
+              not _shouty, str(_shouty[:2]))
+        check("none of them asks the engine to ignore case as well",
+              not [p.pattern for p in _folded_pats if p.flags & re.I])
+        check("so a message in capitals still reads as what it is",
+              _lx.hedge_score("SORRY!!") == _lx.hedge_score("sorry!!") > 0
+              and _lx.affection_score("I LOVE YOU") == _lx.affection_score("i love you") > 0
+              and _lx.is_care_question("ARE YOU OK") and _vb._traits("HAHAHA")[0]
+              and _vb._traits("RUNNING LATE")[2] and _vb.mood_of("HOSPITAL tomorrow") <= -0.35)
+
         # The page. These read the script, as the checks on it above do; the
         # behaviour was also driven in a browser against the demo data.
         _js15 = Path("app/static/app.js").read_text()

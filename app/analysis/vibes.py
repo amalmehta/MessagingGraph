@@ -20,23 +20,28 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timedelta
+from functools import lru_cache
 from statistics import mean, pstdev
 
 from ..models import Corpus, Message, Plan, RelationshipProfile, Vibe
 from . import lexicon
 
+# Every pattern here is lowercase, and the text is folded before it is matched.
+# Asking the engine to ignore case instead cost four times as much -- _PRACTICAL
+# alone was 437ms of every recompute, against 101ms for the same pattern run
+# against folded text.
 _LAUGH = re.compile(r"\b(?:ha(?:ha)+h?|he(?:he)+|lol+|lmf?ao+|rofl|i'?m dead|screaming|"
-                    r"i'?m crying|im crying)\b|😂|🤣|💀", re.I)
+                    r"i'?m crying|im crying)\b|😂|🤣|💀")
 _HURT = re.compile(
     r"\b(?:sad|hurt|hurting|angry|upset|hate|awful|terrible|depress\w*|lonely|scared|"
     r"worried|anxious|funeral|passed away|died|grief|grieving|struggl\w*|exhausted|"
-    r"overwhelmed|miserable|heartbroken|cancer|hospital|breakup|broke up|laid off)\b", re.I)
+    r"overwhelmed|miserable|heartbroken|cancer|hospital|breakup|broke up|laid off)\b")
 # "that was sick", "this is fire": slang praise VADER reads as illness or danger.
 _SLANG_UP = re.compile(r"\b(?:that|this)(?:\s+\w+)?(?:'s|\s+is|\s+was|\s+looks|\s+looked|\s+sounds|"
                        r"\s+sounded)\s+(?:so |lowkey |actually )?(?:sick|fire|insane|nuts|unreal|wild)\b"
-                       r"|\bit'?s (?:so )?(?:sick|fire)\b", re.I)
+                       r"|\bit'?s (?:so )?(?:sick|fire)\b")
 _BANTER = re.compile(r"^(?:stop+|no way|absolutely not|the audacity|unhinged|i can'?t+|"
-                     r"shut up|you'?re kidding|no+|omg+|bruh+|dead)\b", re.I)
+                     r"shut up|you'?re kidding|no+|omg+|bruh+|dead)\b")
 
 _ANALYZER = None
 _CACHE: dict[str, float] = {}
@@ -51,18 +56,19 @@ def mood_of(text: str) -> float:
         from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
         _ANALYZER = SentimentIntensityAnalyzer()
     c = _ANALYZER.polarity_scores(text)["compound"]
-    if _HURT.search(text):
+    low = text.casefold()
+    if _HURT.search(low):
         return max(-1.0, min(c, -0.35))            # grief with a "lol" is still grief
-    if _SLANG_UP.search(text) and c < 0.45:
+    if _SLANG_UP.search(low) and c < 0.45:
         c = 0.45
-    if _LAUGH.search(text):
+    if _LAUGH.search(low):
         c = 0.35 + 0.5 * max(c, 0.0)
     if lexicon.affection_score(text) >= 1 and c < 0.45:
         c = 0.45
     if c < 0:
         if lexicon.hedge_score(text) >= 1 and c > -0.5:
             c = 0.0                                 # politeness, not sadness
-        elif len(text.split()) <= 5 and _BANTER.search(text.strip()):
+        elif len(text.split()) <= 5 and _BANTER.search(low.strip()):
             c = 0.0                                 # banter, not rejection
     return max(-1.0, min(1.0, c))
 
@@ -78,9 +84,19 @@ _PRACTICAL = re.compile(
     r"\b(?:grab|pick(?:ing)? up|drop(?:ping)? off|running late|on my way|omw|eta|package|"
     r"delivery|rent|bill|paid|venmo|landlord|wifi|trash|groceries|milk|keys?|parking|"
     r"what time|meeting|standup|deck|doc|review|sprint|deadline|client|invoice|schedule|"
-    r"reschedul\w*|calendar|feed the cat|back around)\b", re.I)
+    r"reschedul\w*|calendar|feed the cat|back around)\b")
 _EXCLAIM = re.compile(r"!|[\U0001F300-\U0001FAFF☀-➿]")
 DIMENSIONS = ("playful", "tender", "lively", "deep", "steady", "practical", "planning", "night_owl")
+
+
+# Laughing, exclaiming and doing logistics: three things a message either is or
+# isn't, and the answer depends on nothing but the text. Kept for the same reason
+# the lexicon scores are: excluding one person recomputes everything, and the
+# messages it reads the second time are the same ones.
+@lru_cache(maxsize=None)
+def _traits(text: str) -> tuple[bool, bool, bool]:
+    low = text.casefold()
+    return bool(_LAUGH.search(low)), bool(_EXCLAIM.search(low)), bool(_PRACTICAL.search(low))
 
 
 def _cap(x: float) -> float:
@@ -91,10 +107,18 @@ def _dimensions(dm: list[Message], p: RelationshipProfile, plans: list[Plan],
                 now: datetime) -> dict[str, float]:
     texted = [m for m in dm if m.text]
     n = max(1, len(texted))
-    laugh = sum(1 for m in texted if _LAUGH.search(m.text)) / n
+    laughs = warms = cares = exclaims = practicals = 0
+    for m in texted:
+        laughed, exclaimed, logistics = _traits(m.text)
+        laughs += laughed
+        warms += lexicon.affection_score(m.text) >= 1
+        cares += lexicon.is_care_question(m.text)
+        exclaims += exclaimed
+        practicals += logistics
+    laugh = laughs / n
     playful = laugh / 0.35 + 3 * sum(m.reactions.count("laugh") for m in dm) / max(1, len(dm))
-    warm = sum(1 for m in texted if lexicon.affection_score(m.text) >= 1) / n
-    care = sum(1 for m in texted if lexicon.is_care_question(m.text)) / n
+    warm = warms / n
+    care = cares / n
     tender = warm / 0.4 + 0.3 * care / 0.15 + 3 * sum(m.reactions.count("love") for m in dm) / max(1, len(dm))
 
     convos: list[list[Message]] = []
@@ -103,7 +127,7 @@ def _dimensions(dm: list[Message], p: RelationshipProfile, plans: list[Plan],
             convos.append([])
         convos[-1].append(m)
     burst = mean(len(c) for c in convos) if convos else 0.0
-    exclaim = sum(1 for m in texted if _EXCLAIM.search(m.text)) / n
+    exclaim = exclaims / n
     # Only the sides that exist. With neither, "lively" leans on the two signals
     # that are real rather than scoring a speed nobody has.
     speeds = [x for x in (p.my_median_reply_s, p.their_median_reply_s) if x is not None]
@@ -114,7 +138,7 @@ def _dimensions(dm: list[Message], p: RelationshipProfile, plans: list[Plan],
     else:
         lively = (0.4 * burst / 10 + 0.3 * exclaim / 0.35) / 0.7
 
-    practical = sum(1 for m in texted if _PRACTICAL.search(m.text)) / n / 0.35
+    practical = practicals / n / 0.35
     opens = [c[0] for c in convos]
     night = sum(1 for m in opens if m.ts.hour >= 22 or m.ts.hour < 4) / max(1, len(opens))
 
@@ -264,6 +288,9 @@ def attach_vibes(corpus: Corpus, profiles: list[RelationshipProfile],
         shift, note = _mood_shift(texted, now)
         p.vibe = Vibe(
             name=name, line=line,
+            # statistics.mean, not sum()/len: it is slower, and it is also the
+            # difference between a mood of 71.4 and 71.3 for one person here.
+            # A displayed number is not worth a fifth of a second.
             mood=round(100 * mean(every), 1) if every else 0.0,
             mood_theirs=round(100 * mean(theirs), 1) if theirs else 0.0,
             mood_mine=round(100 * mean(mine), 1) if mine else 0.0,

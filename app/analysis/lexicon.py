@@ -39,11 +39,16 @@ CARE_QUESTION_PATTERNS = [
     r"how are you feeling", r"you good\b", r"did you hear back", r"how was",
 ]
 
-_H = [re.compile(p, re.I) for p in HEDGE_PATTERNS]
-_Q = [re.compile(p, re.I) for p in QUALIFIER_PATTERNS]
-_A = [re.compile(p, re.I) for p in AFFECTION_PATTERNS]
-_L = [re.compile(p, re.I) for p in LAUGHTER_PATTERNS]
-_C = [re.compile(p, re.I) for p in CARE_QUESTION_PATTERNS]
+# Every pattern above is written in lowercase, so the text is folded once per
+# message and matched as written. Asking the engine to ignore case instead meant
+# four times the work, and these patterns are the most-run code in the app:
+# forty-six of them against every message, three quarters of a million searches
+# on a first load.
+_H = [re.compile(p) for p in HEDGE_PATTERNS]
+_Q = [re.compile(p) for p in QUALIFIER_PATTERNS]
+_A = [re.compile(p) for p in AFFECTION_PATTERNS]
+_L = [re.compile(p) for p in LAUGHTER_PATTERNS]
+_C = [re.compile(p) for p in CARE_QUESTION_PATTERNS]
 
 
 def _hits(text: str, pats) -> int:
@@ -59,12 +64,14 @@ def _hits(text: str, pats) -> int:
 @lru_cache(maxsize=None)
 def hedge_score(text: str) -> float:
     """Per-message softening load. Apologies count full, qualifiers count a third."""
-    return _hits(text, _H) + 0.34 * _hits(text, _Q)
+    low = text.casefold()
+    return _hits(low, _H) + 0.34 * _hits(low, _Q)
 
 
 @lru_cache(maxsize=None)
 def affection_score(text: str) -> float:
-    score = float(_hits(text, _A)) + 0.6 * _hits(text, _L)
+    low = text.casefold()
+    score = float(_hits(low, _A)) + 0.6 * _hits(low, _L)
     score += 0.7 * sum(1 for ch in text if ch in WARM_EMOJI)
     if "!!" in text:
         score += 0.4
@@ -73,7 +80,8 @@ def affection_score(text: str) -> float:
 
 @lru_cache(maxsize=None)
 def is_care_question(text: str) -> bool:
-    return any(p.search(text) for p in _C)
+    low = text.casefold()
+    return any(p.search(low) for p in _C)
 
 
 def is_question(text: str) -> bool:
