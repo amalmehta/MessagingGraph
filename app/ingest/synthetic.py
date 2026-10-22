@@ -195,6 +195,15 @@ NO = ["ah I can't that day", "rain check?", "something came up", "I have to bail
 CONFIRM = ["see you {d}", "locked in", "confirmed", "it's in the calendar", "see you then"]
 
 
+# (persona, days from now the birthday falls, days ago it was mentioned, how they said it)
+BIRTHDAYS = [
+    ("p_priya", 9, 20, "btw my birthday's {month} {day}! keeping the evening free"),
+    ("p_jordan", 23, 45, "random but my bday is the {day} of {month} haha"),
+]
+MONTH_NAMES = ("January", "February", "March", "April", "May", "June", "July",
+               "August", "September", "October", "November", "December")
+
+
 class SyntheticSource:
     name = "synthetic"
 
@@ -377,6 +386,16 @@ class SyntheticSource:
                     if when > now:
                         continue
                     self._burst(proxy, threads[gid], when, messages, group_members=mem)
+
+        # Birthdays someone mentioned, falling due soon, so the demo has dates to
+        # show. Added after everything random so the rest of the corpus is the
+        # same with or without them; validate.py checks they are found.
+        for pid, ahead, said_ago, line in BIRTHDAYS:
+            when = now - timedelta(days=said_ago, hours=3)
+            due = (now + timedelta(days=ahead)).date()
+            messages.append(Message(id=self._mid(), thread_id=f"t_{pid}", sender_id=pid, ts=when,
+                                    text=line.format(month=MONTH_NAMES[due.month - 1], day=due.day),
+                                    is_from_me=False))
 
         messages.sort(key=lambda m: m.ts)
         return Corpus(contacts=contacts, threads=threads, messages=messages,

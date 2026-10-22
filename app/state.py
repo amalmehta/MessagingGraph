@@ -5,8 +5,10 @@ what analysis is allowed to see in the first place.
 """
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
 
+from .analysis.milestones import detect as detect_milestones
 from .analysis.plans import extract_plans, follow_through, open_plan_counts
 from .analysis.places import infer_locations
 from .analysis.relationships import profile_all
@@ -14,7 +16,7 @@ from .analysis.vibes import attach_vibes
 from .analysis.spam import classify
 from .ingest.base import load_source
 from .models import Corpus
-from .overrides import OverrideStore, apply_names
+from .overrides import MilestoneStore, OverrideStore, apply_names
 from .privacy import NetworkGate, PrivacySettings, apply_settings
 
 
@@ -69,8 +71,10 @@ class AppState:
         if self.source_name == "vault" or self.source_name.startswith("vault:"):
             from .vault import Vault
             self.overrides = OverrideStore(Vault())
+            self.milestone_store = MilestoneStore(Vault())
         else:
             self.overrides = OverrideStore()
+            self.milestone_store = MilestoneStore()
         self.recompute()
 
     def recompute(self) -> None:
@@ -119,5 +123,12 @@ class AppState:
                 # "Don't know" is an answer about the guess too: you've seen it and declined it.
                 self.locations[cid] = {**inferred[cid], "source": "messages"}
         self.location_unknown = set(o.location_unknown)
+        # Birthdays and anniversaries only change when what analysis can see does,
+        # so naming someone or giving a place doesn't scan the history for them again.
+        seen = (reading, repr(sorted(self.settings.to_dict().items())))
+        if getattr(self, "_milestones_for", None) != seen:
+            found = [asdict(m) for m in detect_milestones(self.corpus)]
+            self.milestones = self.milestone_store.sync(self.platform, found)
+            self._milestones_for = seen
         self.profiles_by_id = {p.contact_id: p for p in self.profiles}
         self.version = getattr(self, "version", 0) + 1     # lets derived views cache safely

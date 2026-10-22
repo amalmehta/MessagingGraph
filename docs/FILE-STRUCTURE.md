@@ -10,7 +10,7 @@
 | [`app/main.py`](../app/main.py) | Local HTTP API, bound to 127.0.0.1 |
 | [`app/desktop.py`](../app/desktop.py) | The Mac app: its own window, a menu bar item, start at login |
 | [`app/ingest/`](../app/ingest) | Readers for Messages (`chat.db`), Contacts, and the synthetic demo corpus |
-| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, crews, connections, places, vibes, voice and spam filtering |
+| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, birthdays and anniversaries, crews, connections, places, vibes, voice and spam filtering |
 | [`app/graph.py`](../app/graph.py) | The plan graph: people and live plans as nodes |
 | [`app/models.py`](../app/models.py) | Core data types shared by ingestion, analysis and the API |
 | [`app/vault.py`](../app/vault.py) | Encrypted at-rest store for an imported corpus |
