@@ -839,10 +839,10 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 .whenwrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 16px 10px;box-shadow:0 1px 2px var(--shadow)}
 .whenbars{display:flex;align-items:flex-end;gap:3px;height:110px}
-.whenbars i{flex:1;background:var(--accent);opacity:.75;border-radius:3px 3px 0 0;min-height:2px}
+.whenbars i{flex:1;background:var(--accent);opacity:.5;border-radius:3px 3px 0 0;min-height:2px;
+  transition:opacity .12s}
 .whenbars i:hover{opacity:1}
-.whenaxis{display:flex;justify-content:space-between;margin-top:6px;
-  color:var(--faint);font-size:11px}
+.whenaxis{position:relative;height:16px;margin-top:6px;color:var(--faint);font-size:11px}
 
 .daybars{display:flex;flex-direction:column;gap:5px;margin-top:11px}
 .daybar{display:flex;align-items:center;gap:10px}
@@ -862,3 +862,17 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 .topp i{flex:1;height:9px;border-radius:5px;background:var(--panel2);overflow:hidden}
 .topp i b{display:block;height:100%;background:var(--accent);border-radius:5px}
 .topp .tv{width:62px;text-align:right;color:var(--dim);font:12px var(--mono)}
+
+/* ---------------------------------------------------------------- polish */
+
+/* 9. Insights: the busiest hour and day stand out, and the week sits in the
+   same card as the day, under a hairline, because they are one question. */
+.whenbars i.peak{opacity:1}
+.whenwrap .daybars{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+/* Hour labels under the bars they name, not spread evenly across the width. */
+.whenaxis span{position:absolute;transform:translateX(-50%)}
+.whenaxis span:first-child{left:0;transform:none}
+.whenaxis span:last-child{right:0;transform:none}
+.daybar b{opacity:.6}
+.daybar.peak b{opacity:1}
+.daybar.peak .dl,.daybar.peak .dv{color:var(--ink);font-weight:600}

@@ -587,16 +587,18 @@ async function viewInsights() {
       ${esc(d.busiest_day)} than any other day.</div>
     <div class="whenwrap">
       <div class="whenbars" role="img" aria-label="Messages by hour of day">
-        ${d.by_hour.map((v, h) => `<i style="height:${Math.max(2, 100 * v / hourMax)}%"
+        ${d.by_hour.map((v, h) => `<i class="${v === hourMax ? 'peak' : ''}"
+          style="height:${Math.max(2, 100 * v / hourMax)}%"
           title="${h}:00 — ${n(v.toLocaleString(), 'message')}"></i>`).join('')}
       </div>
-      <div class="whenaxis"><span>midnight</span><span>noon</span><span>midnight</span></div>
-    </div>
-    <div class="daybars" role="img" aria-label="Messages by day of the week">
-      ${d.by_day.map((v, i) => `<div class="daybar">
-        <span class="dl">${DAYS[i]}</span>
-        <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
-        <span class="dv">${v.toLocaleString()}</span></div>`).join('')}
+      <div class="whenaxis"><span>midnight</span><span style="left:${100 * 6.5 / 24}%">6am</span>
+        <span style="left:${100 * 12.5 / 24}%">noon</span><span style="left:${100 * 18.5 / 24}%">6pm</span><span>midnight</span></div>
+      <div class="daybars" role="img" aria-label="Messages by day of the week">
+        ${d.by_day.map((v, i) => `<div class="daybar${v === dayMax ? ' peak' : ''}">
+          <span class="dl">${DAYS[i]}</span>
+          <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
+          <span class="dv">${v.toLocaleString()}</span></div>`).join('')}
+      </div>
     </div>
 
     <h2>Who that is, mostly</h2>
