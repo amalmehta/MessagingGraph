@@ -11,7 +11,8 @@ import os
 import re
 import sqlite3
 
-AB_ROOT = os.path.expanduser("~/Library/Application Support/AddressBook")
+AB_ROOT = (os.environ.get("MG_ADDRESSBOOK")
+           or os.path.expanduser("~/Library/Application Support/AddressBook"))
 
 
 def canonical(handle: str) -> str:

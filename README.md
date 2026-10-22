@@ -2,13 +2,15 @@
 
 A private app for your Mac that reads your Messages history and helps you keep up with the
 people in it: who you've drifted from, plans that never got a date, messages worth sending, and
-how your friends connect to each other. It runs entirely on your computer.
+how your friends connect to each other. It runs entirely on your computer. $29 once, with a
+14-day free trial.
 
 ```mermaid
 flowchart LR
-    A[Messages history] -->|mg import| V[(Encrypted vault<br/>key in Keychain)]
+    A[Messages history] -->|import, with Full Disk Access| V[(Encrypted vault<br/>key in Keychain)]
     V --> C[Analysis<br/>people, plans, connections]
-    C --> D[Local app in your browser<br/>or the Mac app]
+    C --> D[The Mac app's window<br/>or your browser]
+    L[Licence + update checks<br/>nothing from your messages] -.->|network gate| N((Internet))
 ```
 
-**[Instructions →](docs/INSTRUCTIONS.md)** · [System design](docs/SYSTEM-DESIGN.md) · [File structure](docs/FILE-STRUCTURE.md) · [How it works](docs/how-it-works.md)
+**[Instructions →](docs/INSTRUCTIONS.md)** · [System design](docs/SYSTEM-DESIGN.md) · [File structure](docs/FILE-STRUCTURE.md) · [Go-live](docs/GO-LIVE.md) · [How it works](docs/how-it-works.md) · [Product site](site/index.html)

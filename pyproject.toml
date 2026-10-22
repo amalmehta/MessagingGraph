@@ -1,6 +1,6 @@
 [project]
 name = "messaging-graph"
-version = "1.0.0"
+version = "1.1.0"
 description = "A private, local app for keeping up with the people in your Messages history"
 requires-python = ">=3.11"
 dependencies = [

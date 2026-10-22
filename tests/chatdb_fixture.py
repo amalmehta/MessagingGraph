@@ -198,3 +198,70 @@ def build(root: str):
         msg(1, 1, 0, f"{WAL_MARKER} {i}", mine=(i == 1), minutes=60 - i)
     db.commit()
     return db, path, ab_root
+
+
+# ---------------------------------------------------------------------------
+# The same store as other versions of macOS left it
+# ---------------------------------------------------------------------------
+# Apple doesn't document chat.db, and the shape moves between releases. Each
+# entry is a copy of the fixture above rewritten the way that era stored it, so
+# the reader is tested against what it will actually meet, not only today's
+# layout. What each change was, and when, is in docs/SYSTEM-DESIGN.md.
+ERAS = {
+    # Ventura (13) through today: unsend and edit columns, tapbacks with any
+    # emoji (Sequoia, 15) carried in associated_message_emoji.
+    "ventura-and-later": {"add": {"date_edited": "INTEGER DEFAULT 0",
+                                  "associated_message_emoji": "TEXT"}, "emoji_tapback": True},
+    # Monterey (12) and earlier: no unsending, so no date_retracted.
+    "monterey": {"drop": ["date_retracted"]},
+    # Before Sierra (10.12) there were no tapbacks, and before High Sierra
+    # (10.13) `date` counted seconds rather than nanoseconds.
+    "el-capitan": {"drop": ["date_retracted", "associated_message_guid",
+                            "associated_message_type"], "seconds": True, "no_tapbacks": True},
+    # Only what the reader requires: whatever a future macOS drops, if it keeps
+    # these the import still works, with less detail.
+    "bare-minimum": {"drop": ["date_retracted", "associated_message_guid",
+                              "associated_message_type", "attributedBody", "item_type",
+                              "cache_has_attachments", "account", "destination_caller_id"],
+                     "no_tapbacks": True},
+    # A future macOS that renamed something the reader cannot do without.
+    "renamed-handle-column": {"rename": ("handle_id", "sender_handle_id")},
+}
+
+
+def variant(src: str, dest_dir: str, era: str) -> str:
+    """Copy a built, closed fixture and rewrite it the way `era` stored things.
+    Returns the new chat.db path."""
+    import shutil
+    spec = ERAS[era]
+    os.makedirs(dest_dir, exist_ok=True)
+    path = os.path.join(dest_dir, "chat.db")
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(path + suffix):
+            os.remove(path + suffix)
+    shutil.copy(src, path)
+    db = sqlite3.connect(path)
+    if spec.get("no_tapbacks"):
+        db.execute("DELETE FROM message WHERE associated_message_type BETWEEN 2000 AND 3999")
+    if spec.get("seconds"):
+        db.execute("UPDATE message SET date = date / 1000000000")
+    for col, kind in spec.get("add", {}).items():
+        db.execute(f"ALTER TABLE message ADD COLUMN {col} {kind}")
+    if spec.get("emoji_tapback"):
+        # Sequoia's any-emoji tapback: type 2006, the emoji in its own column.
+        rid = db.execute("SELECT max(ROWID) + 1 FROM message").fetchone()[0]
+        target, date = db.execute(
+            "SELECT guid, date FROM message WHERE text = 'marcus 1'").fetchone()
+        db.execute("""INSERT INTO message (ROWID, guid, text, handle_id, date, is_from_me,
+            associated_message_guid, associated_message_type, associated_message_emoji)
+            VALUES (?, 'EMOJI-TAPBACK', 'Reacted 🫶 to “marcus 1”', 4, ?, 0, ?, 2006, '🫶')""",
+                   (rid, date + 1, f"p:0/{target}"))
+        db.execute("INSERT INTO chat_message_join VALUES (4, ?, ?)", (rid, date + 1))
+    for col in spec.get("drop", []):
+        db.execute(f"ALTER TABLE message DROP COLUMN {col}")
+    if spec.get("rename"):
+        old, new = spec["rename"]
+        db.execute(f"ALTER TABLE message RENAME COLUMN {old} TO {new}")
+    db.commit()
+    db.close()
+    return path

@@ -1,12 +1,28 @@
-"""Build Messaging Graph.app, install it, and start it at login.
+"""Build Messaging Graph.app: for this Mac, or for sale.
 
     uv sync --group app          # once: the packaging tools
-    ./mg build-app               # build, install, start at login
+    ./mg build-app               # build, install, start at login (your own Mac)
     ./mg build-app --no-login    # same, without the login item
+    scripts/package.sh           # the release build: signed, notarized, in a DMG
 
 The app bundles its own Python and this project's code as it is when you build, so
 rebuild after pulling changes. Your data isn't in the app: it stays encrypted in
 ~/Library/Application Support/messaging-graph.
+
+Why PyInstaller, rather than briefcase, py2app or a hand-rolled bundle around
+python-build-standalone: the Python it bundles *is* python-build-standalone (uv
+installs it), relocated into Contents/Frameworks, so the runtime question is
+already answered. What PyInstaller adds is a real Mach-O as the app's executable.
+macOS identifies an app for Full Disk Access by its bundle id and the signature on
+that executable; a shell script or a bare `python3` there would make the grant
+land on the interpreter, and a script cannot carry the hardened runtime that
+notarization requires. It was already how this app was built, and its
+onedir layout signs file by file. docs/SYSTEM-DESIGN.md has the longer version.
+
+`build_bundle(release=True)` is what `scripts/package.sh` calls: no link back to
+this project folder (a customer's Mac has none), the version and minimum macOS
+from app/product.py, and no signing -- the script signs, inside out, with the
+hardened runtime.
 """
 from __future__ import annotations
 
@@ -20,9 +36,13 @@ import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from app import product  # noqa: E402
+
 BUILD = ROOT / "build"
-NAME = "Messaging Graph"
-BUNDLE_ID = "com.messaginggraph.app"
+NAME = product.NAME
+BUNDLE_ID = product.BUNDLE_ID
+ENTITLEMENTS = ROOT / "macapp" / "entitlements.plist"
 
 
 def _png(path: Path, size: int = 1024, pad: int = 100, radius: int = 185) -> None:
@@ -92,47 +112,64 @@ def make_icon() -> Path:
     return icns
 
 
-def build_bundle(icns: Path) -> Path:
+def build_bundle(icns: Path, release: bool = False, dist: Path | None = None) -> Path:
     import PyInstaller.__main__
+    dist = dist or BUILD / "dist"
     # Where the project lives, so the app can run your data server with the project's own
-    # Python -- the one your Keychain already trusts with the encryption key.
+    # Python -- the one your Keychain already trusts with the encryption key. Never in a
+    # release: a customer has no project, and the app serves in-process with its own.
     marker = BUILD / "project_path.txt"
     marker.write_text(str(ROOT))
+    extra = [] if release else ["--add-data", f"{marker}:macapp"]
     PyInstaller.__main__.run([
         str(ROOT / "macapp" / "entry.py"), "--name", NAME, "--windowed", "--noconfirm", "--clean",
         "--icon", str(icns), "--osx-bundle-identifier", BUNDLE_ID,
-        "--distpath", str(BUILD / "dist"), "--workpath", str(BUILD / "work"), "--specpath", str(BUILD),
+        "--distpath", str(dist), "--workpath", str(BUILD / "work"), "--specpath", str(BUILD),
         "--paths", str(ROOT),
         "--add-data", f"{ROOT / 'app' / 'static'}:app/static",
-        "--add-data", f"{marker}:macapp",
+        *extra,
         "--collect-submodules", "app", "--collect-submodules", "uvicorn",
         "--collect-submodules", "keyring", "--copy-metadata", "keyring",
         "--collect-data", "vaderSentiment", "--hidden-import", "PyObjCTools.AppHelper",
         "--log-level", "WARN",
     ])
-    bundle = BUILD / "dist" / f"{NAME}.app"
+    bundle = dist / f"{NAME}.app"
     info_path = bundle / "Contents" / "Info.plist"
     info = plistlib.loads(info_path.read_bytes())
-    info.update({
+    info.update(info_plist(release))
+    info_path.write_bytes(plistlib.dumps(info))
+    if not release:
+        # Editing Info.plist invalidates the signature; sign again. A release is
+        # signed by scripts/package.sh, inside out, with the hardened runtime.
+        sign(bundle)
+    return bundle
+
+
+def info_plist(release: bool) -> dict:
+    """What goes into Info.plist beyond PyInstaller's defaults."""
+    info = {
+        "CFBundleIdentifier": BUNDLE_ID,
         "CFBundleDisplayName": NAME,
-        "CFBundleShortVersionString": "1.1.0",
+        "CFBundleShortVersionString": product.VERSION,
+        "CFBundleVersion": product.VERSION,
+        "LSMinimumSystemVersion": product.MIN_MACOS,
+        "NSHumanReadableCopyright": product.COPYRIGHT,
         "LSApplicationCategoryType": "public.app-category.social-networking",
         "NSHighResolutionCapable": True,
-        # Shown when macOS asks whether the app may open Terminal for an import.
-        "NSAppleEventsUsageDescription": "Messaging Graph opens Terminal to import your messages, so only "
-                                         "Terminal needs Full Disk Access, and only while importing.",
+        # Shown when macOS asks whether the app may open Terminal, which it does
+        # only for "Check privacy in Terminal…" in the menu bar.
+        "NSAppleEventsUsageDescription": "Messaging Graph opens Terminal to run its privacy check "
+                                         "when you ask it to from the menu bar.",
+    }
+    if not release:
         # Without these, macOS has no words to put in the dialog -- so it never
         # asks, and quietly refuses instead. The app runs the project's own Python
         # from wherever the project lives, which is often one of these folders.
-        **{f"NS{folder}FolderUsageDescription":
-           f"Messaging Graph runs its data server from your project folder, so it needs to read it "
-           f"if you keep the project in {folder}."
-           for folder in ("Desktop", "Documents", "Downloads")},
-    })
-    info_path.write_bytes(plistlib.dumps(info))
-    # Editing Info.plist invalidates the signature; sign again.
-    sign(bundle)
-    return bundle
+        info.update({f"NS{folder}FolderUsageDescription":
+                     f"Messaging Graph runs its data server from your project folder, so it needs "
+                     f"to read it if you keep the project in {folder}."
+                     for folder in ("Desktop", "Documents", "Downloads")})
+    return info
 
 
 IDENTITY = "Messaging Graph Dev"
@@ -265,5 +302,26 @@ def main(login: bool = True) -> int:
     return 0
 
 
+def release(dist: Path) -> int:
+    """The bundle `scripts/package.sh` signs: built, not installed, not signed."""
+    try:
+        import AppKit  # noqa: F401
+        import PyInstaller  # noqa: F401
+        import WebKit  # noqa: F401
+    except ImportError:
+        print("  xx  The packaging tools aren't installed. Run:  uv sync --group app")
+        return 1
+    BUILD.mkdir(exist_ok=True)
+    print("Drawing the icon…", flush=True)
+    icns = make_icon()
+    print("Packaging the app (a few minutes)…", flush=True)
+    bundle = build_bundle(icns, release=True, dist=dist)
+    print(bundle)
+    return 0
+
+
 if __name__ == "__main__":
+    if "--release" in sys.argv:
+        out = sys.argv[sys.argv.index("--dist") + 1] if "--dist" in sys.argv else str(ROOT / "dist")
+        sys.exit(release(Path(out).resolve()))
     sys.exit(main(login="--no-login" not in sys.argv))

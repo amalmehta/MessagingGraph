@@ -34,6 +34,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 
 COOKIE = "mg_session"
+VIEWS = ("now", "graph", "people", "insights", "privacy")
 DEVICE_COOKIE = "mg_device"
 DEVICE_MAX_AGE = 60 * 60 * 24 * 365        # a phone pairs once, not every week
 
@@ -140,7 +141,11 @@ class Guard:
                     return self.harden(PlainTextResponse(
                         "That link isn't valid for this server. Use the one printed "
                         "when it started.", 401))
-                resp = RedirectResponse("/", status_code=303)
+                # A view may ride along (the Mac app's "Licence…" opens Privacy),
+                # but only one of the app's own, so this is never an open redirect.
+                view = request.query_params.get("view")
+                dest = f"/?view={view}" if view in VIEWS else "/"
+                resp = RedirectResponse(dest, status_code=303)
                 resp.set_cookie(COOKIE, self.session, httponly=True,
                                 samesite="strict", path="/", secure=self.on_lan)
                 return self.harden(resp)

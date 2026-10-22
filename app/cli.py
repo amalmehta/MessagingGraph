@@ -5,6 +5,7 @@
     ./mg serve --synthetic serve the demo corpus instead
     ./mg doctor            check the machine and the vault for anything left open
     ./mg wipe              delete the vault and its Keychain key
+    ./mg licence           the trial, or the licence: status, activate KEY, deactivate
 
 Everything printed here is counts and settings. No names, numbers or message
 text -- so output can be pasted anywhere, including a chat with an assistant.
@@ -82,9 +83,16 @@ def _import_whatsapp(a) -> int:
 
 
 def _import_imessage(a) -> int:
+    from .ingest.base import SourceUnavailable
     from .ingest.imessage import IMessageSource
+    from .licence import import_allowed
     from .vault import Vault, VaultError
 
+    allowed, why = import_allowed()
+    if not allowed:
+        _line(BAD, why)
+        print("      ./mg licence activate YOUR-KEY   (what you imported is still there: ./mg serve)")
+        return 1
     vault = Vault()
     try:
         id_key = vault.id_key()
@@ -101,7 +109,11 @@ def _import_imessage(a) -> int:
         return 1
 
     print(f"Reading a snapshot of chat.db (last {a.days} days)…")
-    corpus = src.load()
+    try:
+        corpus = src.load()
+    except SourceUnavailable as e:
+        _line(BAD, str(e))
+        return 1
     r = src.report
     if r.kept == 0:
         _line(BAD, "Nothing survived import, so nothing was written. Try a larger --days.")
@@ -191,6 +203,7 @@ def cmd_serve(a) -> int:
               "this Mac's own,\n      made here and trusted nowhere else. The pairing page "
               "explains how to accept it.", flush=True)
         print("      Then open Privacy on this Mac and press Show a pairing code.\n", flush=True)
+    main.start_background_checks()
     uvicorn.run(main.app, host=host, port=a.port, access_log=False,
                 server_header=False, log_level="warning", **(ssl if a.phone else {}))
     return 0
@@ -269,6 +282,34 @@ def cmd_wipe(a) -> int:
     return 0
 
 
+def cmd_licence(a) -> int:
+    """Licence status and changes. The only network call here is to Lemon Squeezy's
+    License API, through the same gate as everything else."""
+    from .licence import Licence, LicenceError
+    lic = Licence()
+    try:
+        if a.action == "activate":
+            if not a.key:
+                _line(BAD, "Give the key: ./mg licence activate YOUR-KEY")
+                return 1
+            st = lic.activate(a.key)
+        elif a.action == "deactivate":
+            st = lic.deactivate()
+        elif a.action == "check":
+            st = lic.validate(force=True)
+        else:
+            st = lic.status()
+    except LicenceError as e:
+        _line(BAD, str(e))
+        return 1
+    _line(OK if st.can_import else WARN, st.message)
+    if st.key_hint:
+        print(f"      key {st.key_hint}, last checked {st.last_checked or 'never'}")
+    if st.state in ("trial", "trial_over"):
+        print(f"      buy: {st.buy_url}")
+    return 0
+
+
 def cmd_build_app(a) -> int:
     from macapp.build import main as build
     return build(login=not a.no_login)
@@ -298,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
     s.set_defaults(fn=cmd_serve)
 
     sub.add_parser("doctor", help="check for anything left open").set_defaults(fn=cmd_doctor)
+    li = sub.add_parser("licence", help="trial and licence: status, activate KEY, deactivate, check")
+    li.add_argument("action", nargs="?", default="status",
+                    choices=("status", "activate", "deactivate", "check"))
+    li.add_argument("key", nargs="?")
+    li.set_defaults(fn=cmd_licence)
     b = sub.add_parser("build-app", help="build and install the Mac app (needs: uv sync --group app)")
     b.add_argument("--no-login", action="store_true", help="don't start it at login")
     b.set_defaults(fn=cmd_build_app)
