@@ -559,7 +559,7 @@ async function viewInsights() {
   $('#main').innerHTML = `<h1>Insights</h1>
     <div class="sub tight">What a year of this looks like from a distance. Facts about
       when and how much, not marks out of ten.</div>
-    <div id="ins"><div class="empty">Working it out…</div></div>`;
+    <div id="ins"><div class="empty loading">Working it out…</div></div>`;
   let d;
   try { d = await api('/api/insights'); } catch {
     $('#ins').innerHTML = `<div class="empty">Couldn't work that out.
@@ -630,7 +630,7 @@ async function viewSearch() {
   $('#main').innerHTML = `<h1>Search</h1>
     <div class="sub tight">Everything the app knows — people, plans, group chats and the
       messages themselves. Nothing is sent anywhere to answer it.</div>
-    <div id="hits"><div class="empty">Looking…</div></div>`;
+    <div id="hits"><div class="empty loading">Looking…</div></div>`;
   let r;
   try {
     r = await api('/api/search?q=' + encodeURIComponent(q));
@@ -763,11 +763,11 @@ function viewNow() {
       Messages or skip it — nothing sends from here.</div>
     ${demoBanner(o)}
     <div class="voicenote" id="voice-note"></div>
-    <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
+    <div id="drafts" class="drafts"><div class="empty loading">Drafting…</div></div>
     <h2>Say thanks</h2>
     <div class="sub tight">Tied to something that actually happened — a favour, a year of
       texting, something you did together.</div>
-    <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
+    <div id="thanks" class="drafts"><div class="empty loading">Looking back…</div></div>
     ${notices(o)}
     <div class="statline">
       ${pc.confirmed ? `<button type="button" class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>` : ''}
@@ -1008,7 +1008,7 @@ async function loadCrew() {
     out.innerHTML = `<div class="empty">Say what the plan is and this will suggest who to ask.</div>`;
     return;
   }
-  out.innerHTML = `<div class="empty">Working out who'd be up for it…</div>`;
+  out.innerHTML = `<div class="empty loading">Working out who'd be up for it…</div>`;
   let crew;
   try {
     crew = await api(`/api/crew?activity=${encodeURIComponent(c.activity)}`
@@ -2322,16 +2322,16 @@ async function viewGraph() {
     <h2>Plans</h2>
     <div class="sub tight">Pulled out of message text, and the same plans the graph
       draws between people.</div>
-    <div id="plans-panel"><div class="empty">Loading plans…</div></div>
+    <div id="plans-panel"><div class="empty loading">Loading plans…</div></div>
     <h2>Get a crew together</h2>
     <div class="sub tight">For something that needs more than one person — a league, a trip, a
       standing game night. Say what it is and this picks who to ask, based on who talks about it,
       who's actually done it with you, and who already knows each other.</div>
-    <div id="crew-panel"><div class="empty">Loading…</div></div>
+    <div id="crew-panel"><div class="empty loading">Loading…</div></div>
     <h2>Who's connected</h2>
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
-    <div id="circles-panel"><div class="empty">Loading…</div></div>`;
+    <div id="circles-panel"><div class="empty loading">Loading…</div></div>`;
   // On a phone the key would cover half the graph, so it starts folded there.
   if (matchMedia('(max-width:760px)').matches) $('.gwrap .legend').open = false;
   // It is a switch now, so it has to answer the keyboard like one.

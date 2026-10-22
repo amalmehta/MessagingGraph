@@ -878,6 +878,13 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 
 /* ---------------------------------------------------------------- polish */
 
+/* 2. Something waiting looks like it is waiting, not like a finished sentence. */
+.empty.loading{display:flex;align-items:center;gap:9px;animation:breathe 1.6s ease-in-out infinite}
+.empty.loading::before{content:"";width:12px;height:12px;flex:none;border-radius:50%;
+  border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes breathe{50%{opacity:.55}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* 9. Insights: the busiest hour and day stand out, and the week sits in the
    same card as the day, under a hairline, because they are one question. */
 .whenbars i.peak{opacity:1}
