@@ -2308,7 +2308,7 @@ async function viewGraph() {
       <span class="hint" id="g-count">node size = importance · thicker line = more of it</span>
     </div>
     <div class="gwrap"><svg id="g"></svg>
-      <div class="legend"><b>plan state</b>
+      <details class="legend" open><summary>Key</summary><b>plan state</b>
         ${['scheduled', 'confirmed', 'proposed', 'floated', 'stale'].map(k =>
           `<span><i style="background:${STATE_COLOR[k]}"></i>${k}</span>`).join('')}
         <b class="gap">how a person is doing</b>
@@ -2318,7 +2318,7 @@ async function viewGraph() {
         <span><i class="ln solid"></i>just the two of you</span>
         <span><i class="ln dash"></i>a group chat you share</span>
         <span><i class="ln thin"></i>in this plan</span>
-      </div></div>
+      </details></div>
     <h2>Plans</h2>
     <div class="sub tight">Pulled out of message text, and the same plans the graph
       draws between people.</div>
@@ -2332,6 +2332,8 @@ async function viewGraph() {
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
     <div id="circles-panel"><div class="empty">Loading…</div></div>`;
+  // On a phone the key would cover half the graph, so it starts folded there.
+  if (matchMedia('(max-width:760px)').matches) $('.gwrap .legend').open = false;
   // It is a switch now, so it has to answer the keyboard like one.
   const stale = $('#t-stale');
   const flipStale = () => { S.includeStale = !S.includeStale; viewGraph(); };
