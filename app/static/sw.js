@@ -9,7 +9,9 @@
 // changes only when the app does. The data is about the people you talk to, so
 // it is kept apart and can be thrown away on its own, which is what unpairing
 // and "forget what's on this phone" do.
-const SHELL = 'mg-shell-v1';
+// The shell is answered from cache first, so bump this whenever app.js,
+// styles.css or index.html change, or a paired phone keeps the old look.
+const SHELL = 'mg-shell-v3';
 const DATA = 'mg-data-v1';
 const SHELL_FILES = [
   '/', '/static/app.js', '/static/styles.css', '/static/theme.js',
