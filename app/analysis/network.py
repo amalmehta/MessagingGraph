@@ -20,27 +20,65 @@ from ..models import Corpus, Plan, RelationshipProfile
 from ..names import looks_like_handle, short_name
 from .circles import activity_of
 
-INTERESTS: dict[str, tuple[re.Pattern[str], set[str]]] = {label: (re.compile(p, re.I), acts) for label, p, acts in [
-    ("climbing", r"\bclimb(?:ing)?\b|\bboulder(?:ing)?\b|\bcrag\b", {"climbing gym", "climbing"}),
-    ("hiking & outdoors", r"\bhik(?:e|es|ing)\b|\btrails?\b|\bcamping\b|\bbackpacking\b|\bpicnic\b|\bbeach\b",
+# What each interest sounds like, in words rather than in regex: the pattern is
+# built from them below, and the same words are what lets a message be ruled out
+# without running the pattern at all.
+WORDS: list[tuple[str, list[str], set[str]]] = [
+    ("climbing", ["climb", "climbing", "boulder", "bouldering", "crag"],
+     {"climbing gym", "climbing"}),
+    ("hiking & outdoors", ["hike", "hikes", "hiking", "trail", "trails", "camping",
+                           "backpacking", "picnic", "beach"],
      {"hike", "hiking", "camping", "picnic", "beach"}),
-    ("running", r"\brunning\b|\bmarathon\b|\b(?:5|10)k\b|\bmy run\b", {"run"}),
-    ("food", r"\bramen\b|\bsushi\b|\brestaurant\b|\bbrunch\b|\brecipe\b|\bcooking\b|\bbaking\b|"
-     r"\bfarmers market\b|\btacos?\b", {"ramen", "farmers market", "market"}),
-    ("music", r"\bconcert\b|\bgig\b|\balbum\b|\bplaylist\b|\bkaraoke\b|\bsetlist\b|\bthe fillmore\b",
+    ("running", ["running", "marathon", "5k", "10k", "my run"], {"run"}),
+    ("food", ["ramen", "sushi", "restaurant", "brunch", "recipe", "cooking", "baking",
+              "farmers market", "taco", "tacos"],
+     {"ramen", "farmers market", "market"}),
+    ("music", ["concert", "gig", "album", "playlist", "karaoke", "setlist", "the fillmore"],
      {"concert", "gig", "show", "karaoke"}),
-    ("film & tv", r"\bmovie\b|\bfilm\b|\bnetflix\b|\bepisode\b|\btrailer\b", {"movie", "film"}),
-    ("games", r"\bboard games?\b|\btrivia\b|\bchess\b|\bvideo games?\b|\bgame night\b|\bcatan\b",
+    ("film & tv", ["movie", "film", "netflix", "episode", "trailer"], {"movie", "film"}),
+    ("games", ["board game", "board games", "trivia", "chess", "video game", "video games",
+               "game night", "catan"],
      {"board game night", "board games", "game night", "trivia"}),
-    ("books", r"\bbook club\b|\bnovel\b|\bfinished (?:the|that) book\b", set()),
-    ("art & making", r"\bmuseum\b|\bgallery\b|\bpottery\b|\bceramics\b|\bpainting\b|\bexhibit\b",
+    ("books", ["book club", "novel", "finished the book", "finished that book"], set()),
+    ("art & making", ["museum", "gallery", "pottery", "ceramics", "painting", "exhibit"],
      {"museum", "pottery class", "pottery"}),
-    ("cycling", r"\bbike\b|\bcycling\b", {"bike ride"}),
-    ("coffee", r"\blatte\b|\bespresso\b|\bpour[- ]over\b|\bcoffee shop\b|\broaster\b", set()),
-    ("travel", r"\btrip\b|\bflight\b|\btravel(?:ing)?\b|\bvacation\b|\bcabin\b|\bpassport\b", {"trip", "cabin"}),
-    ("sports", r"\bsoccer\b|\bbasketball\b|\bfootball\b|\bbaseball\b|\btennis\b|\bgolf\b|\bpickleball\b", set()),
-    ("pets", r"\bdog\b|\bpuppy\b|\bthe cat\b|\bkitten\b", set()),
-]}
+    ("cycling", ["bike", "cycling"], {"bike ride"}),
+    ("coffee", ["latte", "espresso", "pour-over", "pour over", "coffee shop", "roaster"], set()),
+    ("travel", ["trip", "flight", "travel", "traveling", "vacation", "cabin", "passport"],
+     {"trip", "cabin"}),
+    ("sports", ["soccer", "basketball", "football", "baseball", "tennis", "golf", "pickleball"],
+     set()),
+    ("pets", ["dog", "puppy", "the cat", "kitten"], set()),
+]
+
+INTERESTS: dict[str, tuple[re.Pattern[str], set[str]]] = {
+    label: (re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\b", re.I), acts)
+    for label, words, acts in WORDS}
+
+TOKEN = re.compile(r"\w+")
+
+# "the cat" can only match a message containing "cat", so the word to look for is
+# "cat" and not "the" -- which is in nearly every message and would rule nothing out.
+COMMON = {"the", "that", "my", "a", "an", "of", "to"}
+
+
+def _lookfor(phrase: str) -> str:
+    """The one word of a phrase worth looking for: the longest that isn't filler."""
+    parts = TOKEN.findall(phrase.casefold())
+    return max([p for p in parts if p not in COMMON] or parts, key=len)
+
+
+# word -> the interests it could be evidence for. A pattern can only match text
+# containing its own words, so a message whose words appear here for no interest
+# cannot match any of them -- and 96 in 100 messages are about none of these
+# things. Running all fourteen patterns anyway cost a second and a half of every
+# page that asks who likes what; a dict lookup per word costs almost nothing.
+# Casefolding only ever adds matches, so this never skips a real one.
+BY_WORD: dict[str, set[str]] = {}
+for _label, _words, _ in WORDS:
+    for _w in _words:
+        BY_WORD.setdefault(_lookfor(_w), set()).add(_label)
+
 
 # First names that are also everyday words -- matching them would invent links.
 WORDISH = set("""will may june april august grace hope joy faith rose mark bill frank art pat max ray
@@ -61,6 +99,10 @@ def _join(items: list[str]) -> str:
 LANDED = {"done", "confirmed", "scheduled"}
 
 
+_INTEREST_CACHE: dict[tuple, dict[str, dict[str, int]]] = {}
+_INTEREST_MAX = 4
+
+
 def interests(corpus: Corpus, plans: list[Plan]) -> dict[str, dict[str, int]]:
     """contact id -> {interest: evidence}, keeping only what's distinctive for that person.
 
@@ -69,16 +111,28 @@ def interests(corpus: Corpus, plans: list[Plan]) -> dict[str, dict[str, int]]:
     this person against your other contacts: with enough history everyone you make
     plans with "likes food", which tells you nothing about who'd get along.
     """
+    last = corpus.messages[-1] if corpus.messages else None
+    key = (corpus.source_name, len(corpus.messages), last.id if last else "",
+           len(corpus.contacts), len(plans))
+    got = _INTEREST_CACHE.get(key)
+    if got is not None:
+        return got
     scores: dict[str, Counter] = defaultdict(Counter)
     for cid in corpus.contacts:
         t = corpus.direct_thread(cid)
         if not t:
             continue
         for m in corpus.messages_in(t.id):
-            if m.text:
-                for label, (pat, _) in INTERESTS.items():
-                    if pat.search(m.text):
-                        scores[cid][label] += 1
+            if not m.text:
+                continue
+            maybe: set[str] = set()
+            for w in TOKEN.findall(m.text.casefold()):
+                got = BY_WORD.get(w)
+                if got:
+                    maybe |= got
+            for label in maybe:
+                if INTERESTS[label][0].search(m.text):
+                    scores[cid][label] += 1
     for p in plans:
         if p.state not in LANDED:
             continue
@@ -104,6 +158,9 @@ def interests(corpus: Corpus, plans: list[Plan]) -> dict[str, dict[str, int]]:
         ranked.sort(reverse=True)
         if ranked:
             out[cid] = {label: count for _, count, label in ranked[:3]}
+    if len(_INTEREST_CACHE) >= _INTEREST_MAX:
+        _INTEREST_CACHE.pop(next(iter(_INTEREST_CACHE)))
+    _INTEREST_CACHE[key] = out
     return out
 
 

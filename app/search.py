@@ -58,7 +58,13 @@ MAX_PER_KIND = 6
 def fold(text: str) -> str:
     """Lowercase, with accents taken off, so "Café" in a message and "cafe" in
     a question are the same word. Both sides go through this: folding only the
-    question turned "café" into "cafe" and then looked for it in "café"."""
+    question turned "café" into "cafe" and then looked for it in "café".
+
+    Nearly every message is plain ASCII, where there are no accents to take off
+    and lowercasing is the whole job. Checking for that first is what makes
+    folding a whole history cheap enough to do at all."""
+    if text.isascii():
+        return text.lower()
     flat = unicodedata.normalize("NFKD", text.lower())
     return "".join(c for c in flat if not unicodedata.combining(c))
 
@@ -115,6 +121,40 @@ class Answer:
                          for h in self.hits]}
 
 
+@dataclass
+class _Index:
+    """What every query needs and none of them should have to work out again.
+
+    Folding fourteen thousand messages and counting their words took 159ms of
+    a 335ms search, and it was done from scratch on every single query even
+    though the answer only changes when you import. Built once per corpus and
+    kept: the second search is the one that shows what this costs.
+    """
+    folded: list[str]                 # every message, lowercased and unaccented
+    doc_count: Counter                # word -> how many messages contain it
+    total: int
+
+
+def index_for(corpus: Corpus) -> _Index:
+    """The index for this corpus, built on first use and kept on it -- the same
+    way the corpus keeps its messages grouped by thread, and for the same reason.
+    Keeping it in a dictionary here instead would mean a key, and two corpora
+    that differ only in who is excluded can agree on anything cheap enough to
+    use as one."""
+    got = getattr(corpus, "_search_index", None)
+    if got is not None and len(got.folded) == len(corpus.messages):
+        return got
+    folded, counts = [], Counter()
+    for m in corpus.messages:
+        low = fold(m.text) if m.text else ""
+        folded.append(low)
+        if low:
+            counts.update(set(WORD.findall(low)))
+    idx = _Index(folded, counts, max(1, len(corpus.messages)))
+    corpus._search_index = idx
+    return idx
+
+
 def _weights(corpus: Corpus, words: list[str]) -> dict[str, float]:
     """How much each word narrows things down, measured against this history.
 
@@ -122,17 +162,16 @@ def _weights(corpus: Corpus, words: list[str]) -> dict[str, float]:
     than one in half of them, and that is the whole reason "coachella" beats
     "going" without anyone having to say so.
     """
-    counts = Counter()
-    for m in corpus.messages:
-        if not m.text:
-            continue
-        low = fold(m.text)
-        seen = set(WORD.findall(low))
-        for w in words:
-            if w in seen or (UNSPACED.search(w) and w in low):
-                counts[w] += 1
-    total = max(1, len(corpus.messages))
-    return {w: math.log(1 + total / (1 + counts[w])) for w in words}
+    idx = index_for(corpus)
+    counts = {}
+    for w in words:
+        n = idx.doc_count.get(w, 0)
+        if not n and UNSPACED.search(w):
+            # No spaces between words in this script, so the word lives inside
+            # a run of text rather than between boundaries.
+            n = sum(1 for low in idx.folded if w in low)
+        counts[w] = n
+    return {w: math.log(1 + idx.total / (1 + counts[w])) for w in words}
 
 
 @lru_cache(maxsize=4096)
@@ -147,7 +186,7 @@ def _word_in(word: str, low: str) -> bool:
 
 
 def _matches(text: str, words: list[str], weight: dict[str, float],
-             pivot: str = "") -> float:
+             pivot: str = "", low: str | None = None) -> float:
     """How well a piece of text answers the question.
 
     Weighted by rarity, then by how much of the question it covers, and then by
@@ -156,11 +195,17 @@ def _matches(text: str, words: list[str], weight: dict[str, float],
     "Tentative dates June 1 - June 8" from an unrelated thread: it matched the
     common word and missed the rare one, and a date bonus carried it to the top.
     A miss on the pivot is not a weaker answer, it is a different subject.
+
+    `low` is the already-folded text, for callers that have it to hand. Folding
+    every message again on every query was most of what made search slow.
     """
-    if not text:
+    if low is None:
+        low = fold(text) if text else ""
+    if not low:
         return 0.0
-    low = fold(text)
-    hit = [w for w in words if _word_in(w, low)]
+    # `in` before the regex: a plain substring test is far cheaper, and a word
+    # that is not in the text at all cannot match on a boundary either.
+    hit = [w for w in words if w in low and _word_in(w, low)]
     if not hit:
         return 0.0
     coverage = len(hit) / len(words)
@@ -234,10 +279,11 @@ def search(corpus: Corpus, plans: list[Plan], profiles: list[RelationshipProfile
                             f"{len(t.participant_ids)} people", "", t.id, t.name))
 
     # And the messages the words actually came from, newest first among equals.
+    folded = index_for(corpus).folded
     oldest = min((m.ts for m in corpus.messages), default=now)
     span = max(1.0, (now - oldest).total_seconds())
-    for m in corpus.messages:
-        s = _matches(m.text, words, weight, pivot)
+    for i, m in enumerate(corpus.messages):
+        s = _matches(m.text, words, weight, pivot, low=folded[i])
         if s <= 0:
             continue
         # Recent messages are usually the ones being asked about.
@@ -247,7 +293,7 @@ def search(corpus: Corpus, plans: list[Plan], profiles: list[RelationshipProfile
         said_when = ""
         if out.asked_when:
             found = DATEISH.search(m.text)
-            if found and (not pivot or _word_in(pivot, fold(m.text))):
+            if found and (not pivot or _word_in(pivot, folded[i])):
                 said_when = found.group(0)
                 s *= 2.4
         thread = corpus.threads.get(m.thread_id)
