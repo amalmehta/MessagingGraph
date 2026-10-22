@@ -101,7 +101,7 @@ body{margin:0;background:var(--bg);color:var(--ink);
 /* sidebar */
 aside{background:var(--sidebar);border-right:1px solid var(--line);padding:18px 14px;
   display:flex;flex-direction:column;gap:4px}
-.brand{font-weight:650;letter-spacing:-.2px;margin-bottom:2px}
+.brand{font-weight:650;letter-spacing:-.2px;margin-bottom:2px;display:flex;align-items:flex-start;gap:9px}
 .brand small{display:block;color:var(--faint);font-weight:400;font-size:11px;
   letter-spacing:.3px;text-transform:uppercase;margin-top:3px}
 nav{margin-top:18px;display:flex;flex-direction:column;gap:2px}
@@ -239,11 +239,11 @@ svg.drag{cursor:grabbing}
 /* drawer */
 .scrim{position:fixed;inset:0;background:var(--scrim);opacity:0;pointer-events:none;
   transition:opacity .18s;z-index:9}
-.scrim.on{opacity:1;pointer-events:auto}
+.scrim.on{opacity:1;pointer-events:auto;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);background:var(--panel);
   border-left:1px solid var(--line);transform:translateX(100%);transition:transform .22s
   cubic-bezier(.4,0,.2,1);z-index:10;overflow-y:auto;padding:24px 26px 50px}
-.drawer.on{transform:none}
+.drawer.on{transform:none;box-shadow:-12px 0 40px var(--shadow)}
 .drawer h3{margin:0 34px 0 0;font-size:18px;letter-spacing:-.3px;
   display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .drawer .close{all:unset;position:absolute;top:14px;right:16px;cursor:pointer;
@@ -324,7 +324,8 @@ pre{background:var(--panel2);border:1px solid var(--line);border-radius:10px;pad
 .rowmenu button:hover,.rowmenu button:focus-visible{background:var(--wash-accent);color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:70;
   background:var(--panel);border:1px solid var(--line-strong);border-radius:9px;
-  padding:9px 15px;font-size:13px;color:var(--ink);box-shadow:0 8px 24px var(--shadow)}
+  padding:9px 15px;font-size:13px;color:var(--ink);box-shadow:0 8px 24px var(--shadow);
+  animation:toastin .2s ease-out,toastout .25s ease-in 2.95s forwards}
 
 .banner{background:var(--wash-adds-soft);border:1px solid var(--edge-adds);border-radius:10px;
   padding:12px 15px;font-size:12.5px;color:var(--dim);margin-bottom:18px}
@@ -419,7 +420,8 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
   border-color:var(--edge-accent)}
 .dact{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:auto}
 .btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:7px;
-  padding:5px 11px;font:12.5px system-ui,sans-serif;cursor:pointer}
+  padding:5px 11px;font:12.5px system-ui,sans-serif;cursor:pointer;
+  transition:border-color .12s,background .12s}
 .btn:hover{border-color:var(--line-strong)}
 .btn:disabled{opacity:.5;cursor:default}
 .btn.primary{background:var(--wash-accent);border-color:var(--edge-accent);color:var(--accent)}
@@ -630,7 +632,7 @@ tbody tr[hidden]{display:none}
 .card,.draft,.circle,.interest,.intro,.pcol,.nameme,.filt,button.stat{transition:border-color .15s ease}
 .card:hover,.draft:hover,.circle:hover,.interest:hover,.intro:hover,.pcol:hover,.nameme:hover,.filt:hover,
 button.stat:hover{border-color:var(--hover-edge)}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 
 /* a thank-you for one person */
 .thankbox{margin:12px 0 4px}
@@ -680,7 +682,7 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
   nav button{flex:1 1 0;min-width:0;flex-direction:column;justify-content:center;gap:1px;
     padding:7px 2px 5px;font-size:11px;text-align:center;border-radius:9px}
   nav button.on{box-shadow:inset 0 2px 0 var(--accent)}
-  nav button .c{font-size:10px}
+  nav button .c,#app nav button.on .c{font-size:10px;background:none;padding:0}
 
   /* One line above the tabs, so nothing the sidebar offered is lost on a phone
      -- just flattened. The date span goes; the Now page opens by saying it. */
@@ -878,12 +880,43 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 
 /* ---------------------------------------------------------------- polish */
 
+/* 1. The mark from the app icon, beside the name, so the sidebar says what this
+   is the way the Dock does. Drawn with the palette, so it follows the theme. */
+.brand>span{min-width:0}
+.brand .mark{width:22px;height:22px;flex:none;margin-top:1px}
+.brand .mark path{fill:none;stroke:var(--line-strong);stroke-width:1.4}
+.brand .mark .m1{fill:var(--accent)} .brand .mark .m2{fill:var(--stale)}
+.brand .mark .m3{fill:var(--adds)}
+
 /* 2. Something waiting looks like it is waiting, not like a finished sentence. */
 .empty.loading{display:flex;align-items:center;gap:9px;animation:breathe 1.6s ease-in-out infinite}
 .empty.loading::before{content:"";width:12px;height:12px;flex:none;border-radius:50%;
   border:2px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
 @keyframes breathe{50%{opacity:.55}}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* 3. A new view settles in rather than snapping. */
+main>*{animation:rise .22s ease-out both}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}
+
+/* 4. A notice and the chart under it were touching edges on People. */
+.notice+.chartbox,.notice+.cards,.notice+.drafts{margin-top:14px}
+
+/* 5. Scrollbars in the palette, thin, instead of the system's grey slab. */
+html,main,.drawer,.tablewrap,pre,.nm-recent{scrollbar-width:thin;
+  scrollbar-color:var(--line-strong) transparent}
+
+/* 6. The open tab's count reads as a badge on that tab. */
+nav button .c:empty{display:none}
+nav button.on .c{background:var(--wash-accent);color:var(--accent);border-radius:10px;
+  padding:1px 7px}
+
+/* 7. Toasts arrive and leave instead of blinking in and out (3.2s in app.js). */
+@keyframes toastin{from{opacity:0;transform:translate(-50%,8px)}}
+@keyframes toastout{to{opacity:0;transform:translate(-50%,8px)}}
+
+/* 8. The page behind an open profile softens, and the drawer lifts off it
+   (on .scrim.on and .drawer.on, with the drawer's other rules). */
 
 /* 9. Insights: the busiest hour and day stand out, and the week sits in the
    same card as the day, under a hairline, because they are one question. */
@@ -896,3 +929,7 @@ code{font:12.5px var(--mono);background:var(--panel2);border:1px solid var(--lin
 .daybar b{opacity:.6}
 .daybar.peak b{opacity:1}
 .daybar.peak .dl,.daybar.peak .dv{color:var(--ink);font-weight:600}
+
+/* 10. Tiles you can press answer the press. */
+button.stat:active,.topp:active,.hit:active,.card:active{transform:scale(.995)}
+.btn.primary:hover{background:var(--wash-accent-strong)}
