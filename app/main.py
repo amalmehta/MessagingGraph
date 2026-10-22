@@ -22,13 +22,15 @@ from .analysis.circles import activity_of, connections, plans_overview
 from .analysis.crews import build_crew, suggest_activities
 from .analysis.gratitude import build_gratitude
 from .analysis.messages import build_messages, topic_lines
+from .analysis.milestones import LABEL as MILESTONE_LABEL, upcoming
 from .analysis.network import enrich, interests
 from .analysis.plans import OPEN_STATES
 from .analysis.proposals import propose
 from .analysis.series import contact_series, overall_series, sparkline_points
 from .analysis.suggestions import build as build_suggestions
-from .analysis.voice import style_for
+from .analysis.voice import milestone_options, milestone_parts, style_for, write
 from .graph import build_graph
+from .names import greeting_name, short_name
 from .net import reachable_at
 from .overrides import HIDE_DAYS, THEMES, clean_name, clean_place, is_unnamed
 from .pairing import PairingStore
@@ -473,6 +475,60 @@ def person_gratitude(cid: str, seed: int = 0):
                 "reason": None if drafts else
                 "Nothing specific to thank them for yet, and there isn't a long enough history "
                 "for a general thank-you. Anything you write yourself will mean more anyway."})
+
+
+class MilestonePatch(BaseModel):
+    action: str                     # confirm | dismiss | undo
+
+
+def _when_words(days: int) -> str:
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "tomorrow"
+    return f"in {days} days"
+
+
+@app.get("/api/milestones")
+def milestones(days: int = 30, redraft: str | None = None, seed: int = 0):
+    """Birthdays and anniversaries coming up, each with a wish in your own voice.
+
+    Read off the wall clock rather than the newest message: a birthday comes round
+    on the calendar whether or not anyone has texted since the import. Nothing
+    you've dismissed comes back, and nothing is sent.
+    """
+    today = datetime.now().date()
+    items = [i for i in state.milestones if i["contact_id"] in state.corpus.contacts]
+    out = []
+    for i in upcoming(items, state.milestone_store.verdicts(), today, max(1, min(days, 366))):
+        name = state.corpus.contacts[i["contact_id"]].name
+        style = style_for(state.corpus, state.now, i["contact_id"])
+        variants = milestone_options(i["kind"])
+        offset = sum(map(ord, i["id"]))
+        step = seed if redraft == i["id"] else 0
+        thread = state.corpus.direct_thread(i["contact_id"])
+        when = _when_words(i["days_until"])
+        out.append({
+            **i, "who": name, "label": MILESTONE_LABEL[i["kind"]],
+            "headline": f"{short_name(name)}'s {MILESTONE_LABEL[i['kind']]} is {when}",
+            "draft": write(milestone_parts(style, greeting_name(name), i["kind"], offset + step),
+                           style, warm=True),
+            "seed": step, "options": variants, "thread_id": thread.id if thread else None,
+        })
+    return enc(out)
+
+
+@app.post("/api/milestones/{mid}")
+def decide_milestone(mid: str, patch: MilestonePatch):
+    """Confirm a date, dismiss it for good, or take back either. Saved with your
+    other corrections (encrypted, for imported data)."""
+    if not any(i["id"] == mid for i in state.milestones):
+        raise HTTPException(404, "No such date.")
+    status = {"confirm": "confirmed", "dismiss": "dismissed", "undo": None}
+    if patch.action not in status:
+        raise HTTPException(400, "Say confirm, dismiss or undo.")
+    state.milestone_store.decide(mid, status[patch.action])
+    return {"ok": True, "status": status[patch.action] or "detected"}
 
 
 @app.get("/api/graph")

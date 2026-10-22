@@ -764,6 +764,10 @@ function viewNow() {
     ${demoBanner(o)}
     <div class="voicenote" id="voice-note"></div>
     <div id="drafts" class="drafts"><div class="empty loading">Drafting…</div></div>
+    <h2>Coming up</h2>
+    <div class="sub tight">Birthdays and anniversaries in the next 30 days, worked out from
+      what people said and when. Tell it when it's wrong and that one won't come back.</div>
+    <div id="milestones" class="drafts"><div class="empty loading">Checking the calendar…</div></div>
     <h2>Say thanks</h2>
     <div class="sub tight">Tied to something that actually happened — a favour, a year of
       texting, something you did together.</div>
@@ -785,6 +789,7 @@ function viewNow() {
   wireJumps();
   drawDrafts().catch(() => { const b = $('#drafts'); if (b) b.innerHTML = COULDNT('drafts'); });
   drawThanks().catch(() => { const b = $('#thanks'); if (b) b.innerHTML = COULDNT('thank-yous'); });
+  drawMilestones().catch(() => { const b = $('#milestones'); if (b) b.innerHTML = COULDNT('dates'); });
 }
 
 // The three plan counts live on Now but the plans themselves are on the
@@ -892,6 +897,103 @@ async function drawThanks() {
   }
   box.innerHTML = shown.map(d => draftCard(d, '/api/gratitude')).join('');
   box.querySelectorAll('.draft').forEach(wireDraft);
+}
+
+// ---------------------------------------------------------------- birthdays
+// How sure, in words first: a percentage alone reads as more precise than a
+// guess from a "happy birthday" in a group chat deserves.
+function sureWords(m) {
+  if (m.status === 'confirmed') return 'you confirmed this';
+  const pct = Math.round(m.confidence * 100);
+  const word = m.confidence >= 0.85 ? 'very likely' : m.confidence >= 0.6 ? 'likely' : 'a guess';
+  return `${word} (${pct}%)${m.years.length > 1 ? ` · seen ${m.years.length} years running` : ''}`;
+}
+
+async function drawMilestones() {
+  const box = $('#milestones');
+  if (!box) return;
+  const all = await api('/api/milestones?days=30');
+  S.milestones = Object.fromEntries(all.map(m => [m.id, m]));
+  S.milestoneSeeds = S.milestoneSeeds || {};
+  if (!all.length) {
+    box.innerHTML = `<div class="empty">Nothing in the next 30 days that your messages point to.</div>`;
+    return;
+  }
+  box.innerHTML = all.map(milestoneCard).join('');
+  box.querySelectorAll('.draft').forEach(wireMilestone);
+}
+
+function milestoneCard(m) {
+  const day = new Date(m.date + 'T12:00:00').toLocaleDateString(undefined,
+    { weekday: 'short', month: 'short', day: 'numeric' });
+  const from = m.source.sender === 'You' ? 'You' : esc(m.source.sender);
+  const where = m.source.group ? ` in ${esc(m.source.thread)}` : '';
+  return `<div class="draft milestone" data-id="${esc(m.id)}">
+    <div class="dtop">
+      <span class="dwho link" data-person="${esc(m.contact_id)}">${avatar(m.who)}<span class="who">${esc(m.who)}</span></span>
+      <span class="kind">${esc(m.label)} · ${esc(day)}</span></div>
+    <textarea class="dtext" rows="2" aria-label="Message to ${esc(m.who)}">${esc(m.draft)}</textarea>
+    <div class="why">${esc(m.headline)}. ${esc(m.why)} <span class="sure">${esc(sureWords(m))}</span></div>
+    <div class="detail">${from}${where}, ${esc(new Date(m.source.ts).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric', year: 'numeric' }))}: “${esc(m.source.text)}”</div>
+    <div class="dact">
+      <button type="button" class="btn primary copy">Copy</button>
+      ${m.options > 1 ? '<button type="button" class="btn another">Another version</button>' : ''}
+      ${m.status === 'confirmed' ? '' : '<button type="button" class="btn confirm">That\'s right</button>'}
+      <button type="button" class="btn ghost dismiss">Wrong date</button>
+      <span class="dnote" role="status"></span>
+    </div></div>`;
+}
+
+function wireMilestone(card) {
+  const id = card.dataset.id, ta = card.querySelector('.dtext'), note = card.querySelector('.dnote');
+  fitText(ta);
+  const who = card.querySelector('.dwho[data-person]');
+  if (who) who.onclick = () => openPerson(who.dataset.person);
+  card.querySelector('.copy').onclick = () => copyInto(ta, note);
+  const decide = async (action) => {
+    const r = await postJSON('/api/milestones/' + encodeURIComponent(id), { action });
+    if (!r.ok) { note.textContent = r.error; return null; }
+    return r.data;
+  };
+  const confirm = card.querySelector('.confirm');
+  if (confirm) confirm.onclick = async () => {
+    confirm.disabled = true;
+    if (!await decide('confirm')) { confirm.disabled = false; return; }
+    S.milestones[id].status = 'confirmed';
+    card.querySelector('.sure').textContent = sureWords(S.milestones[id]);
+    confirm.remove();
+    say(`${S.milestones[id].who}'s ${S.milestones[id].label} saved`);
+  };
+  card.querySelector('.dismiss').onclick = async () => {
+    if (!await decide('dismiss')) return;
+    const host = card.parentElement, m = S.milestones[id];
+    card.remove();
+    toast(`Won't suggest ${m.who}'s ${m.label} on that date again`);
+    if (host && !host.querySelector('.draft')) host.innerHTML = `<div class="empty">Nothing else coming up.</div>`;
+  };
+  const another = card.querySelector('.another');
+  if (another) another.onclick = async () => {
+    const m = S.milestones[id];
+    S.milestoneSeeds[id] = ((S.milestoneSeeds[id] || 0) + 1) % m.options;
+    another.disabled = true;
+    let list;
+    try {
+      list = await api(`/api/milestones?days=30&redraft=${encodeURIComponent(id)}&seed=${S.milestoneSeeds[id]}`);
+    } catch {
+      note.textContent = "Couldn't get another version. Try again.";
+      return;
+    } finally {
+      another.disabled = false;
+    }
+    const fresh = list.find(x => x.id === id);
+    if (!fresh) return;
+    S.milestones[id] = fresh;
+    const next = document.createElement('div');
+    next.innerHTML = milestoneCard(fresh);
+    card.replaceWith(next.firstElementChild);
+    wireMilestone($(`.milestone[data-id="${CSS.escape(id)}"]`));
+  };
 }
 
 function draftCard(d, src = '/api/messages') {

@@ -482,3 +482,30 @@ def thanks_parts(style: Style, name: str | None, kind: str, seed: int, what: str
     else:
         options = [[("say", "no reason, just grateful you're in my life")], [("say", "random but I really appreciate you")]]
     return [greet(style, name)] + options[seed % len(options)]
+
+
+WISHES = {"birthday": "happy birthday", "anniversary": "happy anniversary",
+          "work_anniversary": "happy work anniversary"}
+
+
+def milestone_options(kind: str) -> int:
+    return len(_MILESTONE[kind])
+
+
+_MILESTONE = {
+    "birthday": [[("say", "hope it's a great one")],
+                 [("say", "hope you get spoiled today")],
+                 [("ask", "doing anything fun"), ("say", "hope this year's a good one")]],
+    # Neutral on purpose: an anniversary in a one-to-one thread may well be ours.
+    "anniversary": [[("say", "hope it's a lovely day")],
+                    [("say", "wishing you the best today")]],
+    "work_anniversary": [[("say", "congrats on another year")],
+                         [("say", "another year in, congrats")]],
+}
+
+
+def milestone_parts(style: Style, name: str | None, kind: str, seed: int) -> list[tuple[str, str]]:
+    """The wish is the greeting: "happy birthday Priya!" rather than "hey Priya"."""
+    wish = WISHES[kind]
+    options = _MILESTONE[kind]
+    return [("greet", f"{wish} {name}" if name else wish)] + options[seed % len(options)]

@@ -11,7 +11,7 @@
 // and "forget what's on this phone" do.
 // The shell is answered from cache first, so bump this whenever app.js,
 // styles.css or index.html change, or a paired phone keeps the old look.
-const SHELL = 'mg-shell-v3';
+const SHELL = 'mg-shell-v4';
 const DATA = 'mg-data-v1';
 const SHELL_FILES = [
   '/', '/static/app.js', '/static/styles.css', '/static/theme.js',

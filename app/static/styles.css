@@ -411,6 +411,8 @@ button.stat:focus-visible,.btn:focus-visible,.pr:focus-visible{outline:2px solid
    competing with the thing you actually came to send. */
 .draft .why{color:var(--dim);font-size:13px;line-height:1.55}
 .draft .detail{color:var(--faint);font-size:12px;border-left:2px solid var(--line);padding-left:9px;line-height:1.5}
+/* How sure a birthday reading is, kept quieter than the reason it follows. */
+.milestone .sure{color:var(--faint);font-size:12px;white-space:nowrap}
 /* The message is the point of the card, so it is the biggest thing on it and
    shaped like something you would send rather than a form field. */
 .dtext{width:100%;box-sizing:border-box;resize:vertical;min-height:46px;overflow:hidden;
