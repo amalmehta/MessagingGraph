@@ -19,6 +19,12 @@ What a real store needs that the synthetic corpus never did:
   never written to, and messages you unsent.
 * **Identifiers.** Contact, thread and message ids are keyed HMACs, so no phone
   number or email appears in an id, a URL or a log line.
+
+The schema is Apple's, undocumented, and changes between macOS versions without
+notice. What this reader relies on, and what it copes without, is laid out in
+`REQUIRED` and the optional columns below, and the variations it has been tested
+against are in docs/SYSTEM-DESIGN.md. A store missing something required stops
+the import with a sentence naming it, rather than importing half a history.
 """
 from __future__ import annotations
 
@@ -36,9 +42,24 @@ from .base import SourceUnavailable
 from ..names import group_label
 from .contacts import AB_ROOT, canonical, is_machine_sender, load_people, snapshot
 
-DB_PATH = os.path.expanduser("~/Library/Messages/chat.db")
+# MG_CHATDB points a test build at a fixture instead of anyone's real messages.
+DB_PATH = os.environ.get("MG_CHATDB") or os.path.expanduser("~/Library/Messages/chat.db")
 APPLE_EPOCH_UNIX = 978307200
 GROUP_STYLE = 43
+
+# What the reader cannot do without. Everything else in the message table
+# (attributedBody, tapback columns, date_retracted, item_type, ...) is optional:
+# older and newer versions of macOS have or lack them, and each has a default.
+REQUIRED = {
+    "message": {"guid", "text", "handle_id", "date", "is_from_me"},
+    "handle": {"id"},
+    "chat": {"guid", "style", "display_name"},
+    "chat_handle_join": {"chat_id", "handle_id"},
+    "chat_message_join": {"chat_id", "message_id"},
+}
+# Before macOS High Sierra `date` counted seconds; since, nanoseconds. Anything
+# under this is a seconds-era value (in nanoseconds it would be early 2001).
+SECONDS_ERA = 100_000_000_000
 
 TAPBACKS = {0: "love", 1: "like", 2: "dislike", 3: "laugh",
             4: "emphasize", 5: "question", 6: "emoji", 7: "sticker"}
@@ -162,7 +183,25 @@ class IMessageSource:
         finally:
             db.close()
 
+    @staticmethod
+    def check_schema(db) -> list[str]:
+        """What this store lacks that the reader needs, as `table.column` names."""
+        missing = []
+        for table, cols in REQUIRED.items():
+            have = {r[1] for r in db.execute(f"PRAGMA table_info({table})")}
+            if not have:
+                missing.append(table)
+            else:
+                missing += [f"{table}.{c}" for c in sorted(cols - have)]
+        return missing
+
     def _build(self, db, rep: ImportReport) -> Corpus:
+        missing = self.check_schema(db)
+        if missing:
+            raise SourceUnavailable(
+                "This version of Messages keeps its history in a shape Messaging Graph "
+                f"doesn't know yet (no {', '.join(missing[:4])}). Nothing was imported; "
+                "an update to the app will be needed.")
         mcols = {r[1] for r in db.execute("PRAGMA table_info(message)")}
         # Column names are checked bare: PRAGMA reports "attributedBody", not
         # "m.attributedBody". Getting this wrong silently defaults every optional
@@ -197,7 +236,8 @@ class IMessageSource:
                    {opt('m.date_retracted', '0')}, {opt('m.cache_has_attachments', '0')},
                    cmj.chat_id
             FROM message m JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
-            WHERE m.date >= ? ORDER BY m.date, m.ROWID""", (cutoff,)).fetchall()
+            WHERE m.date >= ? OR (m.date < {SECONDS_ERA} AND m.date >= ?)
+            ORDER BY m.date, m.ROWID""", (cutoff, cutoff // 1_000_000_000)).fetchall()
         rep.rows_read = len(rows)
 
         # Pass 1: how much has the user written into each chat? An unknown number

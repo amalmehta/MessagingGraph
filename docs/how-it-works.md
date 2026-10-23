@@ -6,8 +6,9 @@ A local-first app that reads a message store, maps the plans you have in flight,
 builds a profile of each relationship, and suggests small, concrete things you
 could do about any of it.
 
-Everything runs on your machine. Pass 1 makes **zero network calls**, and the only
-route to the network is a consent gate that refuses by default.
+Everything runs on your machine. The analysis makes **zero network calls**, and the only
+route to the network is a consent gate that refuses message content by default. Two
+calls carry none and pass the same gate: the licence check and a weekly update check.
 
 ```bash
 ./run.sh          # http://127.0.0.1:8077
@@ -149,7 +150,9 @@ detect, a date that quietly never got set is not.
 ## Privacy, concretely
 
 - **Local only** is on by default; while it is on, `NetworkGate.authorize` raises
-  for any purpose.
+  for any purpose that carries message content.
+- The licence and update checks go through `NetworkGate.authorize_service`, which pins
+  each to one address and a few short named fields, so message text has nowhere to go.
 - Consent is **per purpose**. Granting `draft` does not grant `tone`.
 - Callers must send the string the gate *returns*, not their own payload, so
   redaction cannot be skipped by accident.
@@ -200,7 +203,7 @@ server restarts, so set exclusions again on the Privacy page after a restart.
 | Message text and group names are written by other people | Escaped everywhere they render, backed by a Content-Security-Policy that forbids inline script, so a missed spot still can't run anything. |
 | Leaks through side channels | Request logging off (URLs carry search terms), no API docs endpoint, and every id is a keyed hash — no phone number or email appears in a URL. |
 | Sensitive senders | Short codes, business chats and numbers you've never replied to are dropped at import. Messages you unsent stay unsent. |
-| Data leaving the machine | Local-only by default, enforced by the network gate. |
+| Data leaving the machine | Local-only by default, enforced by the network gate. The licence and update checks are pinned by the same gate to one address and a few short fields each. |
 
 **What this doesn't protect against:** malware already running as you (it can
 read the Keychain just as this app does), or someone with your unlocked Mac.

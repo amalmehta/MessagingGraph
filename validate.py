@@ -26,6 +26,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from statistics import correlation
 
+# Everything the app writes for itself -- the licence file, the refresh status, a
+# vault opened without naming a folder, even its Keychain item's name -- goes to a
+# scratch folder for this run, never to the copy you actually use.
+os.environ.setdefault("MG_HOME", tempfile.mkdtemp(prefix="mg-home-"))
+
 from app.analysis.plans import extract_plans, follow_through, open_plan_counts
 from app.analysis.relationships import profile_all
 from app.ingest.synthetic import PERSONAS, WEEKS, SyntheticSource
@@ -2818,6 +2823,18 @@ def main() -> int:
     stray_js = set(re.findall(r"#[0-9a-fA-F]{6}\b", js))
     check("styles.css and app.js write no colour outside the palette",
           not stray_css and not stray_js, ", ".join(sorted(stray_css | stray_js)))
+
+    print("\nimporting chat.db as other versions of macOS shaped it:")
+    from tests import ingest_checks
+    ingest_checks.run(check)
+
+    print("\nthe trial, the licence, and the only two calls that go online:")
+    from tests import licence_checks
+    licence_checks.run(check)
+
+    print("\nwhat a customer's Mac meets: the bundle, the first run, the site:")
+    from tests import shipping_checks
+    shipping_checks.run(check)
 
     print()
     if FAILS:

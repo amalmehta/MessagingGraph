@@ -31,6 +31,10 @@ from .analysis.suggestions import build as build_suggestions
 from .analysis.voice import milestone_options, milestone_parts, style_for, write
 from .graph import build_graph
 from .names import greeting_name, short_name
+from . import product
+from . import updates as updating
+from .appdata import AppData
+from .licence import Licence, LicenceError
 from .net import reachable_at
 from .overrides import HIDE_DAYS, THEMES, clean_name, clean_place, is_unnamed
 from .pairing import PairingStore
@@ -65,6 +69,41 @@ pairing = pairing_store.load()
 guard = Guard(PORT, lan_hosts=LAN_HOSTS, device_for=lambda t: pairing.device_for(t))
 guard.install(app)
 state = AppState(os.environ.get("MG_SOURCE", "synthetic"))
+# The licence and update checks share the state's gate, so they land in the same
+# audit log as anything else that ever tries to leave. The update switch is the
+# one privacy setting that survives a restart, because it lives with the licence.
+appdata = AppData()
+licence = Licence(appdata, gate=state.gate)
+state.settings.update_checks = bool(appdata.load().get("update_checks", True))
+
+# What leaves this Mac besides nothing, said in the Privacy screen in these words.
+NETWORK_USES = [
+    {"purpose": "licence", "to": product.LICENCE_API.split("/")[2],
+     "sends": "your licence key, this Mac's activation id and a random name made up here",
+     "when": "when you activate or move a licence, then once a week while licensed. "
+             "The trial makes no calls."},
+    {"purpose": "updates", "to": product.UPDATE_URL.split("/")[2],
+     "sends": "nothing: a plain request for one file saying what the newest version is",
+     "when": f"at most once every {product.UPDATE_EVERY_DAYS} days, and never while switched off"},
+]
+
+
+def start_background_checks() -> None:
+    """Re-check a licence that is due, and look for an update. Called when the app
+    is actually serving (`mg serve`, the Mac app), never on import, so tests and
+    tools that load this module make no calls."""
+    import threading
+
+    def work():
+        try:
+            licence.validate()
+        except Exception:
+            pass                # the grace period covers a check that couldn't happen
+        try:
+            updating.check(appdata, gate=state.gate)
+        except Exception:
+            pass
+    threading.Thread(target=work, daemon=True).start()
 
 
 def enc(obj):
@@ -101,6 +140,8 @@ def overview(request: Request):
         "locations": {"unknown": sum(1 for a in location_asks(1000) if not a["suggestion"]),
                       "to_confirm": sum(1 for a in location_asks(1000) if a["suggestion"])},
         "privacy": state.settings.to_dict(),
+        # Local: the licence file and the clock. Never a network call.
+        "licence": licence.status().to_dict(),
         # Serving on the LAN is a different thing from the local-only switch, which
         # is about calls going out. Both belong in the footer, or it says "no
         # network" while a phone is reading over the Wi-Fi.
@@ -539,6 +580,7 @@ def graph(include_stale: bool = False):
 # -- privacy -----------------------------------------------------------------
 
 class PrivacyPatch(BaseModel):
+    update_checks: bool | None = None
     local_only: bool | None = None
     stats_only: bool | None = None
     redact_on_send: bool | None = None
@@ -697,6 +739,9 @@ def set_privacy(patch: PrivacyPatch):
         s.stats_only = patch.stats_only
     if patch.redact_on_send is not None:
         s.redact_on_send = patch.redact_on_send
+    if patch.update_checks is not None:
+        s.update_checks = patch.update_checks
+        appdata.update(update_checks=patch.update_checks)
     # Only these two reach the corpus -- apply_settings reads excluded ids and the
     # retention window and nothing else. Local-only, stats-only and redaction govern
     # what may leave the machine, so re-reading your whole history for them is a
@@ -727,6 +772,52 @@ def preview_outbound(cid: str):
     msgs = state.corpus.messages_in(thread.id)[-24:] if thread else []
     payload = build_payload(DraftRequest(profile=prof, recent=msgs, intent="check in"))
     return enc(state.gate.preview("draft", payload))
+
+
+# ------------------------------------------------------------------ the licence
+class LicenceKey(BaseModel):
+    key: str
+
+
+def _licence_view(st) -> dict:
+    d = appdata.load()
+    return enc({**st.to_dict(), "network": NETWORK_USES,
+                "update_checks": state.settings.update_checks,
+                "update": {"latest": d.get("update_latest", ""),
+                           "newer": updating.is_newer(d["update_latest"])
+                           if d.get("update_latest") else False,
+                           "url": d.get("update_url", ""),
+                           "checked": d.get("update_checked_at", "")},
+                "version": product.VERSION})
+
+
+@app.get("/api/licence")
+def licence_status():
+    return _licence_view(licence.status())
+
+
+@app.post("/api/licence/activate")
+def licence_activate(body: LicenceKey, request: Request):
+    _mac_only(request)
+    try:
+        return _licence_view(licence.activate(body.key))
+    except LicenceError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/licence/deactivate")
+def licence_deactivate(request: Request):
+    _mac_only(request)
+    try:
+        return _licence_view(licence.deactivate())
+    except LicenceError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/licence/check")
+def licence_check(request: Request):
+    _mac_only(request)
+    return _licence_view(licence.validate(force=True))
 
 
 # --------------------------------------------------------------- what you chose

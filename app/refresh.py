@@ -24,8 +24,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-STATE_FILE = (Path.home() / "Library" / "Application Support" / "messaging-graph"
-              / "refresh.json")
+from .product import support_dir
+
+STATE_FILE = support_dir() / "messaging-graph" / "refresh.json"
 EVERY = timedelta(days=1)
 # Long enough after waking that the Wi-Fi is back and the disk has settled.
 FIRST_RUN_DELAY = timedelta(minutes=2)

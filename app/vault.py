@@ -33,8 +33,9 @@ from typing import Protocol
 from cryptography.fernet import Fernet, InvalidToken
 
 from .models import Contact, Corpus, Message, Thread
+from .product import support_dir
 
-VAULT_DIR = Path.home() / "Library" / "Application Support" / "messaging-graph"
+VAULT_DIR = support_dir() / "messaging-graph"
 CORPUS_FILE = "corpus.v1.enc"
 MANIFEST_FILE = "manifest.json"
 # Each platform is imported and kept on its own, because they are separate
@@ -43,6 +44,10 @@ MANIFEST_FILE = "manifest.json"
 PLATFORMS = ("imessage", "whatsapp", "instagram")
 DEFAULT_PLATFORM = "imessage"
 SERVICE = "messaging-graph"
+# A build tried out under MG_HOME gets a Keychain item of its own, so it can
+# never read -- or replace -- the key of the copy you actually use.
+if os.environ.get("MG_HOME"):
+    SERVICE += "-" + hashlib.sha256(os.environ["MG_HOME"].encode()).hexdigest()[:8]
 ACCOUNT = "vault-key"
 FORMAT = 1
 
