@@ -16,6 +16,7 @@ generator's hidden parameters:
 | [`e2e_fixture.py`](e2e_fixture.py) | A whole fake history: a `chat.db`, its AddressBook, WhatsApp Desktop's `ChatStorage.sqlite`, and the same WhatsApp chats as two Export chat zips |
 | [`e2e_checks.py`](e2e_checks.py) | That history imported, served and read back over the HTTP API, compared with [`snapshots/e2e.json`](snapshots/e2e.json) |
 | [`whatsapp_export_checks.py`](whatsapp_export_checks.py) | Reading Export chat files: dates that read two ways, 12-hour clocks, telling which name is yours, files that aren't exports |
+| [`digest_checks.py`](digest_checks.py) | The weekly digest: which few things it picks, that the set turns over each Monday, snoozes running out exactly when they say, what an empty week says, and when the Mac app's notification goes out |
 | [`licence_checks.py`](licence_checks.py) | The trial, licence keys, and the only two calls that go online |
 | [`shipping_checks.py`](shipping_checks.py) | The app bundle, the first run, and the product site |
 

@@ -8,7 +8,7 @@
 | [`run.sh`](../run.sh) | Starts the app with demo data (`./mg serve --synthetic`) |
 | [`app/cli.py`](../app/cli.py) | The commands behind `./mg` |
 | [`app/main.py`](../app/main.py) | Local HTTP API, bound to 127.0.0.1 |
-| [`app/desktop.py`](../app/desktop.py) | The Mac app: its own window, a menu bar item, start at login |
+| [`app/desktop.py`](../app/desktop.py) | The Mac app: its own window, a menu bar item, start at login, the weekly digest notification |
 | [`app/onboarding.py`](../app/onboarding.py) | The first-run screen: Full Disk Access, why, the Settings link, re-checking; the licence screen |
 | [`app/importer.py`](../app/importer.py) | Imports from inside the app, after asking the licence and macOS whether it may |
 | [`app/product.py`](../app/product.py) | The one place for price, trial, version, bundle id, Lemon Squeezy ids and site URLs |
@@ -16,7 +16,7 @@
 | [`app/updates.py`](../app/updates.py) | The weekly "is there a newer version?" check |
 | [`app/appdata.py`](../app/appdata.py) | The app's own small file (licence, trial, onboarding), kept apart from the vault |
 | [`app/ingest/`](../app/ingest) | Readers for Messages (`chat.db`), Contacts, WhatsApp Desktop's database, WhatsApp's Export chat zips, and the synthetic demo corpus |
-| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, birthdays and anniversaries, crews, connections, places, vibes, voice and spam filtering |
+| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, birthdays and anniversaries, crews, connections, places, vibes, voice, spam filtering, and the weekly digest and snoozes (`digest.py`) |
 | [`app/graph.py`](../app/graph.py) | The plan graph: people and live plans as nodes |
 | [`app/models.py`](../app/models.py) | Core data types shared by ingestion, analysis and the API |
 | [`app/vault.py`](../app/vault.py) | Encrypted at-rest store for an imported corpus |
@@ -27,7 +27,7 @@
 | [`macapp/`](../macapp) | Builds `Messaging Graph.app` (`build.py`), and its hardened-runtime `entitlements.plist` |
 | [`scripts/package.sh`](../scripts/package.sh) | The release build: the `.app` and DMG, Developer ID–signed, notarized and stapled (`--adhoc` for a local test) |
 | [`site/`](../site) | The product site: landing page with price and Buy button, privacy policy, terms and refund templates, `version.json` |
-| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; a fake iMessage and WhatsApp history (database and Export chat zips) imported end to end and compared with a snapshot; WhatsApp export parsing; ingest, licence and shipping checks run by `validate.py`. See [tests/README.md](../tests/README.md) |
+| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; a fake iMessage and WhatsApp history (database and Export chat zips) imported end to end and compared with a snapshot; WhatsApp export parsing; ingest, digest, licence and shipping checks run by `validate.py`. See [tests/README.md](../tests/README.md) |
 | [`validate.py`](../validate.py) | Checks the analysis against the demo generator's hidden parameters |
 | [`docs/`](.) | These docs and [How it works](how-it-works.md) |
 | [`docs/SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | Components, main flows, storage, design decisions and the Messages schema across macOS versions |

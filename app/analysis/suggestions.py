@@ -43,15 +43,20 @@ MAX_PER_KIND = 3
 
 
 def build(profiles: list[RelationshipProfile], plans: list[Plan],
-          now: datetime | None = None, limit: int = 8) -> list[Suggestion]:
+          now: datetime | None = None, limit: int = 8,
+          snoozed_people: set[str] | frozenset = frozenset()) -> list[Suggestion]:
+    """`snoozed_people`: contact ids you've snoozed, who get no "it's gone quiet"
+    observations until the snooze runs out. Snoozed plans are the caller's to
+    leave out of `plans`."""
     now = now or datetime.now()
     out: list[Suggestion] = []
 
     for p in profiles:
         first = short_name(p.name)
         gap = _days(now, p.last_contact)
+        asleep = p.contact_id in snoozed_people
 
-        if p.state == "quiet" and p.msgs_per_week > 1.2:
+        if p.state == "quiet" and p.msgs_per_week > 1.2 and not asleep:
             out.append(Suggestion(
                 "reconnect", p.name, p.contact_id,
                 f"You used to talk about {a_week(p.msgs_per_week)}. "
@@ -100,7 +105,7 @@ def build(profiles: list[RelationshipProfile], plans: list[Plan],
                  f"written down."),
                 weight=70, tone="warm"))
 
-        elif p.state == "close" and gap > 12:
+        elif p.state == "close" and gap > 12 and not asleep:
             out.append(Suggestion(
                 "check_in", p.name, p.contact_id,
                 f"One of your closer threads, quiet for {count(gap, 'day')}.",

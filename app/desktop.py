@@ -7,6 +7,8 @@ signature -- rather than to Terminal. The first time it opens on a Mac with noth
 imported, `onboarding.py` explains that and walks through granting it.
 
 Closing the window keeps the app in the menu bar; Quit (⌘Q or the menu) ends it.
+While it is there it can also post the weekly digest as a local notification, on
+the day and at the time you picked under "This week" -- counts only, no names.
 
 Why the data server usually runs as a separate process: the key that decrypts your
 data sits in the login Keychain, and macOS lets the program that created it -- the
@@ -26,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 import objc
@@ -35,7 +38,7 @@ from AppKit import (
     NSVariableStatusItemLength, NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSWindowStyleMaskResizable, NSWindowStyleMaskTitled, NSWorkspace,
 )
-from Foundation import NSURL, NSObject, NSURLRequest
+from Foundation import NSURL, NSObject, NSURLRequest, NSUserNotification, NSUserNotificationCenter
 from PyObjCTools import AppHelper
 
 from app import importer, onboarding, product
@@ -146,6 +149,9 @@ def _page(title: str, body: str) -> str:
 
 # How often the onboarding screen asks macOS again while it is up.
 RECHECK_SECONDS = 2.0
+# How often the clock is checked for the weekly notification. Not how often it
+# goes out -- that is once a week, at most.
+DIGEST_CHECK_SECONDS = 300
 
 
 class Controller(NSObject):
@@ -268,6 +274,7 @@ class Controller(NSObject):
                 self._start_child(project)
                 AppHelper.callAfter(self._loaded)
                 AppHelper.callAfter(self.start_refreshing)
+                self.start_digest_watch()
                 return
             from app.vault import Vault
             port = _free_port()
@@ -291,6 +298,7 @@ class Controller(NSObject):
             server.start_background_checks()
             AppHelper.callAfter(self._loaded)
             AppHelper.callAfter(self.start_refreshing)
+            self.start_digest_watch()
         except Exception as e:                          # show the reason in the window, not a silent crash
             self._show_error("Messaging Graph couldn't open your data", str(e) or type(e).__name__)
 
@@ -478,6 +486,86 @@ class Controller(NSObject):
             self.pending_refresh = True
             return
         AppHelper.callAfter(self.reloadData_, None)
+
+    # -- the weekly notification ---------------------------------------------
+    @objc.python_method
+    def start_digest_watch(self) -> None:
+        if getattr(self, "digest_watch", None) is None:
+            self.digest_watch = threading.Thread(target=self._watch_digest, daemon=True)
+            self.digest_watch.start()
+
+    @objc.python_method
+    def _watch_digest(self) -> None:
+        """Post this week's digest once, on the day and at the time you chose.
+
+        Only while the app is running, which with "Start at login" is whenever
+        you are. Marked as sent before asking, so a server that is slow to
+        answer cannot make it go out twice."""
+        from app.analysis.digest import notify_due, week_key
+        while True:
+            try:
+                data, now = AppData().load(), datetime.now()
+                if notify_due(data.get("digest_notify"), now, data.get("digest_notified_week")):
+                    AppData().update(digest_notified_week=week_key(now.date()))
+                    line = (self._ask_server("/api/digest") or {}).get("notification")
+                    if line:                     # an empty week sends nothing
+                        AppHelper.callAfter(self._notify, "This week", line)
+            except Exception:
+                pass                             # next week will come round; nothing to crash over
+            time.sleep(DIGEST_CHECK_SECONDS)
+
+    @objc.python_method
+    def _ask_server(self, path: str) -> dict | None:
+        """Ask the data server one question the way the window does: the launch
+        link for the session cookie, then the question. 127.0.0.1 only -- the
+        server this app started -- so nothing goes near the network."""
+        import http.client
+        import json
+        import ssl
+        from urllib.parse import urlsplit
+        if not self.launch_url:
+            return None
+        u = urlsplit(self.launch_url)
+        conn = (http.client.HTTPSConnection(u.hostname, u.port, timeout=30,
+                                            context=ssl._create_unverified_context())
+                if u.scheme == "https" else http.client.HTTPConnection(u.hostname, u.port, timeout=30))
+        try:
+            conn.request("GET", f"/?{u.query}")
+            r = conn.getresponse()
+            r.read()
+            cookie = (r.getheader("set-cookie") or "").split(";")[0]
+            if not cookie:
+                return None
+            conn.request("GET", path, headers={"Cookie": cookie})
+            r = conn.getresponse()
+            body = r.read()
+            return json.loads(body) if r.status == 200 else None
+        finally:
+            conn.close()
+
+    @objc.python_method
+    def _notify(self, title: str, body: str) -> None:
+        """A local notification. The installed app posts its own; run from the
+        project there is no bundle for macOS to attribute one to, so it asks
+        AppleScript to show it instead."""
+        center = NSUserNotificationCenter.defaultUserNotificationCenter() if app_bundle() else None
+        if center is not None:
+            note = NSUserNotification.alloc().init()
+            note.setTitle_(title)
+            note.setInformativeText_(body)
+            center.setDelegate_(self)
+            center.deliverNotification_(note)
+            return
+        quote = lambda t: t.replace("\\", "\\\\").replace('"', '\\"')   # noqa: E731
+        subprocess.run(["osascript", "-e", f'display notification "{quote(body)}" '
+                        f'with title "{APP_NAME}" subtitle "{quote(title)}"'], check=False)
+
+    def userNotificationCenter_shouldPresentNotification_(self, center, note):
+        return True                              # even with the window in front
+
+    def userNotificationCenter_didActivateNotification_(self, center, note):
+        self.show_(None)
+        self._load_app()                         # the card is on Now
 
     def toggleRefreshing_(self, sender):
         if self.refresher is None:

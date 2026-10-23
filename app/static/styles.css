@@ -935,3 +935,36 @@ nav button.on .c{background:var(--wash-accent);color:var(--accent);border-radius
 /* 10. Tiles you can press answer the press. */
 button.stat:active,.topp:active,.hit:active,.card:active{transform:scale(.995)}
 .btn.primary:hover{background:var(--wash-accent-strong)}
+
+/* This week: a handful, turned over each Monday. One panel rather than more
+   cards, so it reads as the week's short list and not a fourth feed. */
+.weekcard{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:14px 16px 12px;margin:14px 0 22px}
+.twhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.twhead h2{margin:0;color:var(--ink)}
+.twlabel{color:var(--faint);font-size:12px}
+.weekcard h3{font-size:12px;font-weight:600;color:var(--faint);margin:14px 0 4px;letter-spacing:.1px}
+.twrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 0;
+  border-top:1px solid var(--line);transition:opacity .15s}
+.weekcard h3+.twrow{border-top:0}
+.twrow.going{opacity:.4;pointer-events:none}
+.twrow .dwho{flex:0 0 190px}
+.twplan{flex:0 0 190px;display:flex;flex-direction:column;cursor:pointer;min-width:0}
+.twplan:hover b{color:var(--accent)}
+.twwith{color:var(--faint);font-size:12px}
+.twline{flex:1 1 220px;color:var(--dim);font-size:13px;line-height:1.5}
+.weekcard .drafts{margin-top:4px}
+select.snooze{background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--dim);
+  font:12px system-ui,sans-serif;padding:4px 6px;cursor:pointer}
+select.snooze:focus-visible,.twnotify select:focus-visible,.twnotify input:focus-visible{
+  outline:2px solid var(--accent);outline-offset:1px}
+.twfoot{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.twfoot:empty{display:none}
+.twsnoozed summary{cursor:pointer;color:var(--faint);font-size:12.5px}
+.twsnoozed .twrow{padding:5px 0}
+.twnotify{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:8px;border-top:1px solid var(--line)}
+.twnotify input[type=time]{background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+  color:var(--ink);font:12.5px system-ui,sans-serif;padding:4px 7px}
+.twnotify select:disabled,.twnotify input:disabled{opacity:.5}
+.twhint{color:var(--faint);font-size:12px}
+@media (max-width:760px){.twrow .dwho,.twplan{flex-basis:100%}}

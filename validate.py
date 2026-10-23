@@ -2836,6 +2836,10 @@ def main() -> int:
     from tests import e2e_checks
     e2e_checks.run(check)
 
+    print("\nthis week: the rotation, snoozes running out, and what an empty week says:")
+    from tests import digest_checks
+    digest_checks.run(check)
+
     print("\nthe trial, the licence, and the only two calls that go online:")
     from tests import licence_checks
     licence_checks.run(check)

@@ -24,6 +24,7 @@ from statistics import median
 from ..models import Corpus, Plan, RelationshipProfile
 from ..names import greeting_name, looks_like_handle, short_name
 from .circles import REVIVE_WINDOW
+from .digest import DRIFT_DRAFTS
 from .phrasing import a_week, count, gap_words
 from .proposals import propose
 from .voice import (INTEREST_LINE, Style, check_in_parts, follow_up_options,
@@ -112,7 +113,12 @@ def topic_lines(imap: dict[str, dict[str, int]]) -> dict[str, str]:
 
 def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: list[Plan],
                    now: datetime, seeds: dict[str, int] | None = None,
-                   limit: int = 8, topics: dict[str, str] | None = None) -> list[Draft]:
+                   limit: int = 8, topics: dict[str, str] | None = None,
+                   snoozed_people: set[str] | frozenset = frozenset()) -> list[Draft]:
+    """`snoozed_people` are contact ids you've snoozed: no drift drafts for them
+    (reconnect, check in, revive a plan), though a reply when they've asked you
+    something still comes through. Snoozed plans are the caller's to leave out
+    of `plans`."""
     seeds = seeds or {}
     out: list[Draft] = []
     # How to draw a given draft again at a different index, so two that land on
@@ -132,6 +138,8 @@ def build_messages(corpus: Corpus, profiles: list[RelationshipProfile], plans: l
         candidates: list[Draft] = []
 
         def add(kind, why, make, variants, value, detail="", warm=False):
+            if kind in DRIFT_DRAFTS and p.contact_id in snoozed_people:
+                return
             did = f"{kind}:{p.contact_id}"
             # The seed the page sends is a step: 0 on first sight, +1 each time
             # you ask for another version. Everyone therefore started on the

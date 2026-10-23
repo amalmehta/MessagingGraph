@@ -97,6 +97,14 @@ sequenceDiagram
 is a POST that saves an overrides document into the vault and recomputes state. Because ids are keyed hashes
 derived from the vault key, corrections survive a fresh import.
 
+**This week.** `GET /api/digest` picks up to three drifted people, two plans with no date and one draft,
+and turns the set over each Monday by sliding a window along each ranking (`app/analysis/digest.py`).
+Snoozes (a week, a month, for good) are saved with the corrections, keyed by contact id or by a hash of a
+plan's thread and activity, because plan ids are renumbered on every recompute. They are applied where
+things are shown, not in the analysis, and run out by the calendar. The Mac app checks every five minutes
+whether the day and time you chose have come round, asks its own server for the digest over `127.0.0.1`,
+and posts a local notification that gives counts only, never names.
+
 **Mac app.** A customer's copy serves in-process: the bundled Python runs the same FastAPI server on a private
 port and the WebKit window opens its launch link. Importing also happens in the app's own process, which is the
 point: macOS files Full Disk Access under the app's bundle id (`com.messaginggraph.app`) and its signature, so
@@ -143,11 +151,11 @@ allowed or refused, lands in the same audit log as everything else, with the key
 |---|---|---|
 | Imported corpus | `~/Library/Application Support/messaging-graph/corpus.v1.enc` | Compressed JSON, Fernet-encrypted. Written atomically to a `0600` file; plaintext never touches disk. |
 | Vault key | Login Keychain | Random, created on first import. Refuses to fall back to any non-macOS keyring. Also seeds the HMAC id key. |
-| Corrections | `overrides.v1.enc` beside the corpus | Sealed with the same key. In memory only for the demo. |
+| Corrections | `overrides.v1.enc` beside the corpus | Names, places, thread verdicts, theme, drafts put away and snoozes. Sealed with the same key. In memory only for the demo. |
 | Manifest | `manifest.json` beside the corpus | Counts, window and import time; no content. |
 | Vault folder | Same folder | `0700`, excluded from Spotlight and Time Machine; `mg wipe` removes it and the key. |
 | Privacy settings, audit log | Server memory | Reset when the server restarts, except the update-check switch. |
-| Licence and trial | `~/Library/Application Support/Messaging Graph/app.json` | Trial start, licence key, activation id, last check, random install id, onboarding done, update switch. `0600` in a `0700` folder, outside the vault so `mg wipe` doesn't take a paid licence (or a used trial) with it. No message data, no email. |
+| Licence and trial | `~/Library/Application Support/Messaging Graph/app.json` | Trial start, licence key, activation id, last check, random install id, onboarding done, update switch, the weekly notification's day and time and the last week it went out. `0600` in a `0700` folder, outside the vault so `mg wipe` doesn't take a paid licence (or a used trial) with it. No message data, no email. |
 | Test builds | `MG_HOME`, `MG_CHATDB`, `MG_ADDRESSBOOK` | Move every file above, and the Keychain item's name, to a scratch folder; point the reader at a fixture. How a packaged build is tried without touching a real copy. |
 
 ## Design decisions

@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .analysis import digest as digesting
 from .analysis.circles import activity_of, connections, plans_overview
 from .analysis.crews import build_crew, suggest_activities
 from .analysis.gratitude import build_gratitude
@@ -131,7 +132,7 @@ def overview(request: Request):
         "threads": len(c.threads),
         "span": {"from": first, "to": last},
         "plans": {"open": len(open_plans), "stale": len(stale), "total": len(plans),
-                  **plans_overview(c, plans, state.now)["counts"]},
+                  **plans_overview(c, _overview_plans(), state.now)["counts"]},
         "states": {v: sum(1 for p in profiles if p.state == v)
                    for v in ("close", "steady", "practical", "uneven", "quiet", "new", "group")},
         "suggestions": enc_suggestions(),
@@ -193,8 +194,48 @@ def topics() -> dict[str, str]:
 
 def enc_suggestions() -> list[dict]:
     """Small, optional things you could do, newest observation first."""
-    items = build_suggestions(state.profiles, state.plans, state.now)
+    asleep = _asleep()
+    items = build_suggestions(state.profiles, _awake_plans(asleep), state.now,
+                              snoozed_people=_snoozed_people(asleep))
     return [enc(i) for i in items]
+
+
+# -- snoozes ---------------------------------------------------------------------
+# Applied where things are shown, not in the analysis: a snooze changes what the
+# app raises with you, not what it knows. A snoozed person is still in People,
+# with every number, and runs out by the calendar rather than by the data's clock.
+def _asleep() -> set[str]:
+    return set(digesting.live(state.overrides.load().snoozed, datetime.now()))
+
+
+def _snoozed_people(asleep: set[str]) -> set[str]:
+    return {k.split(":", 1)[1] for k in asleep if k.startswith("person:")}
+
+
+def _awake_plans(asleep: set[str]) -> list:
+    return [p for p in state.plans if digesting.plan_key(p) not in asleep]
+
+
+def _overview_plans() -> list:
+    """The plans for the plan lists: a snoozed plan leaves "worth reviving",
+    which is the drift list for plans, and nothing else."""
+    asleep = _asleep()
+    return [p for p in state.plans
+            if not (p.state == "stale" and digesting.plan_key(p) in asleep)]
+
+
+_drafts: dict = {}
+
+
+def drafts_for(asleep: set[str]) -> list:
+    """This view's drafts with no other version asked for, kept with the data
+    and the snoozes, because the digest wants the same list the page does."""
+    key = (state.version, state.platform, frozenset(asleep))
+    if _drafts.get("key") != key:
+        _drafts.update(key=key, value=build_messages(
+            state.corpus, state.profiles, _awake_plans(asleep), state.now,
+            topics=topics(), snoozed_people=_snoozed_people(asleep)))
+    return _drafts["value"]
 
 
 @app.get("/api/contacts")
@@ -274,7 +315,7 @@ def set_platform(pick: PlatformPick):
     if pick.platform not in state.platforms():
         raise HTTPException(404, "Nothing imported from there yet.")
     state.switch(pick.platform)
-    _network.clear(); _topics.clear(); _interests_cache.clear()
+    _network.clear(); _topics.clear(); _interests_cache.clear(); _drafts.clear()
     return enc({"active": state.platform})
 
 
@@ -381,7 +422,7 @@ def plans(state_filter: str | None = None):
 @app.get("/api/plans/overview")
 def plans_breakdown():
     """Confirmed, still being discussed, worth reviving, and the same plans by group."""
-    return enc(plans_overview(state.corpus, state.plans, state.now))
+    return enc(plans_overview(state.corpus, _overview_plans(), state.now))
 
 
 @app.get("/api/plans/{pid}")
@@ -484,9 +525,12 @@ def crew(activity: str, size: int | None = None, nearby: bool = True, seed: int 
 def messages_worth_sending(redraft: str | None = None, seed: int = 0):
     """Drafts ranked by how much they'd likely mean. `redraft` asks for another
     version of one draft; nothing is stored and nothing is sent."""
-    seeds = {redraft: max(0, seed)} if redraft else None
-    return enc(build_messages(state.corpus, state.profiles, state.plans, state.now, seeds,
-                              topics=topics()))
+    asleep = _asleep()
+    if not redraft:
+        return enc(drafts_for(asleep))
+    return enc(build_messages(state.corpus, state.profiles, _awake_plans(asleep), state.now,
+                              {redraft: max(0, seed)}, topics=topics(),
+                              snoozed_people=_snoozed_people(asleep)))
 
 
 @app.get("/api/voice")
@@ -863,6 +907,115 @@ def set_prefs(patch: PrefsPatch):
                 if now - (v.get("at", 0) / 1000) < HIDE_DAYS.get(v.get("why"), 7) * 86400}
     state.overrides.save(o)
     return enc(_prefs(o))
+
+
+# ------------------------------------------------------------------ this week
+class SnoozePatch(BaseModel):
+    kind: str                       # person | plan
+    id: str                         # a contact id; a plan id, or a plan's key from the snoozed list
+    length: str | None = None       # week | month | forever; none takes the snooze back
+
+
+def _snooze_list(snoozed: dict[str, dict], wall: datetime) -> list[dict]:
+    """What is snoozed now, soonest back first, so it can be taken back."""
+    out = []
+    for key, v in digesting.live(snoozed, wall).items():
+        kind, ident = key.split(":", 1)
+        label = v.get("label", "")
+        if kind == "person" and ident in state.real.contacts:
+            label = state.real.contacts[ident].name       # a name you gave since
+        out.append({"kind": kind, "id": ident if kind == "person" else key, "label": label,
+                    "until": v.get("until"), "for": v.get("for")})
+    return sorted(out, key=lambda r: (r["until"] is None, r["until"] or "", r["label"]))
+
+
+@app.get("/api/digest")
+def digest():
+    """This week's handful: up to three people you've drifted from, two plans
+    with no date and one message. The set turns over each Monday, and nothing
+    you've snoozed is in it."""
+    o = state.overrides.load()
+    wall = datetime.now()
+    asleep = set(digesting.live(o.snoozed, wall))
+    d = digesting.build(state.profiles, state.plans, drafts_for(asleep), o.snoozed, wall,
+                        state.now, set(_prefs(o)["hidden"]),
+                        names={k: c.name for k, c in state.corpus.contacts.items()})
+    d["snoozed"] = _snooze_list(o.snoozed, wall)
+    return enc(d)
+
+
+@app.post("/api/snooze")
+def snooze(patch: SnoozePatch):
+    """Snooze a person or a plan for a week, a month or for good, or take it back.
+    Saved with your other corrections (encrypted, for imported data)."""
+    if patch.kind == "person":
+        c = state.real.contacts.get(patch.id)
+        if c is None:
+            raise HTTPException(404, "No such contact.")
+        key, label = digesting.person_key(patch.id), c.name
+    elif patch.kind == "plan":
+        plan = next((p for p in state.plans if p.id == patch.id), None)
+        if plan is not None:
+            key, label = digesting.plan_key(plan), f"{activity_of(plan)} · {plan.thread_name}"
+        elif patch.id.startswith("plan:") and patch.length is None:
+            key, label = patch.id, ""                      # taking back one the data has lost
+        else:
+            raise HTTPException(404, "That plan isn't in the current data any more. Reload the page.")
+    else:
+        raise HTTPException(400, "Snooze a person or a plan.")
+    o = state.overrides.load()
+    wall = datetime.now()
+    until = None
+    if patch.length is None:
+        o.snoozed.pop(key, None)
+    else:
+        try:
+            until = digesting.snooze_until(patch.length, wall)
+        except ValueError:
+            raise HTTPException(400, "Snooze for a week, a month or for good.")
+        o.snoozed[key] = {"until": until.isoformat(timespec="seconds") if until else None,
+                          "for": patch.length, "at": wall.isoformat(timespec="seconds"),
+                          "label": label}
+    # Expired ones go rather than piling up for ever.
+    o.snoozed = digesting.live(o.snoozed, wall)
+    state.overrides.save(o)
+    return enc({"ok": True, "key": key, "until": until,
+                "note": (digesting.snooze_note(label, patch.length, until) if patch.length
+                         else f"{label or 'That plan'} is back."),
+                "snoozed": _snooze_list(o.snoozed, wall)})
+
+
+class NotifyPatch(BaseModel):
+    on: bool | None = None
+    weekday: int | None = None      # 0 is Monday
+    time: str | None = None         # HH:MM, this Mac's own clock
+
+
+# In the app's own small file rather than the vault: the Mac app is what sends
+# the notification, and it reads this without the vault key (which, from the
+# packaged app's Python, would mean a Keychain prompt). It is a day and a time,
+# not anything about anyone.
+@app.get("/api/digest/notify")
+def get_notify():
+    return digesting.clean_notify(appdata.load().get("digest_notify"))
+
+
+@app.post("/api/digest/notify")
+def set_notify(patch: NotifyPatch, request: Request):
+    _mac_only(request)
+    cur = digesting.clean_notify(appdata.load().get("digest_notify"))
+    if patch.on is not None:
+        cur["on"] = patch.on
+    if patch.weekday is not None:
+        if not 0 <= patch.weekday <= 6:
+            raise HTTPException(400, "Pick a day of the week.")
+        cur["weekday"] = patch.weekday
+    if patch.time is not None:
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", patch.time):
+            raise HTTPException(400, "Pick a time like 09:00.")
+        cur["time"] = patch.time
+    appdata.update(digest_notify=cur)
+    return cur
 
 
 # ------------------------------------------------------------------ the phone

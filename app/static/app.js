@@ -782,6 +782,10 @@ function viewNow() {
       Messages or skip it — nothing sends from here.</div>
     ${demoBanner(o)}
     ${licenceNotice(o)}
+    <section class="weekcard" id="thisweek" aria-labelledby="tw-h">
+      <div class="twhead"><h2 id="tw-h">This week</h2><span class="twlabel" id="tw-label"></span></div>
+      <div id="tw-body"><div class="empty loading">Picking a few…</div></div>
+    </section>
     <div class="voicenote" id="voice-note"></div>
     <div id="drafts" class="drafts"><div class="empty loading">Drafting…</div></div>
     <h2>Coming up</h2>
@@ -808,6 +812,7 @@ function viewNow() {
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
   document.querySelectorAll('[data-goto-licence]').forEach(b => b.onclick = () => go('privacy'));
   wireJumps();
+  drawWeek().catch(() => { const b = $('#tw-body'); if (b) b.innerHTML = COULDNT('this week'); });
   drawDrafts().catch(() => { const b = $('#drafts'); if (b) b.innerHTML = COULDNT('drafts'); });
   drawThanks().catch(() => { const b = $('#thanks'); if (b) b.innerHTML = COULDNT('thank-yous'); });
   drawMilestones().catch(() => { const b = $('#milestones'); if (b) b.innerHTML = COULDNT('dates'); });
@@ -894,7 +899,8 @@ async function drawDrafts() {
   const all = await api('/api/messages');
   S.drafts = { ...(S.drafts || {}), ...Object.fromEntries(all.map(d => [d.id, d])) };
   S.draftSeeds = S.draftSeeds || {};
-  const shown = all.filter(d => !isHidden(d.id));
+  // The one the week's card is already showing isn't shown twice.
+  const shown = all.filter(d => !isHidden(d.id) && d.id !== S.weekMessage);
   if (!shown.length) {
     box.innerHTML = `<div class="empty">${all.length ? "You've been through today's drafts."
       : 'Nothing pressing. The people you talk to regularly have heard from you recently.'}</div>`;
@@ -918,6 +924,113 @@ async function drawThanks() {
   }
   box.innerHTML = shown.map(d => draftCard(d, '/api/gratitude')).join('');
   box.querySelectorAll('.draft').forEach(wireDraft);
+}
+
+// ---------------------------------------------------------------- this week
+// A handful, turned over each Monday: a few people you've drifted from, a couple
+// of plans with no date, one message. Snoozing takes one out of here and out of
+// the drift lists until the snooze runs out; the server keeps the snoozes, sealed
+// with the rest of your corrections.
+const SNOOZE_FOR = { week: 'For a week', month: 'For a month', forever: 'For good' };
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function snoozePick(kind, id, label) {
+  return `<select class="snooze" data-kind="${kind}" data-id="${esc(id)}"
+    aria-label="Snooze ${esc(label)}"><option value="">Snooze…</option>${
+    Object.entries(SNOOZE_FOR).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>`;
+}
+
+function untilWords(r) {
+  if (!r.until) return 'for good';
+  return 'until ' + new Date(r.until).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
+async function drawWeek() {
+  const box = $('#tw-body');
+  if (!box) return;
+  const d = await api('/api/digest');
+  if (!$('#tw-body')) return;                     // moved on while it was working
+  $('#tw-label').textContent = d.label;
+  S.weekMessage = d.message ? d.message.id : null;
+  if (d.message) {
+    S.drafts = { ...(S.drafts || {}), [d.message.id]: d.message };
+    S.draftSeeds = S.draftSeeds || {};
+    // Already drawn below? Then it moves up here rather than appearing twice.
+    $(`#drafts .draft[data-id="${CSS.escape(d.message.id)}"]`)?.remove();
+  }
+  const people = d.people.map(p => `<div class="twrow" data-kind="person" data-id="${esc(p.id)}">
+      <span class="dwho link" data-person="${esc(p.id)}">${avatar(p.name)}<span class="who">${esc(p.name)}</span></span>
+      <span class="twline">${esc(p.line)}</span>${snoozePick('person', p.id, p.name)}</div>`).join('');
+  const plans = d.plans.map(p => `<div class="twrow" data-kind="plan" data-id="${esc(p.id)}">
+      <span class="twplan link" data-plan="${esc(p.id)}"><b>${esc(p.activity)}</b>
+        <span class="twwith">${p.people.length ? 'with ' + firstNames(p.people) : esc(p.thread_name)}</span></span>
+      <span class="twline">${esc(p.line)}</span>${snoozePick('plan', p.id, p.activity)}</div>`).join('');
+  const snoozed = d.snoozed.length ? `<details class="twsnoozed"><summary>${d.snoozed.length} snoozed</summary>${d.snoozed.map(r => `
+      <div class="twrow"><span class="twline"><b>${esc(r.label || 'A plan')}</b> · ${esc(untilWords(r))}</span>
+        <button type="button" class="btn ghost sm unsnooze" data-kind="${r.kind}" data-id="${esc(r.id)}"
+          >Bring back</button></div>`).join('')}</details>` : '';
+  box.innerHTML = (d.empty ? `<div class="empty">${esc(d.empty_line)}</div>` : `
+    ${people ? `<h3>Gone quiet</h3>${people}` : ''}
+    ${plans ? `<h3>Wanted, never dated</h3>${plans}` : ''}
+    ${d.message ? `<h3>One to send</h3><div class="drafts">${draftCard(d.message)}</div>` : ''}`)
+    + `<div class="twfoot">${snoozed}<div id="tw-notify"></div></div>`;
+  box.querySelectorAll('.dwho[data-person]').forEach(w => w.onclick = () => openPerson(w.dataset.person));
+  box.querySelectorAll('.twplan[data-plan]').forEach(w => w.onclick = () => openPlan(w.dataset.plan));
+  box.querySelectorAll('.draft').forEach(wireDraft);
+  wireSnoozes(box);
+  box.querySelectorAll('.unsnooze').forEach(b => b.onclick = () =>
+    snooze(b.dataset.kind, b.dataset.id, null, b.closest('.twrow')));
+  drawNotify();
+}
+
+function wireSnoozes(root) {
+  root.querySelectorAll('select.snooze').forEach(sel => sel.onchange = () => {
+    if (sel.value) snooze(sel.dataset.kind, sel.dataset.id, sel.value, sel.closest('.twrow'));
+    if (!sel.closest('.twrow')) sel.value = '';          // a drawer stays open; the menu resets
+  });
+}
+
+async function snooze(kind, id, length, row) {
+  if (row) row.classList.add('going');
+  const r = await postJSON('/api/snooze', { kind, id, length });
+  if (!r.ok) {
+    if (row) row.classList.remove('going');
+    toast(r.error);
+    return;
+  }
+  toast(r.data.note);
+  // The week is picked again without it, and the lists it drifts in drop it too.
+  S.overview = await api('/api/overview').catch(() => S.overview);
+  $('#c-now').textContent = S.overview.suggestions.length;
+  drawWeek().catch(() => {});
+  drawDrafts().catch(() => {});
+}
+
+// Only inside the Mac app, which is what posts it. It says how many and never
+// who: a notification can be read off a locked screen by anyone passing.
+async function drawNotify() {
+  const box = $('#tw-notify');
+  if (!box || !inDesktopApp()) return;
+  const cur = await api('/api/digest/notify').catch(() => null);
+  if (!cur || !$('#tw-notify')) return;
+  box.innerHTML = `<div class="twnotify">
+    <label class="mini"><input type="checkbox" id="tw-on" ${cur.on ? 'checked' : ''}> Notify me each week</label>
+    <label class="mini">on <select id="tw-day" aria-label="Day of the week">${WEEKDAYS.map((w, i) =>
+      `<option value="${i}"${i === cur.weekday ? ' selected' : ''}>${w}</option>`).join('')}</select></label>
+    <label class="mini">at <input type="time" id="tw-time" value="${esc(cur.time)}" aria-label="Time"></label>
+    <span class="twhint">How many, never who.</span></div>`;
+  const on = $('#tw-on'), day = $('#tw-day'), at = $('#tw-time');
+  const sync = () => { day.disabled = at.disabled = !on.checked; };
+  sync();
+  const save = async (body) => {
+    const r = await postJSON('/api/digest/notify', body);
+    if (!r.ok) { toast(r.error); return; }
+    say(r.data.on ? `Weekly notification on, ${WEEKDAYS[r.data.weekday]}s at ${r.data.time}`
+      : 'Weekly notification off');
+  };
+  on.onchange = () => { sync(); save({ on: on.checked }); };
+  day.onchange = () => save({ weekday: +day.value });
+  at.onchange = () => { if (at.value) save({ time: at.value }); };
 }
 
 // ---------------------------------------------------------------- birthdays
@@ -2112,7 +2225,8 @@ async function openPerson(id) {
       <span class="tag s-${p.state}">${STATE_LABEL[p.state]}</span></h2>
     ${d.handle ? `<div class="handleline">${esc(d.handle)}</div>` : ''}
     <div class="sinceline">Talking since ${esc(since(p.first_contact))}
-      <span class="dot-sep">·</span> last message ${esc(ago(p.last_contact))}</div>
+      <span class="dot-sep">·</span> last message ${esc(ago(p.last_contact))}
+      <span class="dot-sep">·</span> ${snoozePick('person', p.contact_id, p.name)}</div>
     <div class="locline" id="locline"></div>
     <div class="headline">${esc(p.headline)}</div>
     ${p.vibe ? vibeCard(p.vibe, p) : ''}
@@ -2169,6 +2283,7 @@ async function openPerson(id) {
   // calls them and is not editable, so it is shown rather than offered.
   // Reversible, and the toast and the archived bar say how -- so no confirm step
   // between pressing it and seeing it happen.
+  wireSnoozes($('#drawer'));
   $('#remove-person').onclick = () => {
     closeDrawer();
     archivePerson(id, p.name);
@@ -2400,8 +2515,11 @@ async function openPlan(id) {
         : '<div class="empty">The messages behind this plan are no longer in the data.</div>'}
       <div class="pfoot">Highlighted messages are the ones that name it; the replies around them are how the
         app judged it ${esc(d.state)} (confidence ${Math.round(d.confidence * 100)}%).</div>
-      ${person ? `<div class="drawer-foot"><button type="button" class="btn ghost open-person" data-person="${esc(person.id)}">Open
-        ${esc(shortName(person.name))}'s profile</button></div>` : ''}`;
+      <div class="drawer-foot">${['stale', 'floated', 'proposed', 'confirmed'].includes(d.state) && !d.when_text
+        ? snoozePick('plan', d.id, d.activity) : ''}
+        ${person ? `<button type="button" class="btn ghost open-person" data-person="${esc(person.id)}">Open
+        ${esc(shortName(person.name))}'s profile</button>` : ''}</div>`;
+    wireSnoozes(drawer);
     const op = drawer.querySelector('.open-person');
     if (op) op.onclick = () => openPerson(op.dataset.person);
   }
