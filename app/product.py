@@ -25,7 +25,7 @@ COPYRIGHT = "© 2026 Messaging Graph"
 MIN_MACOS = "13.0"
 
 # -- the offer ---------------------------------------------------------------
-PRICE_USD = 29                      # one-time
+PRICE_USD = 5                       # one-time (was 29; set to 5 by the owner on 2026-10-22)
 TRIAL_DAYS = 14                     # everything works during it
 # After the trial what you already imported stays readable; new imports wait
 # for a licence. Nothing is deleted and nothing locks you out of your own data.

@@ -20,8 +20,8 @@ def run(check) -> None:
     from app.appdata import AppData
 
     # -- one place for the offer ----------------------------------------------
-    check("the offer is $29 once with a 14-day trial, set in app/product.py",
-          (product.PRICE_USD, product.TRIAL_DAYS) == (29, 14))
+    check("the offer is $5 once with a 14-day trial, set in app/product.py",
+          (product.PRICE_USD, product.TRIAL_DAYS) == (5, 14))
     site = Path("site")
     index = (site / "index.html").read_text()
     check("the product site states the same price and trial",

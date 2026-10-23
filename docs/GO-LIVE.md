@@ -13,7 +13,7 @@ the first sale makes every customer grant Full Disk Access again.
 - [ ] In [`app/product.py`](../app/product.py), keep or change `BUNDLE_ID` (`com.messaginggraph.app`). Use a
       reverse-DNS name you control.
 - [ ] Set `COPYRIGHT` to your legal name.
-- [ ] Check `PRICE_USD = 29` and `TRIAL_DAYS = 14`. If you change them, change `site/index.html` too:
+- [ ] Check `PRICE_USD = 5` and `TRIAL_DAYS = 14`. If you change them, change `site/index.html` too:
       `validate.py` fails until the two agree.
 
 ## 2. Apple Developer Program and a Developer ID certificate
@@ -59,7 +59,7 @@ The script reads only these two names; the password and private key never leave 
 1. Create a store at [lemonsqueezy.com](https://www.lemonsqueezy.com) and complete identity verification and
    payouts. Lemon Squeezy is merchant of record: it charges VAT and sales tax and pays you out (5% + $0.50 per
    sale on the standard plan; check current pricing).
-2. **Products → New product**: "Messaging Graph", single payment, **$29**.
+2. **Products → New product**: "Messaging Graph", single payment, **$5**.
    - Turn on **Generate license keys**. Activation limit: **2** (the site and terms say "up to two Macs";
      change all three together). Expiry: never.
    - Add the DMG as the product's file, or link to your own download. The trial DMG and the paid DMG are the same

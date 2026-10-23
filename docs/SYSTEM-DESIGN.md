@@ -183,7 +183,7 @@ allowed or refused, lands in the same audit log as everything else, with the key
   `disable-library-validation` in a release, where everything shares one Team ID. An ad-hoc test build has no
   Team ID, so `package.sh --adhoc` adds `disable-library-validation` to that build only.
 - **The licence can't lock you out of your own data.** After the trial or a refund, imports stop and nothing
-  else does. The trial is a date in a file: someone determined can reset it, and at $29 that is an acceptable
+  else does. The trial is a date in a file: someone determined can reset it, and at $5 that is an acceptable
   trade for no account, no server and no device fingerprinting.
 - **A key that can't be checked keeps working for 30 days.** A licence check that fails because of the network
   is never treated as a "no".

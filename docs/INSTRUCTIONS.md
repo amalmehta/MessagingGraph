@@ -34,7 +34,7 @@ Needs macOS 13 or later.
 
 ## Trial and licence
 
-The first 14 days are a free trial with everything working. After that it's $29, once. When the trial ends,
+The first 14 days are a free trial with everything working. After that it's $5, once. When the trial ends,
 everything you imported stays readable; only importing new messages waits for a licence.
 
 - Buy from the app (**Privacy → Licence → Buy**) or the website. The key arrives by email.
