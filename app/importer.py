@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
-DB_PATH = str(Path.home() / "Library" / "Messages" / "chat.db")
-AB_ROOT = str(Path.home() / "Library" / "Application Support" / "AddressBook")
+# The same paths the readers use, including their MG_CHATDB and MG_ADDRESSBOOK
+# overrides, which point a test build at a fixture instead of anyone's messages.
+from .ingest.contacts import AB_ROOT
+from .ingest.imessage import DB_PATH
 
 # Opens System Settings on the pane the switch is on. The app can hand this to
 # the person instead of describing where to click.
@@ -70,6 +71,7 @@ class Result:
     people: int = 0
     threads: int = 0
     note: str = ""
+    licence: bool = False     # stopped because the trial is over, not because of the data
 
 
 def run_whatsapp_import(days: int = 400, on_step=None) -> Result:
@@ -79,8 +81,12 @@ def run_whatsapp_import(days: int = 400, on_step=None) -> Result:
             on_step(msg)
 
     from .ingest.whatsapp import WhatsAppSource
+    from .licence import import_allowed
     from .vault import Vault, VaultError
 
+    allowed, why = import_allowed()
+    if not allowed:
+        return Result(False, note=why, licence=True)
     got = whatsapp_access()
     if not got.ok:
         return Result(False, note=got.reason)
@@ -115,9 +121,16 @@ def run_import(days: int = 400, path: str = DB_PATH, ab_root: str = AB_ROOT,
         if on_step:
             on_step(msg)
 
+    from .ingest.base import SourceUnavailable
     from .ingest.imessage import IMessageSource
+    from .licence import import_allowed
     from .vault import Vault, VaultError
 
+    # Before anything is read: after the trial, what you have stays and new
+    # imports wait for a licence.
+    allowed, why = import_allowed()
+    if not allowed:
+        return Result(False, note=why, licence=True)
     got = access(path)
     if not got.ok:
         return Result(False, note=got.reason)
@@ -131,7 +144,10 @@ def run_import(days: int = 400, path: str = DB_PATH, ab_root: str = AB_ROOT,
 
     step(f"Reading your messages from the last {days} days…")
     src = IMessageSource(path=path, ab_root=ab_root, days=days, id_key=id_key)
-    corpus = src.load()
+    try:
+        corpus = src.load()
+    except SourceUnavailable as e:          # e.g. a macOS that changed the schema
+        return Result(False, note=str(e))
     rep = src.report
     if rep.kept == 0:
         return Result(False, note="Nothing came back from that read, so nothing was written.")

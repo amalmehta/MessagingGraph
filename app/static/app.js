@@ -544,7 +544,10 @@ function syncFoot() {
   const here = !lan.on ? 'no network'
     : lan.devices === 1 ? 'on Wi-Fi · 1 phone'
     : `on Wi-Fi · ${lan.devices} phones`;
-  $('#foot-mode').textContent = `${out} · ${here}`;
+  const lic = S.overview.licence;
+  const paid = !lic ? '' : lic.state === 'trial' ? ` · trial, ${n(lic.trial_days_left, 'day')} left`
+    : lic.state === 'licensed' ? '' : ' · imports need a licence';
+  $('#foot-mode').textContent = `${out} · ${here}${paid}`;
   $('#c-priv').textContent = s.excluded_contact_ids.length
     ? s.excluded_contact_ids.length + ' hidden' : '';
 }
@@ -738,6 +741,22 @@ const SOURCE_LABEL = { synthetic: 'demo data', imessage: 'your messages' };
 // or on a phone over the Wi-Fi, mg:// means nothing and the commands stand.
 const inDesktopApp = () => / MessagingGraph\/desktop\b/.test(navigator.userAgent);
 
+// Links that leave the app. The Mac app's window hands any outside address to the
+// browser itself, and a target=_blank there would go nowhere.
+const OUT = / MessagingGraph\/desktop\b/.test(navigator.userAgent) ? '' : 'target="_blank" rel="noopener"';
+
+// After the trial nothing here goes away: what was imported stays, and only a new
+// import waits. Said once, on the page you land on, with the way out next to it.
+function licenceNotice(o) {
+  const l = o.licence;
+  if (!l || l.can_import) return '';
+  return `<div class="notice"><div><b>${l.state === 'check_needed'
+      ? 'Your licence needs checking.' : 'Your trial has ended.'}</b>
+    ${esc(l.message.replace(/^Your trial has ended\. /, ''))}</div>
+    <div class="cmds one"><a class="btn primary" href="${esc(l.buy_url)}" ${OUT}>Buy — $${l.price_usd}</a>
+    <button type="button" class="btn" data-goto-licence>Enter a key</button></div></div>`;
+}
+
 function demoBanner(o) {
   if (o.source !== 'synthetic') return '';
   const how = inDesktopApp()
@@ -760,6 +779,7 @@ function viewNow() {
     <div class="sub tight">Who's worth a message, and something to say. Copy one into
       Messages or skip it — nothing sends from here.</div>
     ${demoBanner(o)}
+    ${licenceNotice(o)}
     <div class="voicenote" id="voice-note"></div>
     <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
     <h2>Say thanks</h2>
@@ -780,6 +800,7 @@ function viewNow() {
   document.querySelectorAll('.card').forEach(c => c.onclick = () => openPerson(c.dataset.id));
   document.querySelectorAll('.name-them').forEach(b => b.onclick = openNaming);
   document.querySelectorAll('.add-locations').forEach(b => b.onclick = openLocations);
+  document.querySelectorAll('[data-goto-licence]').forEach(b => b.onclick = () => go('privacy'));
   wireJumps();
   drawDrafts().catch(() => { const b = $('#drafts'); if (b) b.innerHTML = COULDNT('drafts'); });
   drawThanks().catch(() => { const b = $('#thanks'); if (b) b.innerHTML = COULDNT('thank-yous'); });
@@ -2658,6 +2679,69 @@ async function drawRefresh() {
 
 const PLATFORM_LABEL = { imessage: 'iMessage', whatsapp: 'WhatsApp', instagram: 'Instagram' };
 
+// The trial or the licence, and -- right under it -- every call the app can make,
+// in the same words the server uses to decide them. The licence check and the
+// update check are the only two, and neither carries anything from your messages.
+async function drawLicence(note) {
+  const box = $('#licencebox'), net = $('#netbox');
+  if (!box) return;
+  let l;
+  try { l = await api('/api/licence'); } catch { box.innerHTML = COULDNT('the licence'); return; }
+  if (!$('#licencebox')) return;
+  const onMac = S.overview.lan?.via !== 'device';
+  box.innerHTML = `<div class="sub tight">${esc(l.message)}
+      ${l.key_hint ? `<br>Key ${esc(l.key_hint)} · last checked
+        ${l.last_checked ? esc(ago(l.last_checked)) : 'never'}.` : ''}
+      ${l.update.newer ? `<br><b>Version ${esc(l.update.latest)} is out</b> (you have
+        ${esc(l.version)}). <a href="${esc(l.update.url)}" ${OUT}>Get it</a>.` : ''}
+    </div>
+    ${!onMac ? '' : l.state === 'licensed' || l.state === 'check_needed'
+      ? `<div class="cmds one"><button type="button" class="btn" id="lic-check">Check now</button>
+         <button type="button" class="btn" id="lic-off">Move to another Mac</button></div>`
+      : `<form class="cmds one" id="lic-form" autocomplete="off">
+           <input class="search" id="lic-key" maxlength="128" placeholder="Paste your licence key"
+             aria-label="Licence key" spellcheck="false">
+           <button type="submit" class="btn primary">Activate</button>
+           <a class="btn" href="${esc(l.buy_url)}" ${OUT}>Buy — $${l.price_usd}</a>
+         </form>`}
+    <div class="dnote ${note && note.err ? 'err' : ''}" id="lic-note">${esc(note ? note.text : '')}</div>`;
+  if (net) {
+    net.innerHTML = `<div class="sub tight">Your messages never leave this Mac. These are the
+        only two calls the app can make, and each goes through the same gate as everything
+        else — pinned to one address, with nothing from your messages allowed in it.</div>
+      ${l.network.map(u => `<div class="notice quiet"><div><b>${u.purpose === 'licence'
+          ? 'Licence check' : 'Update check'}</b> → ${esc(u.to)}<br>Sends ${esc(u.sends)},
+          ${esc(u.when)}.</div></div>`).join('')}
+      <div class="toggle ${l.update_checks ? 'on' : ''}" id="upd-toggle">
+        <div class="sw"></div><div class="tx"><b>Check for updates</b>
+        <span>Once a week. Off means the app never asks; you can still download new
+        versions from the site.</span></div></div>`;
+    $('#upd-toggle').onclick = async () => {
+      await postJSON('/api/privacy', { update_checks: !l.update_checks });
+      drawLicence();
+    };
+  }
+  const done = (res, ok) => drawLicence(res.ok ? { text: ok } : { text: res.error, err: true });
+  const form = $('#lic-form');
+  if (form) form.onsubmit = async (e) => {
+    e.preventDefault();
+    const key = $('#lic-key').value.trim();
+    if (!key) return;
+    $('#lic-note').textContent = 'Checking the key with Lemon Squeezy…';
+    const res = await postJSON('/api/licence/activate', { key });
+    if (res.ok) { S.overview = await api('/api/overview'); syncFoot(); }
+    done(res, 'Activated. Thank you!');
+  };
+  const chk = $('#lic-check');
+  if (chk) chk.onclick = async () => done(await postJSON('/api/licence/check', {}), 'Checked.');
+  const off = $('#lic-off');
+  if (off) off.onclick = async () => {
+    const res = await postJSON('/api/licence/deactivate', {});
+    if (res.ok) { S.overview = await api('/api/overview'); syncFoot(); }
+    done(res, 'This Mac has handed its licence back. Activate it on the other one.');
+  };
+}
+
 async function viewPrivacy() {
   const d = await api('/api/privacy'), s = d.settings;
   const T = (key, on, title, note) => `
@@ -2671,7 +2755,7 @@ async function viewPrivacy() {
       s.network_consent.join(', ') + '.'}</b> ${s.local_only
       ? 'Every profile and plan on this machine was computed without a single network call.' : ''}</div>
     ${T('local_only', s.local_only, 'Local only',
-        'Master switch. While on, no request can leave this machine for any reason.')}
+        'Master switch for your messages. While on, nothing from them can leave this machine for any reason.')}
     ${T('stats_only', s.stats_only, 'Never send message text',
         'Derived numbers may cross the boundary; raw message bodies may not.')}
     ${T('redact_on_send', s.redact_on_send, 'Redact identifiers',
@@ -2682,7 +2766,10 @@ async function viewPrivacy() {
       : `Imported from Messages on this Mac — ${n(S.overview.messages, 'message')} across
          ${n(S.overview.threads, 'thread')}. Import again whenever you want fresher data;
          your names, locations and other corrections are kept.`}</div>
-    ${inDesktopApp()
+    ${S.overview.licence && !S.overview.licence.can_import
+      ? `<div class="sub tight"><b>Importing needs a licence now.</b> What you already imported
+         stays here; enter a key below to import again.</div>`
+      : inDesktopApp()
       ? `<div class="cmds one"><a class="btn primary" href="mg://import">${
           S.overview.source === 'synthetic' ? 'Import my messages' : 'Import again'}</a></div>`
       : `<div class="sub tight">In a browser this is a terminal command:
@@ -2690,6 +2777,10 @@ async function viewPrivacy() {
          Open the Mac app and it is a button.</div>`}
     <h2>Keeping up to date</h2>
     <div class="sub tight" id="refreshline">Checking…</div>
+    <h2 id="licence">Licence</h2>
+    <div id="licencebox"><span class="pempty">Loading…</span></div>
+    <h2>What goes online</h2>
+    <div id="netbox"><span class="pempty">Loading…</span></div>
     <h2>Your phone</h2>
     <div id="phonebox"><span class="pempty">Loading…</span></div>
     <h2>What a Claude call would contain</h2>
@@ -2702,6 +2793,7 @@ async function viewPrivacy() {
 `;
   drawPhone();
   drawRefresh();
+  drawLicence();
 
   document.querySelectorAll('.toggle').forEach(t => t.onclick = async () => {
     const key = t.dataset.k;
