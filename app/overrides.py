@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 
 from .models import Contact, Corpus, Thread
 from .names import group_label, legacy_group_label, looks_like_handle
@@ -123,3 +124,68 @@ def apply_names(corpus: Corpus, names: dict[str, str]) -> Corpus:
         threads[tid] = replace(t, name=name) if name != t.name else t
     return Corpus(contacts=contacts, threads=threads, messages=corpus.messages,
                   source_name=corpus.source_name)
+
+
+MILESTONES_FILE = "milestones.v1.enc"
+VERDICTS = ("confirmed", "dismissed")
+
+
+class MilestoneStore:
+    """Birthdays and anniversaries found in your messages, and what you said about each.
+
+    Sealed into the vault with the same key as everything else. Detections are kept
+    per platform and outlive the messages they came from, so a re-import over a
+    shorter window doesn't forget a birthday; a date you confirmed is never dropped.
+    Your verdicts are kept apart from the detections and keyed by the stable ids,
+    so a dismissed one stays dismissed through every recompute and re-import.
+    """
+
+    def __init__(self, vault=None) -> None:
+        self.vault = vault
+        self._memory: dict = {}
+
+    def load(self) -> dict:
+        data = self._memory if self.vault is None else (self.vault.unseal(MILESTONES_FILE) or {})
+        return {"platforms": dict(data.get("platforms", {})), "verdicts": dict(data.get("verdicts", {}))}
+
+    def save(self, data: dict) -> None:
+        if self.vault is None:
+            self._memory = data
+        else:
+            self.vault.seal(MILESTONES_FILE, data)
+
+    def sync(self, platform: str, detected: list[dict]) -> list[dict]:
+        """Fold a fresh detection into what is stored, and return the merged set.
+
+        A fresh reading replaces older ones for the same person and kind, unless you
+        confirmed the older one. Written only when something changed.
+        """
+        data = self.load()
+        kept = data["platforms"].get(platform, {})
+        fresh = {d["id"]: d for d in detected}
+        seen = {(d["contact_id"], d["kind"]) for d in detected}
+        merged = dict(fresh)
+        for mid, item in kept.items():
+            if mid in fresh:
+                continue
+            if (data["verdicts"].get(mid, {}).get("status") == "confirmed"
+                    or (item["contact_id"], item["kind"]) not in seen):
+                merged[mid] = item
+        if merged != kept:
+            data["platforms"][platform] = merged
+            self.save(data)
+        return list(merged.values())
+
+    def verdicts(self) -> dict[str, dict]:
+        return self.load()["verdicts"]
+
+    def decide(self, mid: str, status: str | None) -> None:
+        """Confirm, dismiss, or (None) take back what you said."""
+        data = self.load()
+        if status is None:
+            data["verdicts"].pop(mid, None)
+        elif status in VERDICTS:
+            data["verdicts"][mid] = {"status": status, "at": datetime.now().isoformat(timespec="seconds")}
+        else:
+            raise ValueError(f"unknown verdict {status!r}")
+        self.save(data)

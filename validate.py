@@ -2630,6 +2630,148 @@ def main() -> int:
     finally:
         shutil.rmtree(_t15, ignore_errors=True)
 
+    print("\nbirthdays and anniversaries:")
+    from datetime import date as _date
+    from app.analysis.milestones import detect as _detect, next_date as _next, upcoming as _upcoming
+    from app.models import Contact as _C, Corpus as _Co, Message as _M, Thread as _T, SELF_ID as _ME
+    from app.overrides import MilestoneStore as _MS, MILESTONES_FILE as _MF
+    from dataclasses import asdict as _asdict
+    _people = {"c_priya": "Priya Raman", "c_sam": "Sam Ortiz", "c_leo": "Leo Park", "c_mia": "Mia Chen",
+               "c_noor": "Noor Haddad", "c_tom": "Tom Reyes", "c_ana": "Ana Silva", "c_jo": "Jo Kim"}
+    _ms_contacts = {k: _C(k, v, f"+1555000{i:04d}") for i, (k, v) in enumerate(_people.items())}
+    _ms_threads = {f"t_{k[2:]}": _T(f"t_{k[2:]}", v, (k,), False) for k, v in _people.items()}
+    _ms_threads["g_crew"] = _T("g_crew", "the crew", ("c_priya", "c_sam", "c_tom", "c_ana"), True)
+    _ms_msgs: list = []
+
+    def _say(tid, who, when, text):
+        _ms_msgs.append(_M(f"m{len(_ms_msgs)}", tid, who, datetime.fromisoformat(when), text, who == _ME))
+
+    # One-to-one wishes, three years running, one of them a day late.
+    _say("t_priya", _ME, "2023-03-04 10:00", "Happy birthday Priya, hope it's a great one")
+    _say("t_priya", _ME, "2024-03-03 09:00", "happy birthday!! 🎉")
+    _say("t_priya", "c_priya", "2024-03-03 09:30", "thank you!!")
+    _say("t_priya", _ME, "2025-03-03 08:15", "hbd!!")
+    _say("t_priya", _ME, "2025-07-10 12:00", "happy birthday to your mom!")     # someone else's
+    _say("t_priya", _ME, "2025-03-07 12:00", "happy belated birthday!!")       # says nothing about the day
+    # Saying so, in the ways people do.
+    _say("t_sam", "c_sam", "2025-05-01 19:00", "my birthday's on the 14th of August btw")
+    _say("t_leo", "c_leo", "2025-11-02 08:00", "it's my birthday today!")
+    _say("t_leo", "c_leo", "2025-06-02 08:00", "my birthday is 3/4 in case you forget")   # ambiguous, ignored
+    _say("t_leo", _ME, "2025-06-03 08:00", "did you wish sam happy birthday?")             # reporting, not wishing
+    _say("t_mia", _ME, "2025-02-11 21:00", "your bday is Sept 9 right?")
+    _say("t_mia", "c_mia", "2025-01-20 09:00", "happy birthday!!")                         # to me
+    _say("t_jo", "c_jo", "2025-10-20 22:00", "tomorrow is my birthday 🥳")
+    _say("t_noor", _ME, "2025-05-20 10:00", "happy anniversary to you two!")
+    _say("t_noor", "c_noor", "2024-12-01 10:00", "our anniversary is May 20 so we're away that week")
+    _say("t_sam", "c_sam", "2025-09-02 10:00", "happy 5 year work anniversary to me lol")
+    # A group: named, thanked, unclaimed, mine, and somebody's sister.
+    _say("g_crew", "c_sam", "2025-10-30 09:00", "happy birthday tom!! 🎂")
+    _say("g_crew", "c_ana", "2025-10-30 09:05", "hbd Tom")
+    _say("g_crew", _ME, "2025-10-30 09:10", "happy birthday!!")
+    _say("g_crew", "c_tom", "2025-10-30 11:00", "thanks everyone ❤️")
+    _say("g_crew", "c_priya", "2025-04-12 09:00", "happy birthday!!")
+    _say("g_crew", "c_sam", "2025-04-12 09:20", "happy bday 🎉")
+    _say("g_crew", "c_ana", "2025-04-12 12:00", "aww thank you guys")
+    _say("g_crew", "c_priya", "2025-09-01 09:00", "happy birthday!!")
+    _say("g_crew", "c_sam", "2025-09-01 09:20", "hbd!!")
+    _say("g_crew", "c_sam", "2025-12-05 09:00", "happy birthday!")
+    _say("g_crew", "c_ana", "2025-12-05 09:30", "happy birthday!!")
+    _say("g_crew", _ME, "2025-12-05 10:00", "thank you all!!")
+    _say("g_crew", "c_tom", "2025-08-08 10:00", "happy birthday to my sister!")
+    _ms_msgs.sort(key=lambda m: m.ts)
+    _msc = _Co(_ms_contacts, _ms_threads, _ms_msgs, "fixture")
+    _found = _detect(_msc)
+    _got = {(m.contact_id, m.kind): m for m in _found}
+
+    def _on(cid, kind="birthday"):
+        m = _got.get((cid, kind))
+        return (m.month, m.day) if m else None
+
+    check("a wish I send in a one-to-one thread dates their birthday", _on("c_priya") == (3, 3), str(_on("c_priya")))
+    check("'my birthday's on the 14th of August' is read", _on("c_sam") == (8, 14), str(_on("c_sam")))
+    check("'it's my birthday today' takes the day it was said", _on("c_leo") == (11, 2), str(_on("c_leo")))
+    check("'tomorrow is my birthday' is the next day", _on("c_jo") == (10, 21), str(_on("c_jo")))
+    check("'your bday is Sept 9 right?' from me counts, as a weaker reading",
+          _on("c_mia") == (9, 9) and _got[("c_mia", "birthday")].confidence < 0.5)
+    check("anniversaries are found, said or wished", _on("c_noor", "anniversary") == (5, 20)
+          and _got[("c_noor", "anniversary")].confidence > _got[("c_mia", "birthday")].confidence)
+    check("a work anniversary is its own kind", _on("c_sam", "work_anniversary") == (9, 2))
+    check("a wish from them to me, a numeric date, a belated or reported wish, and someone's mum are all left out",
+          not any((m.month, m.day) in {(1, 20), (3, 4), (6, 3), (3, 7), (7, 10)} for m in _found),
+          ", ".join(f"{m.name} {m.month}/{m.day}" for m in _found))
+    check("a group wish that names someone goes to them", _on("c_tom") == (10, 30), str(_on("c_tom")))
+    check("an unnamed group wish goes to the one person thanking everyone", _on("c_ana") == (4, 12), str(_on("c_ana")))
+    check("an unnamed group wish nobody answers is pinned on no one",
+          not any((m.month, m.day) == (9, 1) for m in _found))
+    check("group wishes I answered are mine and not recorded against anyone",
+          not any((m.month, m.day) == (12, 5) for m in _found))
+    check("'happy birthday to my sister' is nobody in the chat", not any((m.month, m.day) == (8, 8) for m in _found))
+    _pri = _got[("c_priya", "birthday")]
+    check("the same date across years is one milestone, a day-late wish included",
+          _pri.years == [2023, 2024, 2025] and len(_pri.evidence) == 3, f"{_pri.years}, {len(_pri.evidence)} messages")
+    _one = _detect(_Co(_ms_contacts, _ms_threads, [m for m in _ms_msgs if m.ts.year == 2024], "fixture"))
+    _one = next(m for m in _one if m.contact_id == "c_priya")
+    check("each further year that agrees raises the confidence",
+          _pri.confidence > _one.confidence + 0.2, f"{_one.confidence:.2f} -> {_pri.confidence:.2f}")
+    check("every milestone keeps the message it came from",
+          all(m.source["message_id"] in {x.id for x in _ms_msgs} and m.source["text"] for m in _found))
+    from app.ingest.synthetic import BIRTHDAYS as _BD
+    _syn = _detect(corpus)
+    _want = {(pid, (datetime.now() + timedelta(days=ahead)).date().timetuple()[1:3])
+             for pid, ahead, _, _ in _BD}
+    check("the demo corpus's birthdays are recovered, and its plan talk about birthdays invents none",
+          {(m.contact_id, (m.month, m.day)) for m in _syn} == _want,
+          ", ".join(f"{m.name} {m.month}/{m.day}" for m in _syn))
+    check("29 February falls on the 28th in other years",
+          _next(2, 29, _date(2027, 1, 5)) == _date(2027, 2, 28) and _next(2, 29, _date(2028, 1, 5)) == _date(2028, 2, 29))
+    check("a date just past comes round next year", _next(3, 3, _date(2026, 3, 4)) == _date(2027, 3, 3))
+
+    _ms = _MS()
+    _items = _ms.sync("whatsapp", [_asdict(m) for m in _found])
+    _soon = _upcoming(_items, _ms.verdicts(), _date(2026, 10, 25), 30)
+    check("the next 30 days, soonest first",
+          [(i["contact_id"], i["days_until"]) for i in _soon] == [("c_tom", 5), ("c_leo", 8)],
+          str([(i["contact_id"], i["days_until"]) for i in _soon]))
+    _tom = _got[("c_tom", "birthday")].id
+    _ms.decide(_tom, "dismissed")
+    _gone = lambda: not any(i["contact_id"] == "c_tom" for i in _upcoming(
+        _ms.sync("whatsapp", [_asdict(m) for m in _found]), _ms.verdicts(), _date(2026, 10, 25), 30))
+    check("a dismissed date is gone, and stays gone after the next detection", _gone())
+    _moved = [{**_asdict(m), "id": m.id.replace("10-30", "10-31"), "day": 31} if m.id == _tom else _asdict(m)
+              for m in _found]
+    check("a dismissed date doesn't come back a day over",
+          not any(i["contact_id"] == "c_tom" for i in _upcoming(_ms.sync("whatsapp", _moved), _ms.verdicts(),
+                                                                 _date(2026, 10, 25), 30)))
+    _leo = _got[("c_leo", "birthday")].id
+    _ms.decide(_leo, "confirmed")
+    _later = [{**_asdict(m), "id": m.id.replace("11-02", "11-12"), "day": 12} if m.id == _leo else _asdict(m)
+              for m in _found]
+    _leos = [i for i in _upcoming(_ms.sync("whatsapp", _later), _ms.verdicts(), _date(2026, 10, 25), 30)
+             if i["contact_id"] == "c_leo"]
+    check("a confirmed date stands over any later reading for the same person",
+          [(i["day"], i["status"]) for i in _leos] == [(2, "confirmed")],
+          str([(i["day"], i["status"]) for i in _leos]))
+    check("each platform keeps its own detections", _ms.sync("imessage", []) == [])
+
+    _vt2 = Path(tempfile.mkdtemp()) / "vault"
+    try:
+        _vk = MemoryKeyStore()
+        _vv = Vault(_vt2, _vk)
+        _vv.write(_msc, {"messages": len(_msc.messages)}, platform="whatsapp")
+        _vs = _MS(_vv)
+        _vs.sync("whatsapp", [_asdict(m) for m in _found])
+        _vs.decide(_tom, "dismissed")
+        _blob = (_vt2 / _MF).read_bytes()
+        check("detections are sealed in the vault, not readable on disk",
+              not any(n.encode() in _blob for n in ("Tom Reyes", "happy birthday", "c_tom", "birthday")),
+              f"{len(_blob):,} bytes of ciphertext")
+        _again = _MS(Vault(_vt2, _vk))
+        check("a dismissal survives a restart",
+              _again.verdicts().get(_tom, {}).get("status") == "dismissed"
+              and len(_again.load()["platforms"]["whatsapp"]) == len(_found))
+    finally:
+        shutil.rmtree(_vt2.parent, ignore_errors=True)
+
     print("\npalette:")
     css = Path("app/static/styles.css").read_text()
     js = Path("app/static/app.js").read_text()

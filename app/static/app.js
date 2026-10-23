@@ -562,7 +562,7 @@ async function viewInsights() {
   $('#main').innerHTML = `<h1>Insights</h1>
     <div class="sub tight">What a year of this looks like from a distance. Facts about
       when and how much, not marks out of ten.</div>
-    <div id="ins"><div class="empty">Working it out…</div></div>`;
+    <div id="ins"><div class="empty loading">Working it out…</div></div>`;
   let d;
   try { d = await api('/api/insights'); } catch {
     $('#ins').innerHTML = `<div class="empty">Couldn't work that out.
@@ -590,16 +590,18 @@ async function viewInsights() {
       ${esc(d.busiest_day)} than any other day.</div>
     <div class="whenwrap">
       <div class="whenbars" role="img" aria-label="Messages by hour of day">
-        ${d.by_hour.map((v, h) => `<i style="height:${Math.max(2, 100 * v / hourMax)}%"
+        ${d.by_hour.map((v, h) => `<i class="${v === hourMax ? 'peak' : ''}"
+          style="height:${Math.max(2, 100 * v / hourMax)}%"
           title="${h}:00 — ${n(v.toLocaleString(), 'message')}"></i>`).join('')}
       </div>
-      <div class="whenaxis"><span>midnight</span><span>noon</span><span>midnight</span></div>
-    </div>
-    <div class="daybars" role="img" aria-label="Messages by day of the week">
-      ${d.by_day.map((v, i) => `<div class="daybar">
-        <span class="dl">${DAYS[i]}</span>
-        <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
-        <span class="dv">${v.toLocaleString()}</span></div>`).join('')}
+      <div class="whenaxis"><span>midnight</span><span style="left:${100 * 6.5 / 24}%">6am</span>
+        <span style="left:${100 * 12.5 / 24}%">noon</span><span style="left:${100 * 18.5 / 24}%">6pm</span><span>midnight</span></div>
+      <div class="daybars" role="img" aria-label="Messages by day of the week">
+        ${d.by_day.map((v, i) => `<div class="daybar${v === dayMax ? ' peak' : ''}">
+          <span class="dl">${DAYS[i]}</span>
+          <i><b style="width:${Math.max(1, 100 * v / dayMax)}%"></b></i>
+          <span class="dv">${v.toLocaleString()}</span></div>`).join('')}
+      </div>
     </div>
 
     <h2>Who that is, mostly</h2>
@@ -631,7 +633,7 @@ async function viewSearch() {
   $('#main').innerHTML = `<h1>Search</h1>
     <div class="sub tight">Everything the app knows — people, plans, group chats and the
       messages themselves. Nothing is sent anywhere to answer it.</div>
-    <div id="hits"><div class="empty">Looking…</div></div>`;
+    <div id="hits"><div class="empty loading">Looking…</div></div>`;
   let r;
   try {
     r = await api('/api/search?q=' + encodeURIComponent(q));
@@ -781,11 +783,15 @@ function viewNow() {
     ${demoBanner(o)}
     ${licenceNotice(o)}
     <div class="voicenote" id="voice-note"></div>
-    <div id="drafts" class="drafts"><div class="empty">Drafting…</div></div>
+    <div id="drafts" class="drafts"><div class="empty loading">Drafting…</div></div>
+    <h2>Coming up</h2>
+    <div class="sub tight">Birthdays and anniversaries in the next 30 days, worked out from
+      what people said and when. Tell it when it's wrong and that one won't come back.</div>
+    <div id="milestones" class="drafts"><div class="empty loading">Checking the calendar…</div></div>
     <h2>Say thanks</h2>
     <div class="sub tight">Tied to something that actually happened — a favour, a year of
       texting, something you did together.</div>
-    <div id="thanks" class="drafts"><div class="empty">Looking back…</div></div>
+    <div id="thanks" class="drafts"><div class="empty loading">Looking back…</div></div>
     ${notices(o)}
     <div class="statline">
       ${pc.confirmed ? `<button type="button" class="jump" data-goto="graph" data-jump="plans-confirmed"><b>${pc.confirmed}</b> confirmed</button>` : ''}
@@ -804,6 +810,7 @@ function viewNow() {
   wireJumps();
   drawDrafts().catch(() => { const b = $('#drafts'); if (b) b.innerHTML = COULDNT('drafts'); });
   drawThanks().catch(() => { const b = $('#thanks'); if (b) b.innerHTML = COULDNT('thank-yous'); });
+  drawMilestones().catch(() => { const b = $('#milestones'); if (b) b.innerHTML = COULDNT('dates'); });
 }
 
 // The three plan counts live on Now but the plans themselves are on the
@@ -911,6 +918,103 @@ async function drawThanks() {
   }
   box.innerHTML = shown.map(d => draftCard(d, '/api/gratitude')).join('');
   box.querySelectorAll('.draft').forEach(wireDraft);
+}
+
+// ---------------------------------------------------------------- birthdays
+// How sure, in words first: a percentage alone reads as more precise than a
+// guess from a "happy birthday" in a group chat deserves.
+function sureWords(m) {
+  if (m.status === 'confirmed') return 'you confirmed this';
+  const pct = Math.round(m.confidence * 100);
+  const word = m.confidence >= 0.85 ? 'very likely' : m.confidence >= 0.6 ? 'likely' : 'a guess';
+  return `${word} (${pct}%)${m.years.length > 1 ? ` · seen ${m.years.length} years running` : ''}`;
+}
+
+async function drawMilestones() {
+  const box = $('#milestones');
+  if (!box) return;
+  const all = await api('/api/milestones?days=30');
+  S.milestones = Object.fromEntries(all.map(m => [m.id, m]));
+  S.milestoneSeeds = S.milestoneSeeds || {};
+  if (!all.length) {
+    box.innerHTML = `<div class="empty">Nothing in the next 30 days that your messages point to.</div>`;
+    return;
+  }
+  box.innerHTML = all.map(milestoneCard).join('');
+  box.querySelectorAll('.draft').forEach(wireMilestone);
+}
+
+function milestoneCard(m) {
+  const day = new Date(m.date + 'T12:00:00').toLocaleDateString(undefined,
+    { weekday: 'short', month: 'short', day: 'numeric' });
+  const from = m.source.sender === 'You' ? 'You' : esc(m.source.sender);
+  const where = m.source.group ? ` in ${esc(m.source.thread)}` : '';
+  return `<div class="draft milestone" data-id="${esc(m.id)}">
+    <div class="dtop">
+      <span class="dwho link" data-person="${esc(m.contact_id)}">${avatar(m.who)}<span class="who">${esc(m.who)}</span></span>
+      <span class="kind">${esc(m.label)} · ${esc(day)}</span></div>
+    <textarea class="dtext" rows="2" aria-label="Message to ${esc(m.who)}">${esc(m.draft)}</textarea>
+    <div class="why">${esc(m.headline)}. ${esc(m.why)} <span class="sure">${esc(sureWords(m))}</span></div>
+    <div class="detail">${from}${where}, ${esc(new Date(m.source.ts).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric', year: 'numeric' }))}: “${esc(m.source.text)}”</div>
+    <div class="dact">
+      <button type="button" class="btn primary copy">Copy</button>
+      ${m.options > 1 ? '<button type="button" class="btn another">Another version</button>' : ''}
+      ${m.status === 'confirmed' ? '' : '<button type="button" class="btn confirm">That\'s right</button>'}
+      <button type="button" class="btn ghost dismiss">Wrong date</button>
+      <span class="dnote" role="status"></span>
+    </div></div>`;
+}
+
+function wireMilestone(card) {
+  const id = card.dataset.id, ta = card.querySelector('.dtext'), note = card.querySelector('.dnote');
+  fitText(ta);
+  const who = card.querySelector('.dwho[data-person]');
+  if (who) who.onclick = () => openPerson(who.dataset.person);
+  card.querySelector('.copy').onclick = () => copyInto(ta, note);
+  const decide = async (action) => {
+    const r = await postJSON('/api/milestones/' + encodeURIComponent(id), { action });
+    if (!r.ok) { note.textContent = r.error; return null; }
+    return r.data;
+  };
+  const confirm = card.querySelector('.confirm');
+  if (confirm) confirm.onclick = async () => {
+    confirm.disabled = true;
+    if (!await decide('confirm')) { confirm.disabled = false; return; }
+    S.milestones[id].status = 'confirmed';
+    card.querySelector('.sure').textContent = sureWords(S.milestones[id]);
+    confirm.remove();
+    say(`${S.milestones[id].who}'s ${S.milestones[id].label} saved`);
+  };
+  card.querySelector('.dismiss').onclick = async () => {
+    if (!await decide('dismiss')) return;
+    const host = card.parentElement, m = S.milestones[id];
+    card.remove();
+    toast(`Won't suggest ${m.who}'s ${m.label} on that date again`);
+    if (host && !host.querySelector('.draft')) host.innerHTML = `<div class="empty">Nothing else coming up.</div>`;
+  };
+  const another = card.querySelector('.another');
+  if (another) another.onclick = async () => {
+    const m = S.milestones[id];
+    S.milestoneSeeds[id] = ((S.milestoneSeeds[id] || 0) + 1) % m.options;
+    another.disabled = true;
+    let list;
+    try {
+      list = await api(`/api/milestones?days=30&redraft=${encodeURIComponent(id)}&seed=${S.milestoneSeeds[id]}`);
+    } catch {
+      note.textContent = "Couldn't get another version. Try again.";
+      return;
+    } finally {
+      another.disabled = false;
+    }
+    const fresh = list.find(x => x.id === id);
+    if (!fresh) return;
+    S.milestones[id] = fresh;
+    const next = document.createElement('div');
+    next.innerHTML = milestoneCard(fresh);
+    card.replaceWith(next.firstElementChild);
+    wireMilestone($(`.milestone[data-id="${CSS.escape(id)}"]`));
+  };
 }
 
 function draftCard(d, src = '/api/messages') {
@@ -1027,7 +1131,7 @@ async function loadCrew() {
     out.innerHTML = `<div class="empty">Say what the plan is and this will suggest who to ask.</div>`;
     return;
   }
-  out.innerHTML = `<div class="empty">Working out who'd be up for it…</div>`;
+  out.innerHTML = `<div class="empty loading">Working out who'd be up for it…</div>`;
   let crew;
   try {
     crew = await api(`/api/crew?activity=${encodeURIComponent(c.activity)}`
@@ -2327,7 +2431,7 @@ async function viewGraph() {
       <span class="hint" id="g-count">node size = importance · thicker line = more of it</span>
     </div>
     <div class="gwrap"><svg id="g"></svg>
-      <div class="legend"><b>plan state</b>
+      <details class="legend" open><summary>Key</summary><b>plan state</b>
         ${['scheduled', 'confirmed', 'proposed', 'floated', 'stale'].map(k =>
           `<span><i style="background:${STATE_COLOR[k]}"></i>${k}</span>`).join('')}
         <b class="gap">how a person is doing</b>
@@ -2337,20 +2441,22 @@ async function viewGraph() {
         <span><i class="ln solid"></i>just the two of you</span>
         <span><i class="ln dash"></i>a group chat you share</span>
         <span><i class="ln thin"></i>in this plan</span>
-      </div></div>
+      </details></div>
     <h2>Plans</h2>
     <div class="sub tight">Pulled out of message text, and the same plans the graph
       draws between people.</div>
-    <div id="plans-panel"><div class="empty">Loading plans…</div></div>
+    <div id="plans-panel"><div class="empty loading">Loading plans…</div></div>
     <h2>Get a crew together</h2>
     <div class="sub tight">For something that needs more than one person — a league, a trip, a
       standing game night. Say what it is and this picks who to ask, based on who talks about it,
       who's actually done it with you, and who already knows each other.</div>
-    <div id="crew-panel"><div class="empty">Loading…</div></div>
+    <div id="crew-panel"><div class="empty loading">Loading…</div></div>
     <h2>Who's connected</h2>
     <div class="sub tight">Connected means sharing a group chat, or coming up by name in your chat with
       the other. Interests come from what you talk about and actually do together.</div>
-    <div id="circles-panel"><div class="empty">Loading…</div></div>`;
+    <div id="circles-panel"><div class="empty loading">Loading…</div></div>`;
+  // On a phone the key would cover half the graph, so it starts folded there.
+  if (matchMedia('(max-width:760px)').matches) $('.gwrap .legend').open = false;
   // It is a switch now, so it has to answer the keyboard like one.
   const stale = $('#t-stale');
   const flipStale = () => { S.includeStale = !S.includeStale; viewGraph(); };

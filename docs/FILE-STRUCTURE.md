@@ -16,7 +16,7 @@
 | [`app/updates.py`](../app/updates.py) | The weekly "is there a newer version?" check |
 | [`app/appdata.py`](../app/appdata.py) | The app's own small file (licence, trial, onboarding), kept apart from the vault |
 | [`app/ingest/`](../app/ingest) | Readers for Messages (`chat.db`), Contacts, and the synthetic demo corpus |
-| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, crews, connections, places, vibes, voice and spam filtering |
+| [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, birthdays and anniversaries, crews, connections, places, vibes, voice and spam filtering |
 | [`app/graph.py`](../app/graph.py) | The plan graph: people and live plans as nodes |
 | [`app/models.py`](../app/models.py) | Core data types shared by ingestion, analysis and the API |
 | [`app/vault.py`](../app/vault.py) | Encrypted at-rest store for an imported corpus |
