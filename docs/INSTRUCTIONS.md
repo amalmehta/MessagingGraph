@@ -95,6 +95,30 @@ Build the app with `./mg build-app` if you haven't.
 Import again whenever you want fresher data. Your names, locations and other corrections are
 kept either way.
 
+#### WhatsApp
+
+WhatsApp needs no permission. If you use WhatsApp Desktop on this Mac:
+
+```bash
+./mg import --whatsapp
+```
+
+If your WhatsApp is only on your phone, export the chats you want instead. In WhatsApp, open
+a chat, then on an iPhone tap its name and choose **Export Chat → Without Media**, or on
+Android tap **⋮ → More → Export chat → Without media**. Send the zip to your Mac (AirDrop,
+Files or email all work). Do this for each chat, then import them all at once:
+
+```bash
+./mg import --whatsapp-export "WhatsApp Chat - Sam.zip" "WhatsApp Chat - Climbing.zip"
+```
+
+It works out which name in the chats is yours from any chat with one other person. If you
+export only group chats, it asks you to say with `--me "Your Name"`.
+
+WhatsApp is kept beside your iMessage history, under its own tab, not mixed in. An export
+replaces whatever WhatsApp history you imported before, and it isn't refreshed by itself:
+export the chats again and re-run the command to bring it up to date.
+
 **Which app holds the permission.** Importing in the Mac app means Messaging Graph holds Full
 Disk Access rather than Terminal. macOS ties the grant to the app's bundle id and signature, so it carries
 over to updates signed by the same developer. It only reads `chat.db` during an import — serving your data

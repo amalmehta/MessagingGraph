@@ -110,6 +110,50 @@ def run_whatsapp_import(days: int = 400, on_step=None) -> Result:
                   threads=len(corpus.threads))
 
 
+def run_whatsapp_export_import(paths: list[str], me: str | None = None, days: int = 400,
+                               on_step=None) -> Result:
+    """WhatsApp from Export chat zips, for a WhatsApp that lives on a phone.
+    It goes where WhatsApp Desktop's history would, and the manifest says it
+    came from files, so the daily refresh leaves it alone: there is nothing
+    to read again, and reading WhatsApp Desktop instead would replace it."""
+    def step(msg: str) -> None:
+        if on_step:
+            on_step(msg)
+
+    from .ingest.base import SourceUnavailable
+    from .ingest.whatsapp_export import WhatsAppExportSource
+    from .licence import import_allowed
+    from .vault import Vault, VaultError
+
+    allowed, why = import_allowed()
+    if not allowed:
+        return Result(False, note=why, licence=True)
+    src = WhatsAppExportSource(paths, me=me, days=days)
+    ok, why = src.available()
+    if not ok:
+        return Result(False, note=why)
+    step("Unlocking the vault…")
+    vault = Vault()
+    try:
+        src.id_key = vault.id_key()
+    except VaultError as e:
+        return Result(False, note=str(e))
+    step(f"Reading {len(paths)} exported chat{'s' if len(paths) != 1 else ''}…")
+    try:
+        corpus = src.load()
+    except SourceUnavailable as e:
+        return Result(False, note=str(e))
+    rep = src.report
+    if rep.kept == 0:
+        return Result(False, note="Those exports have nothing in that window.")
+    step("Encrypting…")
+    vault.write(corpus, {"window_days": days, "messages": rep.kept, "from": "export",
+                         "people": len(corpus.contacts), "threads": len(corpus.threads)},
+                platform="whatsapp")
+    return Result(True, messages=rep.kept, people=len(corpus.contacts),
+                  threads=len(corpus.threads))
+
+
 def run_import(days: int = 400, path: str = DB_PATH, ab_root: str = AB_ROOT,
                on_step=None) -> Result:
     """Read chat.db once and seal it into the vault. Returns what landed.

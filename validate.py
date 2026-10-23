@@ -2828,6 +2828,10 @@ def main() -> int:
     from tests import ingest_checks
     ingest_checks.run(check)
 
+    print("\nWhatsApp from Export chat: the dates, names and files a phone hands you:")
+    from tests import whatsapp_export_checks
+    whatsapp_export_checks.run(check)
+
     print("\nthe whole way through: a fake history imported, served and read back:")
     from tests import e2e_checks
     e2e_checks.run(check)

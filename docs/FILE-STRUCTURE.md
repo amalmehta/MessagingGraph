@@ -15,7 +15,7 @@
 | [`app/licence.py`](../app/licence.py) | Trial, licence keys against Lemon Squeezy's License API, offline grace |
 | [`app/updates.py`](../app/updates.py) | The weekly "is there a newer version?" check |
 | [`app/appdata.py`](../app/appdata.py) | The app's own small file (licence, trial, onboarding), kept apart from the vault |
-| [`app/ingest/`](../app/ingest) | Readers for Messages (`chat.db`), Contacts, and the synthetic demo corpus |
+| [`app/ingest/`](../app/ingest) | Readers for Messages (`chat.db`), Contacts, WhatsApp Desktop's database, WhatsApp's Export chat zips, and the synthetic demo corpus |
 | [`app/analysis/`](../app/analysis) | Relationships, plans, drafts, thank-yous, birthdays and anniversaries, crews, connections, places, vibes, voice and spam filtering |
 | [`app/graph.py`](../app/graph.py) | The plan graph: people and live plans as nodes |
 | [`app/models.py`](../app/models.py) | Core data types shared by ingestion, analysis and the API |
@@ -27,7 +27,7 @@
 | [`macapp/`](../macapp) | Builds `Messaging Graph.app` (`build.py`), and its hardened-runtime `entitlements.plist` |
 | [`scripts/package.sh`](../scripts/package.sh) | The release build: the `.app` and DMG, Developer ID–signed, notarized and stapled (`--adhoc` for a local test) |
 | [`site/`](../site) | The product site: landing page with price and Buy button, privacy policy, terms and refund templates, `version.json` |
-| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; a fake iMessage and WhatsApp history imported end to end and compared with a snapshot; ingest, licence and shipping checks run by `validate.py`. See [tests/README.md](../tests/README.md) |
+| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; a fake iMessage and WhatsApp history (database and Export chat zips) imported end to end and compared with a snapshot; WhatsApp export parsing; ingest, licence and shipping checks run by `validate.py`. See [tests/README.md](../tests/README.md) |
 | [`validate.py`](../validate.py) | Checks the analysis against the demo generator's hidden parameters |
 | [`docs/`](.) | These docs and [How it works](how-it-works.md) |
 | [`docs/SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | Components, main flows, storage, design decisions and the Messages schema across macOS versions |

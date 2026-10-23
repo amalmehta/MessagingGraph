@@ -258,10 +258,79 @@ def build_whatsapp(root: str) -> str:
     return path
 
 
-def build(root: str) -> dict[str, str]:
+# The same two WhatsApp chats, as Export chat on a phone writes them --------------
+ME = "Alex Rivera"                          # who these exports belong to; said nowhere
+# A phone that never saved Jonas shows his number where his name would be.
+JONAS_SHOWN = "+49 151 12345678"
+LRM, NNBSP = "‎", " "
+
+
+def _iphone(when: datetime, who: str, text: str) -> str:
+    return f"[{when:%d/%m/%Y, %H:%M:%S}] {who}: {text}"
+
+
+def _android_us(when: datetime, who: str | None, text: str) -> str:
+    clock = f"{when.hour % 12 or 12}:{when:%M}{NNBSP}{'AM' if when.hour < 12 else 'PM'}"
+    stamp = f"{when.month}/{when.day}/{when:%y}, {clock}"
+    return f"{stamp} - {who}: {text}" if who else f"{stamp} - {text}"
+
+
+def build_whatsapp_exports(root: str) -> list[str]:
+    """Write two Export chat zips under `root`: Aarav as an iPhone exports a
+    chat, and the flatmates' group as an American Android phone does. Returns
+    their paths."""
+    import zipfile
+    os.makedirs(root, exist_ok=True)
+
+    # An iPhone: "_chat.txt", day-first, 24-hour, direction marks before notices.
+    lines = [_iphone(_at(364, 12, 59), "Aarav Shah", LRM + "Messages and calls are end-to-end "
+                     "encrypted. No one outside of this chat, not even WhatsApp, can read or "
+                     "listen to them.")]
+    for k, d in enumerate(range(364, 0, -4)):
+        a, b = CHATTER[k % len(CHATTER)]
+        first, second = (ME, "Aarav Shah") if k % 2 == 0 else ("Aarav Shah", ME)
+        lines += [_iphone(_at(d, 13), first, a), _iphone(_at(d, 13, 3), second, b)]
+    lines += [
+        _iphone(_at(10, 8), "Aarav Shah", LRM + "image omitted"),
+        _iphone(_at(10, 8, 1), "Aarav Shah", "the view from the new flat"),
+        "three rooms, one of them is yours whenever you visit",      # the same message, wrapped
+        _iphone(_at(9, 8), ME, f"that looks amazing {LRM}<This message was edited>"),
+        _iphone(_at(9, 8, 2), "Aarav Shah", LRM + "This message was deleted."),
+        _iphone(_at(3, 9), "Aarav Shah", f"changed my number, it's {AARAV_PHONE} now"),
+        _iphone(_at(3, 9, 1), "Aarav Shah", f"rent goes to {AARAV_IBAN}"),
+    ]
+    aarav = os.path.join(root, "WhatsApp Chat - Aarav Shah.zip")
+    with zipfile.ZipFile(aarav, "w") as z:
+        z.writestr("_chat.txt", "\n".join(lines) + "\n")
+        z.writestr("00000012-PHOTO-2026-05-22-08-00-00.jpg", b"\xff\xd8 not really a photo")
+
+    # An American Android phone: the chat named in the file, month-first, 12-hour
+    # with a narrow space before PM, and its notices written with no one's name.
+    members = ("Aarav Shah", JONAS_SHOWN, "Sofía García", ME)
+    lines = [_android_us(_at(201, 9), None, "Messages and calls are end-to-end encrypted. No one "
+                         "outside of this chat, not even WhatsApp, can read or listen to them. "
+                         "Tap to learn more."),
+             _android_us(_at(201, 9, 1), None, f"{JONAS_SHOWN} added Sofía García")]
+    for k, d in enumerate(range(200, 2, -6)):
+        for i, who in enumerate(members):
+            lines.append(_android_us(_at(d, 21, i * 2), who, CHATTER[(k + i) % len(CHATTER)][i % 2]))
+    lines += [
+        _android_us(_at(30, 10), "Sofía García", "<Media omitted>"),
+        _android_us(_at(4, 11), "Sofía García", "nos vemos en el café de la esquina"),
+        _android_us(_at(2, 19), JONAS_SHOWN, "dinner friday?"),
+        _android_us(_at(2, 19, 6), "Sofía García", "yes i'm in"),
+    ]
+    group = os.path.join(root, "WhatsApp Chat with Berlin flatmates.zip")
+    with zipfile.ZipFile(group, "w") as z:
+        z.writestr("WhatsApp Chat with Berlin flatmates.txt", "\n".join(lines) + "\n")
+    return [aarav, group]
+
+
+def build(root: str) -> dict:
     chatdb, ab = build_chatdb(os.path.join(root, "imessage"))
     return {"chatdb": chatdb, "addressbook": ab,
-            "whatsapp": build_whatsapp(os.path.join(root, "whatsapp"))}
+            "whatsapp": build_whatsapp(os.path.join(root, "whatsapp")),
+            "whatsapp_exports": build_whatsapp_exports(os.path.join(root, "whatsapp-export"))}
 
 
 if __name__ == "__main__":

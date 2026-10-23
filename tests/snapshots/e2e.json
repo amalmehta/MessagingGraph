@@ -273,6 +273,97 @@
   "source": "whatsapp",
   "suggestions": []
  },
+ "whatsapp_export": {
+  "counts": {
+   "messages": 323,
+   "people": 3,
+   "threads": 2
+  },
+  "drift": [],
+  "group_credit": {
+   "+49 151 12345678": 34,
+   "Aarav Shah": 33,
+   "Sofía García": 36,
+   "me": 33
+  },
+  "open_plans": 1,
+  "people": [
+   {
+    "messages": 0,
+    "name": "+49 151 12345678",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   },
+   {
+    "messages": 187,
+    "name": "Aarav Shah",
+    "open_plans": 1,
+    "per_week": 3.6,
+    "per_week_recent": 4.4,
+    "state": "steady",
+    "trend": "steady"
+   },
+   {
+    "messages": 0,
+    "name": "Sofía García",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   }
+  ],
+  "plans": [
+   {
+    "assumed": false,
+    "state": "confirmed",
+    "title": "Dinner with Berlin flatmates",
+    "when": "friday",
+    "with": [
+     "+49 151 12345678",
+     "Aarav Shah",
+     "Sofía García"
+    ]
+   }
+  ],
+  "redaction": {
+   "Aarav Shah": {
+    "redactions": [
+     "[iban]",
+     "[phone]"
+    ],
+    "said": [
+     "Aarav Shah: honestly not bad, busy though",
+     "Aarav Shah: changed my number, it's [phone] now",
+     "Aarav Shah: rent goes to [iban]"
+    ]
+   }
+  },
+  "search": {
+   "cafe": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "café": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "climbing": [],
+   "встреча": [],
+   "東京": []
+  },
+  "source": "whatsapp",
+  "suggestions": []
+ },
  "whatsapp_only": {
   "counts": {
    "messages": 319,

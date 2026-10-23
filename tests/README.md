@@ -13,8 +13,9 @@ generator's hidden parameters:
 |---|---|
 | [`chatdb_fixture.py`](chatdb_fixture.py) | A small `chat.db` and AddressBook built the way macOS writes them: WAL-only rows, `attributedBody`, tapbacks, hostile names. Also the same store as older macOS versions shaped it |
 | [`ingest_checks.py`](ingest_checks.py) | Reading that store as each macOS version shaped it |
-| [`e2e_fixture.py`](e2e_fixture.py) | A whole fake history: a `chat.db`, its AddressBook, and WhatsApp Desktop's `ChatStorage.sqlite` |
+| [`e2e_fixture.py`](e2e_fixture.py) | A whole fake history: a `chat.db`, its AddressBook, WhatsApp Desktop's `ChatStorage.sqlite`, and the same WhatsApp chats as two Export chat zips |
 | [`e2e_checks.py`](e2e_checks.py) | That history imported, served and read back over the HTTP API, compared with [`snapshots/e2e.json`](snapshots/e2e.json) |
+| [`whatsapp_export_checks.py`](whatsapp_export_checks.py) | Reading Export chat files: dates that read two ways, 12-hour clocks, telling which name is yours, files that aren't exports |
 | [`licence_checks.py`](licence_checks.py) | The trial, licence keys, and the only two calls that go online |
 | [`shipping_checks.py`](shipping_checks.py) | The app bundle, the first run, and the product site |
 
@@ -33,8 +34,9 @@ is asked, over its own API, for:
 - **search**: the hits for `cafe`, `café`, `встреча`, `東京` and `climbing`
 - **group credit**: who wrote how much in each group chat
 
-It does this three times: for iMessage, for WhatsApp in the same vault, and for a second
-vault that holds only WhatsApp.
+It does this four times: for iMessage, for WhatsApp in the same vault, for a second vault
+that holds only WhatsApp, and for a third filled from Export chat zips with
+`mg import --whatsapp-export`.
 
 The fixture holds the cases that recent fixes were for:
 
@@ -47,6 +49,7 @@ The fixture holds the cases that recent fixes were for:
 | Stale plans | A coffee with Marcus nobody followed up on (stale), and a dinner with Дмитрий raised again yesterday (no longer stale) |
 | A friend's yes confirms a group plan | Climbing on Saturday, and dinner on Friday |
 | A WhatsApp-only import | The second vault |
+| WhatsApp from Export chat | Aarav's chat as an iPhone exports it (day-first, 24-hour, a photo, a wrapped message, an edit, a deletion), and the flatmates' group as an American Android phone does (month-first, 12-hour, notices with no sender, Jonas known only by his number) |
 
 Every name, number and IBAN in it is made up. The phone numbers are in fictional or unused
 ranges, and the IBANs are the standard published examples.

@@ -91,6 +91,8 @@ def refresh_once(platforms: list[str] | None = None) -> list[Outcome]:
         # The span you chose when you imported. Falling back on the importer's
         # default turned `mg import --days 2000` into 400 days an hour later.
         days = vault.window_days(p) or 400
+        if (vault.manifest(p) or {}).get("from") == "export":
+            continue            # files you exported: nothing to read again
         try:
             if p == "whatsapp":
                 r = run_whatsapp_import(days=days)

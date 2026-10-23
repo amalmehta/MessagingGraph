@@ -159,10 +159,23 @@ def collect(fx: dict[str, str], root: Path) -> tuple[dict, dict]:
         main_mod.state = AppState(only.source())
         alone = _reading(client, main_mod, "Berlin flatmates", ("Aarav Shah",))
         alone["platforms"] = client.get("/api/platforms").json()
+
+        # Someone whose WhatsApp is on their phone, who exported two chats.
+        use_vault(root / "vault-whatsapp-export")
+        live["export_imported"] = mg("--whatsapp-export", *fx["whatsapp_exports"])
+        exported = Vault()
+        live["export_manifest"] = exported.manifest("whatsapp") or {}
+        main_mod.state = AppState(exported.source())
+        export = _reading(client, main_mod, "Berlin flatmates", ("Aarav Shah",))
+        live["raw_export"] = [m.text for m in main_mod.state.corpus.messages]
+        from app.refresh import refresh_once
+        live["export_refreshed"] = refresh_once()
+        live["export_after_refresh"] = len(Vault().read("whatsapp").messages)
     finally:
         (vault_mod.KeychainKeyStore, Vault.__init__.__defaults__,
          wa_mod.WhatsAppSource.__init__.__defaults__, main_mod.state, vault_mod.subprocess) = saved
-    return {"imessage": imessage, "whatsapp": whatsapp, "whatsapp_only": alone}, live
+    return {"imessage": imessage, "whatsapp": whatsapp, "whatsapp_only": alone,
+            "whatsapp_export": export}, live
 
 
 def _diff(want: dict, got: dict) -> str:
@@ -181,6 +194,7 @@ def run(check, update: bool = False) -> None:
     finally:
         shutil.rmtree(root, ignore_errors=True)
     im, wa, only = snap["imessage"], snap["whatsapp"], snap["whatsapp_only"]
+    ex = snap["whatsapp_export"]
 
     # --- the import -------------------------------------------------------------
     check("`mg import` reads the fixture's chat.db, then its WhatsApp, into one vault",
@@ -231,6 +245,33 @@ def run(check, update: bool = False) -> None:
           and live["only_source"] == "vault:whatsapp" and only["source"] == "whatsapp"
           and only["people"] == wa["people"], f"{live['only_platforms']} {live['only_source']}")
 
+    # --- WhatsApp from Export chat zips ---------------------------------------------
+    from tests.e2e_fixture import JONAS_SHOWN
+    check("`mg import --whatsapp-export` reads an iPhone export and an Android one",
+          live["export_imported"] == 0 and ex["counts"]["threads"] == 2
+          and live["export_manifest"].get("from") == "export", str(ex["counts"]))
+    # The same 33 rounds as the database. Sofía also sent a photo, mentioned
+    # the café and said yes; Jonas, whose number is all the phone knew, asked.
+    check("you are told apart from your friends without being asked, and each is credited",
+          ex["group_credit"] == {"Aarav Shah": 33, JONAS_SHOWN: 34, "Sofía García": 36, "me": 33},
+          str(ex["group_credit"]))
+    raw = live["raw_export"]
+    check("WhatsApp's own notices, and a deleted message, are not messages",
+          not any("end-to-end encrypted" in t or "added Sofía" in t or "was deleted" in t
+                  for t in raw))
+    check("a photo still counts, with no text; a wrapped message is one message",
+          raw.count("") == 2 and "the view from the new flat\nthree rooms, one of them is yours "
+                                  "whenever you visit" in raw)
+    check("and an edit leaves the message, not WhatsApp's note about it",
+          "that looks amazing" in raw and not any("was edited" in t for t in raw))
+    check("an exported chat is redacted, searched and planned like any other",
+          {"[phone]", "[iban]"} <= set(ex["redaction"]["Aarav Shah"]["redactions"])
+          and hit(ex, "cafe", "café")
+          and any(p["state"] == "confirmed" and "Berlin" in p["title"] for p in ex["plans"]))
+    check("the daily refresh leaves an export alone rather than replacing it",
+          live["export_refreshed"] == [] and live["export_after_refresh"] == ex["counts"]["messages"],
+          str(live["export_refreshed"]))
+
     # --- everything else, against the snapshot --------------------------------------
     if update or not SNAPSHOT.exists():
         SNAPSHOT.parent.mkdir(exist_ok=True)
@@ -239,7 +280,7 @@ def run(check, update: bool = False) -> None:
                                              if SNAPSHOT.is_relative_to(Path.cwd()) else SNAPSHOT))
         return
     want = json.loads(SNAPSHOT.read_text())
-    for part in ("imessage", "whatsapp", "whatsapp_only"):
+    for part in ("imessage", "whatsapp", "whatsapp_only", "whatsapp_export"):
         same = want.get(part) == snap[part]
         check(f"{part}: people, drift, plans, redaction and search match the snapshot", same,
               "" if same else "\n" + _diff(want.get(part), snap[part]))
