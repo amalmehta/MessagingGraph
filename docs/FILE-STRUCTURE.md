@@ -27,7 +27,7 @@
 | [`macapp/`](../macapp) | Builds `Messaging Graph.app` (`build.py`), and its hardened-runtime `entitlements.plist` |
 | [`scripts/package.sh`](../scripts/package.sh) | The release build: the `.app` and DMG, Developer ID–signed, notarized and stapled (`--adhoc` for a local test) |
 | [`site/`](../site) | The product site: landing page with price and Buy button, privacy policy, terms and refund templates, `version.json` |
-| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; ingest, licence and shipping checks run by `validate.py` |
+| [`tests/`](../tests) | A small `chat.db` shaped like the real one and its older-macOS variants; a fake iMessage and WhatsApp history imported end to end and compared with a snapshot; ingest, licence and shipping checks run by `validate.py`. See [tests/README.md](../tests/README.md) |
 | [`validate.py`](../validate.py) | Checks the analysis against the demo generator's hidden parameters |
 | [`docs/`](.) | These docs and [How it works](how-it-works.md) |
 | [`docs/SYSTEM-DESIGN.md`](SYSTEM-DESIGN.md) | Components, main flows, storage, design decisions and the Messages schema across macOS versions |

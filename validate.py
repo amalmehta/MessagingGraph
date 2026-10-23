@@ -2828,6 +2828,10 @@ def main() -> int:
     from tests import ingest_checks
     ingest_checks.run(check)
 
+    print("\nthe whole way through: a fake history imported, served and read back:")
+    from tests import e2e_checks
+    e2e_checks.run(check)
+
     print("\nthe trial, the licence, and the only two calls that go online:")
     from tests import licence_checks
     licence_checks.run(check)

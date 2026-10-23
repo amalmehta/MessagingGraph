@@ -1,0 +1,376 @@
+{
+ "imessage": {
+  "counts": {
+   "messages": 1069,
+   "people": 5,
+   "threads": 6
+  },
+  "drift": [
+   "Marcus Webb",
+   "Léa Dubois"
+  ],
+  "group_credit": {
+   "Léa Dubois": 31,
+   "Marcus Webb": 18,
+   "Priya Raman": 31,
+   "me": 30
+  },
+  "open_plans": 2,
+  "people": [
+   {
+    "messages": 322,
+    "name": "Léa Dubois",
+    "open_plans": 1,
+    "per_week": 6.3,
+    "per_week_recent": 1.4,
+    "state": "steady",
+    "trend": "fading"
+   },
+   {
+    "messages": 238,
+    "name": "Marcus Webb",
+    "open_plans": 1,
+    "per_week": 4.6,
+    "per_week_recent": 0.0,
+    "state": "quiet",
+    "trend": "dormant"
+   },
+   {
+    "messages": 241,
+    "name": "Priya Raman",
+    "open_plans": 1,
+    "per_week": 4.7,
+    "per_week_recent": 4.9,
+    "state": "steady",
+    "trend": "steady"
+   },
+   {
+    "messages": 52,
+    "name": "Yuki Tanaka",
+    "open_plans": 0,
+    "per_week": 1.0,
+    "per_week_recent": 1.4,
+    "state": "steady",
+    "trend": "steady"
+   },
+   {
+    "messages": 106,
+    "name": "Дмитрий Волков",
+    "open_plans": 1,
+    "per_week": 2.1,
+    "per_week_recent": 2.8,
+    "state": "steady",
+    "trend": "steady"
+   }
+  ],
+  "plans": [
+   {
+    "assumed": false,
+    "state": "floated",
+    "title": "Dinner with Дмитрий Волков",
+    "when": null,
+    "with": [
+     "Дмитрий Волков"
+    ]
+   },
+   {
+    "assumed": false,
+    "state": "confirmed",
+    "title": "Climbing with Climbing crew",
+    "when": "saturday",
+    "with": [
+     "Léa Dubois",
+     "Marcus Webb",
+     "Priya Raman"
+    ]
+   },
+   {
+    "assumed": false,
+    "state": "stale",
+    "title": "Coffee with Marcus Webb",
+    "when": null,
+    "with": [
+     "Marcus Webb"
+    ]
+   }
+  ],
+  "redaction": {
+   "Léa Dubois": {
+    "redactions": [
+     "[iban]",
+     "[phone]"
+    ],
+    "said": [
+     "Léa Dubois: mon nouveau numéro : [phone]",
+     "Léa Dubois: et pour le loyer, mon IBAN : [iban]",
+     "me: merci, noté"
+    ]
+   },
+   "Yuki Tanaka": {
+    "redactions": [
+     "[phone]"
+    ],
+    "said": [
+     "me: honestly not bad, busy though",
+     "Yuki Tanaka: 来月東京で会おう！",
+     "Yuki Tanaka: new number btw, [phone]"
+    ]
+   }
+  },
+  "search": {
+   "cafe": [
+    {
+     "detail": "Priya Raman",
+     "kind": "message",
+     "title": "found a new café on Valencia, the cortado is unreal"
+    },
+    {
+     "detail": "Léa Dubois",
+     "kind": "message",
+     "title": "On se retrouve au café Belleville jeudi ?"
+    }
+   ],
+   "café": [
+    {
+     "detail": "Priya Raman",
+     "kind": "message",
+     "title": "found a new café on Valencia, the cortado is unreal"
+    },
+    {
+     "detail": "Léa Dubois",
+     "kind": "message",
+     "title": "On se retrouve au café Belleville jeudi ?"
+    }
+   ],
+   "climbing": [
+    {
+     "detail": "climbing saturday?",
+     "kind": "plan",
+     "title": "Climbing with Climbing crew"
+    },
+    {
+     "detail": "3 people",
+     "kind": "group",
+     "title": "Climbing crew"
+    },
+    {
+     "detail": "Climbing crew",
+     "kind": "message",
+     "title": "climbing saturday?"
+    }
+   ],
+   "встреча": [
+    {
+     "detail": "Дмитрий Волков",
+     "kind": "message",
+     "title": "где встреча в субботу?"
+    }
+   ],
+   "東京": [
+    {
+     "detail": "Yuki Tanaka",
+     "kind": "message",
+     "title": "来月東京で会おう！"
+    }
+   ]
+  },
+  "source": "imessage",
+  "suggestions": [
+   {
+    "kind": "reconnect",
+    "who": "Marcus Webb"
+   }
+  ]
+ },
+ "whatsapp": {
+  "counts": {
+   "messages": 319,
+   "people": 3,
+   "threads": 2
+  },
+  "drift": [],
+  "group_credit": {
+   "Aarav Shah": 33,
+   "Jonas": 34,
+   "Sofía García": 35,
+   "me": 33
+  },
+  "open_plans": 1,
+  "people": [
+   {
+    "messages": 184,
+    "name": "Aarav Shah",
+    "open_plans": 1,
+    "per_week": 3.6,
+    "per_week_recent": 3.7,
+    "state": "steady",
+    "trend": "steady"
+   },
+   {
+    "messages": 0,
+    "name": "Jonas",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   },
+   {
+    "messages": 0,
+    "name": "Sofía García",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   }
+  ],
+  "plans": [
+   {
+    "assumed": false,
+    "state": "confirmed",
+    "title": "Dinner with Berlin flatmates",
+    "when": "friday",
+    "with": [
+     "Aarav Shah",
+     "Jonas",
+     "Sofía García"
+    ]
+   }
+  ],
+  "redaction": {
+   "Aarav Shah": {
+    "redactions": [
+     "[iban]",
+     "[phone]"
+    ],
+    "said": [
+     "Aarav Shah: honestly not bad, busy though",
+     "Aarav Shah: changed my number, it's [phone] now",
+     "Aarav Shah: rent goes to [iban]"
+    ]
+   }
+  },
+  "search": {
+   "cafe": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "café": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "climbing": [],
+   "встреча": [],
+   "東京": []
+  },
+  "source": "whatsapp",
+  "suggestions": []
+ },
+ "whatsapp_only": {
+  "counts": {
+   "messages": 319,
+   "people": 3,
+   "threads": 2
+  },
+  "drift": [],
+  "group_credit": {
+   "Aarav Shah": 33,
+   "Jonas": 34,
+   "Sofía García": 35,
+   "me": 33
+  },
+  "open_plans": 1,
+  "people": [
+   {
+    "messages": 184,
+    "name": "Aarav Shah",
+    "open_plans": 1,
+    "per_week": 3.6,
+    "per_week_recent": 3.7,
+    "state": "steady",
+    "trend": "steady"
+   },
+   {
+    "messages": 0,
+    "name": "Jonas",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   },
+   {
+    "messages": 0,
+    "name": "Sofía García",
+    "open_plans": 1,
+    "per_week": 0.0,
+    "per_week_recent": 0.0,
+    "state": "group",
+    "trend": "none"
+   }
+  ],
+  "plans": [
+   {
+    "assumed": false,
+    "state": "confirmed",
+    "title": "Dinner with Berlin flatmates",
+    "when": "friday",
+    "with": [
+     "Aarav Shah",
+     "Jonas",
+     "Sofía García"
+    ]
+   }
+  ],
+  "platforms": {
+   "active": "whatsapp",
+   "platforms": [
+    {
+     "id": "whatsapp",
+     "label": "WhatsApp"
+    }
+   ]
+  },
+  "redaction": {
+   "Aarav Shah": {
+    "redactions": [
+     "[iban]",
+     "[phone]"
+    ],
+    "said": [
+     "Aarav Shah: honestly not bad, busy though",
+     "Aarav Shah: changed my number, it's [phone] now",
+     "Aarav Shah: rent goes to [iban]"
+    ]
+   }
+  },
+  "search": {
+   "cafe": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "café": [
+    {
+     "detail": "Berlin flatmates",
+     "kind": "message",
+     "title": "nos vemos en el café de la esquina"
+    }
+   ],
+   "climbing": [],
+   "встреча": [],
+   "東京": []
+  },
+  "source": "whatsapp",
+  "suggestions": []
+ }
+}
