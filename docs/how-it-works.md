@@ -8,7 +8,8 @@ could do about any of it.
 
 Everything runs on your machine. The analysis makes **zero network calls**, and the only
 route to the network is a consent gate that refuses message content by default. Two
-calls carry none and pass the same gate: the licence check and a weekly update check.
+calls carry none and pass the same gate: a weekly update check, and a licence check that
+only exists in a paid version (the app is free, so it makes none).
 
 ```bash
 ./run.sh          # http://127.0.0.1:8077

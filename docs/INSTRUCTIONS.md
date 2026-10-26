@@ -32,7 +32,13 @@
 
 Needs macOS 13 or later.
 
-## Trial and licence
+## Free for everyone
+
+Messaging Graph is free: no trial, nothing locked, no key to enter. A paid Pro version may come later; the
+licence code for it is kept but switched off (`FREE = True` in `app/product.py`), and what follows only applies
+once it is switched on.
+
+### Trial and licence (a paid version, later)
 
 The first 14 days are a free trial with everything working. After that it's $5, once. When the trial ends,
 everything you imported stays readable; only importing new messages waits for a licence.
@@ -162,10 +168,10 @@ MG_HOME=/tmp/mg-try "dist/Messaging Graph.app/Contents/MacOS/Messaging Graph"
 It runs entirely on your computer. Your messages are imported once into an encrypted file and are
 never sent anywhere.
 
-- Your messages never leave your Mac. The app makes two kinds of network request, and neither contains
-  anything from your messages: the licence check (to Lemon Squeezy, only once you've bought a key: the key,
-  an activation id and a random name) and a weekly update check (a plain request for one file from the
-  product site, which you can switch off under Privacy). Both are listed, with an audit log, under Privacy.
+- Your messages never leave your Mac. While the app is free it makes one kind of network request, and it
+  contains nothing from your messages: a weekly update check (a plain request for one file from the
+  product site, which you can switch off under Privacy). A paid version would add a licence check (to Lemon Squeezy: the key, an
+  activation id and a random name). Every call is listed, with an audit log, under Privacy.
 - Imported messages are encrypted and stored in `~/Library/Application Support/messaging-graph`,
   with the key in your login Keychain, never inside the project folder.
 - The app only responds to the browser that opens the one-time link it prints.

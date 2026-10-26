@@ -5,6 +5,9 @@ built. Back to the [README](../README.md) Â· [System design](SYSTEM-DESIGN.md) Â
 
 Work through them in order; each says how to tell it worked.
 
+The app is free for now (`FREE = True` in `app/product.py`), so step 4 (Lemon Squeezy), `BUY_URL` and the price
+don't apply and a release build doesn't ask for them. They are kept for a paid Pro version later.
+
 ## 1. Settle the app's identity, once
 
 macOS files Full Disk Access, the Keychain's trust and the login item under the bundle id, so changing it after

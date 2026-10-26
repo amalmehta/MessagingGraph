@@ -1,6 +1,8 @@
-"""The trial and the licence key.
+"""The trial and the licence key -- switched off while `product.FREE` is set.
 
-How it works, in the order a customer meets it:
+While the app is free, `status()` is always "free": everything works, no trial
+clock starts, and nothing here makes a call. The rest is kept for a paid Pro
+version later. How it works then, in the order a customer meets it:
 
 * **Trial.** The clock starts the first time the app asks (the first launch).
   For `TRIAL_DAYS` everything works. After that, what you already imported stays
@@ -128,8 +130,9 @@ def _json(raw: bytes) -> dict:
 
 @dataclass
 class Status:
-    #: "trial", "trial_over", "licensed", or "check_needed" (a key that has gone
-    #: longer than the grace period without a check getting through).
+    #: "free" (`product.FREE`: everything works, nothing to buy), "trial",
+    #: "trial_over", "licensed", or "check_needed" (a key that has gone longer
+    #: than the grace period without a check getting through).
     state: str
     can_import: bool
     message: str
@@ -173,6 +176,10 @@ class Licence:
 
     # -- reading ---------------------------------------------------------------
     def status(self) -> Status:
+        if product.FREE:
+            # No trial clock, no key, no price: nothing is written and nothing waits.
+            return Status("free", True, f"{product.NAME} is free. Everything works.",
+                          price_usd=0, buy_url="")
         d = self.data.load()
         now = self.now()
         started = _when(d.get("trial_started"))
@@ -213,6 +220,8 @@ class Licence:
 
     def due(self) -> bool:
         """Whether a licensed copy should re-check its key now."""
+        if product.FREE:
+            return False
         d = self.data.load()
         if not d.get("key"):
             return False
@@ -225,6 +234,8 @@ class Licence:
 
     # -- talking to Lemon Squeezy ----------------------------------------------
     def _call(self, action: str, fields: dict) -> Response:
+        if product.FREE:                # a free copy has nothing to check, so never asks
+            raise LicenceError(f"{product.NAME} is free; there is no licence to check.")
         url = product.LICENCE_API + action
         try:
             sent = self.gate.authorize_service("licence", url, fields)
@@ -251,6 +262,8 @@ class Licence:
         return d["install_id"]
 
     def activate(self, key: str) -> Status:
+        if product.FREE:
+            raise LicenceError(f"{product.NAME} is free, so there's no key to enter.")
         key = (key or "").strip()
         if not key or len(key) > 128 or any(c.isspace() for c in key):
             raise LicenceError("That doesn't look like a licence key. Paste it exactly as "
@@ -289,6 +302,8 @@ class Licence:
     def validate(self, force: bool = False) -> Status:
         """Re-check the key if it is due (or `force`). Never raises for a network
         problem: the grace period is exactly for that."""
+        if product.FREE:
+            return self.status()
         d = self.data.load()
         if not d.get("key") or not (force or self.due()):
             return self.status()
@@ -315,6 +330,8 @@ class Licence:
 
     def deactivate(self) -> Status:
         """Hand this Mac's activation back, to move the licence to another one."""
+        if product.FREE:
+            return self.status()
         d = self.data.load()
         if not d.get("key"):
             return self.status()

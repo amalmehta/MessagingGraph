@@ -77,9 +77,7 @@ your Keychain. Takes a minute or two.</p>
 <div class="row">{import_button}
 <a class="btn" href="mg://demo">Look around with made-up people first</a></div>
 </div>
-<div class="note">{trial}<br>Only two things ever go online, and neither carries anything
-from your messages: the licence check (once you buy) and an update check you can switch
-off under Privacy.</div>
+<div class="note">{note}</div>
 </div></body>"""
 
 ACCESS = {
@@ -100,27 +98,38 @@ Messages with your Apple Account and let it sync, then
 }
 LABEL = {GRANTED: "Allowed", NOT_YET: "Not yet", NO_MESSAGES: "No Messages yet"}
 
+NOTE_FREE = """Free, with everything working.<br>Only one thing ever goes online, and it
+carries nothing from your messages: an update check you can switch off under Privacy."""
+NOTE_PAID = """{trial}<br>Only two things ever go online, and neither carries anything
+from your messages: the licence check (once you buy) and an update check you can switch
+off under Privacy."""
+
 
 def page(state: str, licence_status=None) -> str:
     """The onboarding screen for one Full Disk Access state."""
     name = html.escape(product.NAME)
-    if licence_status is not None:
-        trial = html.escape(licence_status.message)
+    if product.FREE:
+        note = NOTE_FREE
     else:
-        trial = (f"Free for {product.TRIAL_DAYS} days with everything working, then "
-                 f"${product.PRICE_USD} once.")
+        if licence_status is not None:
+            trial = html.escape(licence_status.message)
+        else:
+            trial = (f"Free for {product.TRIAL_DAYS} days with everything working, then "
+                     f"${product.PRICE_USD} once.")
+        note = NOTE_PAID.replace("{trial}", trial)
     button = ('<a class="btn primary" href="mg://import">Import my messages</a>'
               if state == GRANTED else '<span class="btn">Import my messages</span>')
     return (PAGE.replace("{access_body}", ACCESS[state])
             .replace("{import_button}", button)
             .replace("{state_label}", LABEL[state])
             .replace("{state}", state)
-            .replace("{trial}", trial)
+            .replace("{note}", note)
             .replace("{name}", name))
 
 
 def licence_page(message: str) -> str:
-    """Shown instead of an import once the trial is over."""
+    """Shown instead of an import once the trial is over. Never while FREE:
+    a free copy's imports never wait."""
     name = html.escape(product.NAME)
     return (PAGE.split("<body>")[0] + f"""<body><div class="w">
 <h1>Importing needs a licence now</h1>

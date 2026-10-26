@@ -6,9 +6,10 @@ How Messaging Graph is put together. Back to the [README](../README.md) · [Inst
 
 Messaging Graph reads your Messages history once, seals it into an encrypted vault, and serves a local web app
 that analyses it: relationships, plans, drafts worth sending and who's connected. Only the import reads `chat.db`;
-the server that answers the browser (or the Mac app's window) only ever reads the vault. It is sold directly as a
-signed, notarized Mac app with a 14-day trial and a one-time licence; the licence check and an update check are the
-only things that ever go online, and neither carries message content. The reasoning behind what it measures, and
+the server that answers the browser (or the Mac app's window) only ever reads the vault. It ships directly as a
+signed, notarized Mac app, free for everyone (`product.FREE`). The 14-day trial and one-time licence are kept,
+switched off, for a paid Pro version later; the update check (and, once paid, the licence check) are the only
+things that ever go online, and neither carries message content. The reasoning behind what it measures, and
 what it refuses to do, is in [How it works](how-it-works.md).
 
 ```mermaid
@@ -131,7 +132,9 @@ stateDiagram-v2
     Licensed --> TrialOver: refunded / disabled / deactivated
 ```
 
-**Licence.** `Trial` and `Licensed` can import; `TrialOver` and `CheckNeeded` cannot, and everything already
+**Licence.** While `product.FREE` is set, the state is always `free`: everything can import, no trial clock
+starts, no licence call is made, and no price, Buy button or key field is shown; `release_blockers()` doesn't ask
+for store ids or a checkout. The rest describes a paid version. `Trial` and `Licensed` can import; `TrialOver` and `CheckNeeded` cannot, and everything already
 imported stays readable in both. Deciding that reads `app.json` and the clock, never the network, so the
 importer, the daily refresh and `mg import` can all ask. Activation posts the key and a random instance name
 (never the Mac's name) to Lemon Squeezy's public License API; the answer's `meta.store_id` and `product_id` must

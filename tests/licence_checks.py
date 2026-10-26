@@ -1,4 +1,8 @@
-"""The trial, the licence and the two calls that leave the Mac.
+"""Free for everyone, and -- for a paid Pro version later -- the trial, the licence
+and the two calls that leave the Mac.
+
+The free checks run with `product.FREE` as it ships. Everything after them runs
+with it switched off, so the licence code kept for later stays tested.
 
 Run from validate.py, which passes in its `check`. Every network call here goes to
 a fake HTTP client that answers the way Lemon Squeezy's License API does
@@ -78,13 +82,94 @@ def run(check) -> None:
     from app.licence import Licence, LicenceError, import_allowed
     from app.privacy import SERVICES, ConsentError, NetworkGate, PrivacySettings, ServiceRule
 
-    was_ids = (product.LS_STORE_ID, product.LS_PRODUCT_ID)
-    product.LS_STORE_ID, product.LS_PRODUCT_ID = STORE, PRODUCT
+    _free(check, product, AppData, Licence, LicenceError, import_allowed, NetworkGate,
+          PrivacySettings)
+    was = (product.FREE, product.LS_STORE_ID, product.LS_PRODUCT_ID)
+    product.FREE, product.LS_STORE_ID, product.LS_PRODUCT_ID = False, STORE, PRODUCT
     try:
         _run(check, lic_mod, product, updates, AppData, Licence, LicenceError, import_allowed,
              SERVICES, ConsentError, NetworkGate, PrivacySettings, ServiceRule)
     finally:
-        product.LS_STORE_ID, product.LS_PRODUCT_ID = was_ids
+        product.FREE, product.LS_STORE_ID, product.LS_PRODUCT_ID = was
+
+
+def _free(check, product, AppData, Licence, LicenceError, import_allowed, NetworkGate,
+          PrivacySettings) -> None:
+    import threading
+    check("the app ships free", product.FREE is True)
+    root = Path(tempfile.mkdtemp(prefix="mg-free-"))
+    ls = FakeLemonSqueezy()
+    gate = NetworkGate(PrivacySettings())
+    data = AppData(root / "app")
+    L = Licence(data, transport=ls, gate=gate)
+    st = L.status()
+    check("free: everything works, with no trial, price or checkout",
+          st.state == "free" and st.can_import and st.trial_days_left == 0
+          and not st.trial_ends and st.price_usd == 0 and st.buy_url == "", st.message)
+    check("and its sentence says free, without a trial, a price or a licence",
+          "free" in st.message and "$" not in st.message
+          and not any(w in st.message.lower() for w in ("trial", "licen", "buy")))
+    check("no trial clock starts: nothing is written", data.load() == {})
+    data.save({"trial_started": (datetime.now() - timedelta(days=400)).isoformat(timespec="seconds")})
+    check("a trial that ran out before the app went free doesn't lock anything",
+          L.status().can_import and import_allowed(data) == (True, ""))
+    data.save({"trial_started": "2026-01-01T00:00:00", "key": "MG-GOOD-KEY-0001",
+               "instance_id": "inst-1", "validated_at": "2026-01-01T00:00:00"})
+    check("nor does a licence bought before, however long it has gone unchecked",
+          L.status().state == "free" and L.can_import())
+    check("a free copy is never due a licence check", not L.due())
+    L.validate()
+    L.validate(force=True)
+    L.deactivate()
+    try:
+        L.activate("MG-GOOD-KEY-0001")
+        check("there is no key to enter", False)
+    except LicenceError as e:
+        check("there is no key to enter", "free" in str(e), str(e))
+    check("and none of that made a licence call, or even asked the gate",
+          ls.calls == [] and gate.audit == [])
+
+    from app import importer
+    home = AppData()                                   # MG_HOME, set by validate.py
+    saved = home.load()
+    try:
+        home.save({"trial_started": (datetime.now() - timedelta(days=product.TRIAL_DAYS + 3))
+                   .isoformat(timespec="seconds")})
+        r = importer.run_import(path=str(root / "no-such-chat.db"))
+        check("the importer never waits for a licence, even past the old trial",
+              not r.licence and "trial" not in r.note.lower(), r.note)
+        check("nor does the WhatsApp import", not importer.run_whatsapp_import().licence)
+    finally:
+        home.save(saved)
+
+    from fastapi.testclient import TestClient
+    from app import main as server
+    from app.security import COOKIE
+    c = TestClient(server.app, base_url="http://127.0.0.1:8077")
+    c.cookies.set(COOKIE, server.guard.session)
+    o = {"origin": "http://127.0.0.1:8077"}
+    was_t = server.licence.transport, server.licence.data
+    server.licence.transport, server.licence.data = ls, AppData(root / "api")
+    try:
+        got = c.get("/api/licence").json()
+        check("the Privacy screen is told of the update check only: there's no licence call",
+              got["state"] == "free" and [u["purpose"] for u in got["network"]] == ["updates"])
+        lic = c.get("/api/overview").json()["licence"]
+        check("the overview says free, with nothing to buy",
+              lic["state"] == "free" and lic["can_import"] and not lic["buy_url"])
+        r = c.post("/api/licence/activate", json={"key": "MG-GOOD-KEY-0001"}, headers=o)
+        check("activating a key from the API says it's free", r.status_code == 400 and "free" in r.text)
+        c.post("/api/licence/check", headers=o)
+        c.post("/api/licence/deactivate", headers=o)
+        before = set(threading.enumerate())
+        server.start_background_checks()
+        for t in set(threading.enumerate()) - before:
+            t.join(10)
+        check("and nothing the server does, background checks included, calls Lemon Squeezy",
+              ls.calls == [] and not any(a["purpose"] == "licence"
+                                         for a in c.get("/api/privacy").json()["audit"]))
+    finally:
+        server.licence.transport, server.licence.data = was_t
 
 
 def _run(check, lic_mod, product, updates, AppData, Licence, LicenceError, import_allowed,

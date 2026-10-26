@@ -89,6 +89,11 @@ NETWORK_USES = [
 ]
 
 
+def network_uses() -> list[dict]:
+    """The calls this copy can make. A free one has no licence to check."""
+    return [u for u in NETWORK_USES if not (product.FREE and u["purpose"] == "licence")]
+
+
 def start_background_checks() -> None:
     """Re-check a licence that is due, and look for an update. Called when the app
     is actually serving (`mg serve`, the Mac app), never on import, so tests and
@@ -97,7 +102,8 @@ def start_background_checks() -> None:
 
     def work():
         try:
-            licence.validate()
+            if not product.FREE:
+                licence.validate()
         except Exception:
             pass                # the grace period covers a check that couldn't happen
         try:
@@ -825,7 +831,7 @@ class LicenceKey(BaseModel):
 
 def _licence_view(st) -> dict:
     d = appdata.load()
-    return enc({**st.to_dict(), "network": NETWORK_USES,
+    return enc({**st.to_dict(), "network": network_uses(),
                 "update_checks": state.settings.update_checks,
                 "update": {"latest": d.get("update_latest", ""),
                            "newer": updating.is_newer(d["update_latest"])

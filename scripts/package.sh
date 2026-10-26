@@ -63,6 +63,8 @@ fi
 PY=.venv/bin/python
 [[ -x $PY ]] || refuse "No .venv here. Install uv, then: uv sync --group app"
 
+# A free build (FREE in app/product.py) sells nothing, so it has no store ids or
+# checkout to fill in; this only stops a paid one.
 if [[ $MODE == release ]]; then
   $PY -m app.product --check-release || refuse "app/product.py isn't ready to sell yet (above)."
 fi

@@ -20,7 +20,8 @@ def run(check) -> None:
     from app.appdata import AppData
 
     # -- one place for the offer ----------------------------------------------
-    check("the offer is $5 once with a 14-day trial, set in app/product.py",
+    check("the app is free for everyone, switched in app/product.py", product.FREE is True)
+    check("and the paid offer kept for later is $5 once with a 14-day trial",
           (product.PRICE_USD, product.TRIAL_DAYS) == (5, 14))
     site = Path("site")
     index = (site / "index.html").read_text()
@@ -39,10 +40,16 @@ def run(check) -> None:
         html = page.read_text()
         check(f"site/{page.name} loads nothing from anywhere else",
               not re.search(r'<(script|link|img)[^>]+(src|href)="https?://', html))
-    check("a release build is refused while the store ids and URLs are placeholders",
-          product.release_blockers() and subprocess.run(
+    check("a free release build isn't held up by store ids or a checkout it doesn't use",
+          product.release_blockers() == [] and subprocess.run(
               [".venv/bin/python", "-m", "app.product", "--check-release"],
-              capture_output=True).returncode == 1)
+              capture_output=True).returncode == 0)
+    product.FREE = False
+    try:
+        check("a paid release build is refused while the store ids and URLs are placeholders",
+              len(product.release_blockers()) == 3, "; ".join(product.release_blockers()))
+    finally:
+        product.FREE = True
 
     # -- the bundle -----------------------------------------------------------
     import macapp.build as mb
@@ -128,8 +135,16 @@ def run(check) -> None:
           'href="mg://import"' in pages[onboarding.GRANTED]
           and 'href="mg://import"' not in nope)
     check("every state offers the demo instead", all("mg://demo" in p for p in pages.values()))
-    check("it states the trial and the only two things that go online",
-          f"${product.PRICE_USD}" in nope and "licence check" in nope and "update check" in nope)
+    check("free, it says so, with no price, trial, licence or Buy button anywhere",
+          all("Free" in p and "update check" in p and "$" not in p and "mg://buy" not in p
+              and not re.search(r"trial|licen[cs]e|buy", p, re.I) for p in pages.values()))
+    product.FREE = False
+    try:
+        paid = onboarding.page(onboarding.NOT_YET)
+        check("paid, it states the trial and the only two things that go online",
+              f"${product.PRICE_USD}" in paid and "licence check" in paid and "update check" in paid)
+    finally:
+        product.FREE = True
     check("it says plainly that messages are never uploaded", "never uploaded" in nope)
     check("the settings link is the Full Disk Access pane",
           importer.SETTINGS_URL.endswith("Privacy_AllFiles"))
@@ -142,6 +157,14 @@ def run(check) -> None:
           "import_allowed()" in dt and "licence_page" in dt)
     check("the in-process server (the one a customer runs) starts the licence and update checks",
           "server.start_background_checks()" in dt)
+    check("free, the menu bar has no Licence item and mg://buy opens nothing",
+          'if not product.FREE:' in dt and '"Licence…"' in dt.split("if not product.FREE:")[1][:200]
+          and 'what == "buy" and not product.FREE' in dt)
+    js = Path("app/static/app.js").read_text()
+    check("free, the web app shows no key field, Buy button or licence warning",
+          "!onMac || l.state === 'free' ? ''" in js
+          and "lic.state === 'licensed' || lic.state === 'free' ? ''" in js
+          and "if (!l || l.can_import) return '';" in js)
     lp = onboarding.licence_page("Your trial has ended.")
     check("the licence screen offers to buy, to enter a key, and to go back to your data",
           "mg://buy" in lp and "mg://licence" in lp and "mg://home" in lp

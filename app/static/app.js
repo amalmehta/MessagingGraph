@@ -546,7 +546,7 @@ function syncFoot() {
     : `on Wi-Fi · ${lan.devices} phones`;
   const lic = S.overview.licence;
   const paid = !lic ? '' : lic.state === 'trial' ? ` · trial, ${n(lic.trial_days_left, 'day')} left`
-    : lic.state === 'licensed' ? '' : ' · imports need a licence';
+    : lic.state === 'licensed' || lic.state === 'free' ? '' : ' · imports need a licence';
   $('#foot-mode').textContent = `${out} · ${here}${paid}`;
   $('#c-priv').textContent = s.excluded_contact_ids.length
     ? s.excluded_contact_ids.length + ' hidden' : '';
@@ -2906,6 +2906,7 @@ const PLATFORM_LABEL = { imessage: 'iMessage', whatsapp: 'WhatsApp', instagram: 
 // The trial or the licence, and -- right under it -- every call the app can make,
 // in the same words the server uses to decide them. The licence check and the
 // update check are the only two, and neither carries anything from your messages.
+// While the app is free there is no licence: just the version, and the update check.
 async function drawLicence(note) {
   const box = $('#licencebox'), net = $('#netbox');
   if (!box) return;
@@ -2919,7 +2920,7 @@ async function drawLicence(note) {
       ${l.update.newer ? `<br><b>Version ${esc(l.update.latest)} is out</b> (you have
         ${esc(l.version)}). <a href="${esc(l.update.url)}" ${OUT}>Get it</a>.` : ''}
     </div>
-    ${!onMac ? '' : l.state === 'licensed' || l.state === 'check_needed'
+    ${!onMac || l.state === 'free' ? '' : l.state === 'licensed' || l.state === 'check_needed'
       ? `<div class="cmds one"><button type="button" class="btn" id="lic-check">Check now</button>
          <button type="button" class="btn" id="lic-off">Move to another Mac</button></div>`
       : `<form class="cmds one" id="lic-form" autocomplete="off">
@@ -2930,9 +2931,11 @@ async function drawLicence(note) {
          </form>`}
     <div class="dnote ${note && note.err ? 'err' : ''}" id="lic-note">${esc(note ? note.text : '')}</div>`;
   if (net) {
-    net.innerHTML = `<div class="sub tight">Your messages never leave this Mac. These are the
-        only two calls the app can make, and each goes through the same gate as everything
-        else — pinned to one address, with nothing from your messages allowed in it.</div>
+    net.innerHTML = `<div class="sub tight">Your messages never leave this Mac. ${
+        l.network.length === 1 ? 'This is the only call the app can make, and it goes'
+          : 'These are the only two calls the app can make, and each goes'} through the same
+        gate as everything else — pinned to one address, with nothing from your messages
+        allowed in it.</div>
       ${l.network.map(u => `<div class="notice quiet"><div><b>${u.purpose === 'licence'
           ? 'Licence check' : 'Update check'}</b> → ${esc(u.to)}<br>Sends ${esc(u.sends)},
           ${esc(u.when)}.</div></div>`).join('')}
@@ -3001,7 +3004,7 @@ async function viewPrivacy() {
          Open the Mac app and it is a button.</div>`}
     <h2>Keeping up to date</h2>
     <div class="sub tight" id="refreshline">Checking…</div>
-    <h2 id="licence">Licence</h2>
+    <h2 id="licence">${S.overview.licence?.state === 'free' ? 'Version' : 'Licence'}</h2>
     <div id="licencebox"><span class="pempty">Loading…</span></div>
     <h2>What goes online</h2>
     <div id="netbox"><span class="pempty">Loading…</span></div>

@@ -17,8 +17,8 @@ generator's hidden parameters:
 | [`e2e_checks.py`](e2e_checks.py) | That history imported, served and read back over the HTTP API, compared with [`snapshots/e2e.json`](snapshots/e2e.json) |
 | [`whatsapp_export_checks.py`](whatsapp_export_checks.py) | Reading Export chat files: dates that read two ways, 12-hour clocks, telling which name is yours, files that aren't exports |
 | [`digest_checks.py`](digest_checks.py) | The weekly digest: which few things it picks, that the set turns over each Monday, snoozes running out exactly when they say, what an empty week says, and when the Mac app's notification goes out |
-| [`licence_checks.py`](licence_checks.py) | The trial, licence keys, and the only two calls that go online |
-| [`shipping_checks.py`](shipping_checks.py) | The app bundle, the first run, and the product site |
+| [`licence_checks.py`](licence_checks.py) | Free for everyone (no trial, nothing locked, no licence call), then, with `FREE` off, the trial, licence keys, and the only two calls that go online |
+| [`shipping_checks.py`](shipping_checks.py) | The app bundle, the first run (with no price or Buy button while free), and the product site |
 
 ## The end-to-end check
 

@@ -255,7 +255,8 @@ class Controller(NSObject):
         self._item(menu, "Refresh now", "refreshNow:", target=self)
         self.refresh_item = self._item(menu, "Refresh every day", "toggleRefreshing:", target=self)
         self._item(menu, "Check privacy in Terminal…", "checkPrivacy:", target=self)
-        self._item(menu, "Licence…", "showLicence:", target=self)
+        if not product.FREE:                           # a free copy has no licence to show
+            self._item(menu, "Licence…", "showLicence:", target=self)
         menu.addItem_(NSMenuItem.separatorItem())
         self.login_item = self._item(menu, "Start at login", "toggleLogin:", target=self)
         self.login_item.setState_(NSOnState if login_item_enabled() else NSOffState)
@@ -637,7 +638,7 @@ class Controller(NSObject):
                 AppHelper.callAfter(self._load_app)
             elif what == "licence":
                 AppHelper.callAfter(self._load_app, "privacy")
-            elif what == "buy":
+            elif what == "buy" and not product.FREE:
                 NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(product.BUY_URL))
             return
         if url is None or url.scheme() in ("about", "data") or url.host() in ("127.0.0.1", "localhost"):

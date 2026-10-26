@@ -1,6 +1,7 @@
-"""What is being sold, in one place.
+"""What is being offered, in one place.
 
-Price, trial, the app's identity and where the two outside services live. The
+Whether it is free, the price and trial for when it isn't, the app's identity
+and where the two outside services live. The
 packaging script, the licence check, the onboarding screen and the checks in
 validate.py all read from here, so changing the price or the trial is one edit.
 The product site is plain HTML and cannot import this file; validate.py checks
@@ -25,6 +26,10 @@ COPYRIGHT = "© 2026 Messaging Graph"
 MIN_MACOS = "13.0"
 
 # -- the offer ---------------------------------------------------------------
+# Free for everyone: no trial, nothing locked, no Buy button. The licence code
+# stays for a paid Pro version later; set False and fill in the store to turn it on.
+FREE = True
+# The rest of the offer only counts once FREE is False.
 PRICE_USD = 5                       # one-time (was 29; set to 5 by the owner on 2026-10-22)
 TRIAL_DAYS = 14                     # everything works during it
 # After the trial what you already imported stays readable; new imports wait
@@ -71,9 +76,12 @@ def release_blockers() -> list[str]:
 
     A test build doesn't care. A release build that shipped with any of these
     would accept keys bought for other products, or send buyers to a checkout
-    that doesn't exist.
+    that doesn't exist. A free build sells nothing, so none of them apply; the
+    update check already stays off while SITE_URL is a placeholder.
     """
     out = []
+    if FREE:
+        return out
     if LS_STORE_ID is None or LS_PRODUCT_ID is None:
         out.append("LS_STORE_ID and LS_PRODUCT_ID in app/product.py are not set")
     for name, url in (("SITE_URL", SITE_URL), ("BUY_URL", BUY_URL)):

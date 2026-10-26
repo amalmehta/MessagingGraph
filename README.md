@@ -2,8 +2,8 @@
 
 A private app for your Mac that reads your Messages history and helps you keep up with the
 people in it: who you've drifted from, plans that never got a date, messages worth sending, and
-how your friends connect to each other. It runs entirely on your computer. $5 once, with a
-14-day free trial.
+how your friends connect to each other. It runs entirely on your computer. Free for everyone,
+with nothing locked and nothing to buy.
 
 ```mermaid
 flowchart LR
